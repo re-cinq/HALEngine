@@ -9,6 +9,8 @@ hal-engine ships with built-in support for multiple AI providers. All providers 
 
 ## Supported Providers
 
+Implementation status is scored per method in `README.md`, which carries the only such matrix.
+
 | Provider | Type string | Package |
 |----------|-------------|---------|
 | AWS Bedrock | `'bedrock'` | `@aws-sdk/client-bedrock-runtime` |
@@ -354,7 +356,7 @@ The orchestrator handles `tool_use` stop reasons by executing tools and re-calli
 
 ## Switching Providers
 
-Because all providers implement the same interface, switching is a config-only change:
+Because all providers implement the same interface, switching is a config-only change - for `sendMessage`. It is not, for `generateStructured`: Bedrock's throws and Vertex's does not, so an application calling it can move Bedrock to Vertex but not the reverse. Nothing catches that at compile time, because a provider satisfies `AIProvider` by throwing. `README.md` scores each provider per method.
 
 ```typescript
 // Development: use mock

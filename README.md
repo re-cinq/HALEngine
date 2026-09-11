@@ -6,7 +6,7 @@ HAL Engine extracts the core patterns of building an AI-powered chat backend int
 
 ## Features
 
-- **Multi-provider support**: AWS Bedrock (full), OpenAI, Anthropic, Google Vertex AI (stubs ready for implementation)
+- **Multi-provider support**: AWS Bedrock and Google Vertex AI implemented, OpenAI and Anthropic stubbed, plus a built-in Mock. Scored per method in [Providers](#providers) — a provider can implement one of `AIProvider`'s two methods without the other
 - **Tool system**: Register custom tools with JSON Schema validation, executed in parallel within a configurable tool loop
 - **Streaming**: Real-time WebSocket streaming with thinking tag parsing and entry-based protocol
 - **Pluggable auth**: Bring your own WebSocket and HTTP authentication
@@ -74,15 +74,23 @@ This is [`example/server.ts`](example/server.ts) apart from the import specifier
 
 ## Providers
 
-| Provider | Status | Package |
-|----------|--------|---------|
-| AWS Bedrock | Full | `@aws-sdk/client-bedrock-runtime` |
-| Google Vertex AI | Full | `@google-cloud/vertexai` |
-| OpenAI / ChatGPT | Stub | `openai` |
-| Anthropic / Claude | Stub | `@anthropic-ai/sdk` |
-| Mock | Full | (built-in) |
+`AIProvider` has two methods and a provider can implement one without the other, so status is scored per method. Bedrock streams but cannot produce structured output; Vertex does both. This is the only implementation-status matrix in the repository — npm renders `README.md` and nothing else, and a second copy would drift from it.
 
-Stub providers throw a descriptive error with implementation guidance. See [docs/providers.md](specs/hal-engine-providers/spec.md) for details on implementing a provider.
+| Provider | `type` | `sendMessage` | `generateStructured` | Package |
+|---|---|---|---|---|
+| AWS Bedrock | `'bedrock'` | Implemented | throws `Bedrock structured output is not yet implemented.` | `@aws-sdk/client-bedrock-runtime` |
+| Google Vertex AI | `'vertex'` | Implemented | Implemented | `@google-cloud/vertexai` |
+| Mock | `'mock'` | Implemented | Implemented | (built-in) |
+| OpenAI / ChatGPT | `'openai'` | throws `OpenAI provider is not yet implemented.` | throws `OpenAI provider is not yet implemented.` | `openai` |
+| Anthropic / Claude | `'anthropic'` | throws `Anthropic provider is not yet implemented.` | throws `Anthropic provider is not yet implemented.` | `@anthropic-ai/sdk` |
+
+A stub's message continues past the sentence in the table, naming the SDK to install and a provider to copy — for example `OpenAI provider is not yet implemented. Install openai and implement the streaming logic. See src/providers/bedrock/ for a reference implementation.`
+
+`generateStructured` returns typed JSON for internal decisions — evaluation, classification, extraction — and is never user-facing. If your application does not call it, the `generateStructured` column does not constrain your choice.
+
+**Switching providers is config-only only within a column.** Moving from Vertex to Bedrock changes one config object if you only stream, and breaks at runtime if anything calls `generateStructured`. There is no compile-time signal: every provider satisfies `AIProvider`, and a stub satisfies it by throwing.
+
+See [the providers spec](specs/hal-engine-providers/spec.md) for configuration and for implementing one.
 
 ## Configuration
 

@@ -52,6 +52,12 @@ published before it, so there is no upgrade path from `0.1.0` on the registry �
 
 ### Fixed
 
+- The README provider table scores each provider per method. `AIProvider` has two methods and Bedrock
+  implements only one — its `generateStructured` throws while Vertex's works — so two rows previously read
+  `Full` while one provider did half of what the other did. Each cell now names `Implemented` or the message
+  it throws, and the "switching providers is config-only" claim is qualified: it holds for `sendMessage` and
+  not for `generateStructured`, with no compile-time signal either way.
+
 - The README quick start and `docs/getting-started.md` now match the API. Both showed `PromptBuilderConfig`
   fields that do not exist (`guidelines`, `context`, `customInstructions` for `responseGuidelines`,
   `domainContext`, `toolPreamble`), a `ws` authenticator taking a token rather than the upgrade request and
