@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide shows how to set up hal-engine in your application with `createHalEngine()`.
+This guide shows how to set up HAL Engine in your application with `createHalEngine()`.
 
 ## Installation
 
