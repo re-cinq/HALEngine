@@ -19,17 +19,19 @@ const ACCEPTANCES = '.github/audit-acknowledgements.json';
 const REQUIRED_FIELDS = ['advisory', 'package', 'why', 'expires', 'acknowledged_by'];
 
 const audit = runAudit();
-const found = Object.entries(audit.vulnerabilities ?? {})
-  .filter(([, v]) => FAIL_AT.includes(v.severity))
-  .map(([name, v]) => ({name, severity: v.severity, via: titles(v)}));
+const found = collectFindings(audit);
 
 const {accepted, problems} = readAcceptances();
-const unacknowledged = found.filter(f => !accepted.has(f.package ?? f.name));
-const unused = [...accepted].filter(pkg => !found.some(f => f.name === pkg));
+const key = finding => `${finding.advisory}::${finding.name}`;
+const unacknowledged = found.filter(finding => !accepted.has(key(finding)));
+const unused = [...accepted.values()].filter(
+  entry => !found.some(finding => finding.name === entry.package && finding.advisory === entry.advisory)
+);
 
 for (const problem of problems) fail(problem);
-for (const pkg of unused) fail(`acceptance for "${pkg}" matches no current advisory — remove it`);
-for (const f of unacknowledged) fail(`${f.severity}: ${f.name} — ${f.via.join('; ') || 'no title'}`);
+for (const entry of unused)
+  fail(`acceptance for ${entry.advisory} in "${entry.package}" matches no current advisory — remove it`);
+for (const finding of unacknowledged) fail(describeFinding(finding));
 
 if (problems.length || unused.length || unacknowledged.length) {
   process.stderr.write(`\ncheck-audit: ${problems.length + unused.length + unacknowledged.length} finding(s).\n`);
@@ -41,32 +43,110 @@ const counts = audit.metadata?.vulnerabilities ?? {};
 process.stdout.write(`check-audit: clean at high and above (${describe(counts)}), ${accepted.size} acceptance(s).\n`);
 
 function runAudit() {
+  let raw;
   try {
-    return JSON.parse(execFileSync('npm', ['audit', '--json'], {encoding: 'utf8', maxBuffer: 64 * 1024 * 1024}));
+    raw = execFileSync('npm', ['audit', '--json'], {encoding: 'utf8', maxBuffer: 64 * 1024 * 1024});
   } catch (error) {
     // npm audit exits non-zero when it finds anything; the report is still on stdout.
-    if (typeof error.stdout === 'string' && error.stdout.trim()) return JSON.parse(error.stdout);
-    process.stderr.write(`check-audit: npm audit produced no readable report: ${error.message}\n`);
-    process.exit(1);
+    if (typeof error.stdout === 'string' && error.stdout.trim()) raw = error.stdout;
+    else return abort(`npm audit produced no readable report: ${error.message}`);
   }
+
+  let report;
+  try {
+    report = JSON.parse(raw);
+  } catch (error) {
+    return abort(`npm audit did not return JSON: ${error.message}`);
+  }
+
+  // A registry failure is also JSON, and carries no `vulnerabilities` key. Without this the
+  // gate reads "nothing reported" as "nothing wrong" and a release ships unaudited.
+  if (!report || typeof report !== 'object' || !isReport(report)) {
+    return abort(`npm audit returned no vulnerability report (keys: ${Object.keys(report ?? {}).join(', ')})`);
+  }
+
+  return report;
 }
 
-function titles(vulnerability) {
-  return (vulnerability.via ?? []).map(v => (typeof v === 'string' ? v : v.title)).filter(Boolean);
+function isReport(report) {
+  return typeof report.vulnerabilities === 'object' || typeof report.metadata?.vulnerabilities === 'object';
+}
+
+function abort(message) {
+  process.stderr.write(`check-audit: ${message}\n`);
+  process.stderr.write('check-audit: refusing to report clean on a report it could not read.\n');
+  process.exit(1);
+}
+
+// One finding per (package, advisory): an acceptance names one advisory, so a second advisory in
+// the same package has to arrive as its own finding rather than hiding behind the first.
+function collectFindings(audit) {
+  const vulnerabilities = audit.vulnerabilities ?? {};
+  const findings = [];
+
+  for (const [name, vulnerability] of Object.entries(vulnerabilities)) {
+    if (!FAIL_AT.includes(vulnerability.severity)) continue;
+
+    for (const advisory of advisoriesFor(name, vulnerabilities)) {
+      findings.push({
+        name,
+        severity: vulnerability.severity,
+        range: vulnerability.range ?? 'unknown range',
+        through: reachedThrough(name, vulnerability),
+        advisory: advisory.id,
+        title: advisory.title,
+      });
+    }
+  }
+
+  return findings;
+}
+
+// A transitive entry's `via` names packages rather than advisories, so the ids come from following it.
+function advisoriesFor(name, vulnerabilities, seen = new Set()) {
+  if (seen.has(name)) return [];
+  seen.add(name);
+
+  const via = vulnerabilities[name]?.via ?? [];
+  const own = via
+    .filter(entry => typeof entry === 'object')
+    .map(entry => ({id: advisoryId(entry), title: entry.title}));
+  const inherited = via
+    .filter(entry => typeof entry === 'string')
+    .flatMap(dep => advisoriesFor(dep, vulnerabilities, seen));
+  const all = [...own, ...inherited];
+
+  return all.length > 0 ? all : [{id: `unknown:${name}`, title: 'advisory id absent from the report'}];
+}
+
+// The GHSA id is in the advisory URL; `source` is npm's own numeric id and is the fallback.
+function advisoryId(entry) {
+  const ghsa = /GHSA-[0-9a-z-]+/i.exec(entry.url ?? '');
+  return ghsa ? ghsa[0] : `npm:${entry.source ?? 'unknown'}`;
+}
+
+function reachedThrough(name, vulnerability) {
+  if (vulnerability.isDirect) return 'a direct dependency';
+  const effects = (vulnerability.effects ?? []).join(', ');
+  return effects ? `reached through ${effects}` : 'reached through an undisclosed path';
+}
+
+function describeFinding(finding) {
+  return `${finding.severity}: ${finding.name}@${finding.range} ${finding.advisory} — ${finding.title}, ${finding.through}`;
 }
 
 function readAcceptances() {
-  if (!existsSync(ACCEPTANCES)) return {accepted: new Set(), problems: []};
+  if (!existsSync(ACCEPTANCES)) return {accepted: new Map(), problems: []};
 
   let entries;
   try {
     entries = JSON.parse(readFileSync(ACCEPTANCES, 'utf8'));
   } catch (error) {
-    return {accepted: new Set(), problems: [`${ACCEPTANCES} is not valid JSON: ${error.message}`]};
+    return {accepted: new Map(), problems: [`${ACCEPTANCES} is not valid JSON: ${error.message}`]};
   }
-  if (!Array.isArray(entries)) return {accepted: new Set(), problems: [`${ACCEPTANCES} must hold an array`]};
+  if (!Array.isArray(entries)) return {accepted: new Map(), problems: [`${ACCEPTANCES} must hold an array`]};
 
-  const accepted = new Set();
+  const accepted = new Map();
   const problems = [];
   const today = new Date().toISOString().slice(0, 10);
 
@@ -81,10 +161,13 @@ function readAcceptances() {
       continue;
     }
     if (entry.expires < today) {
-      problems.push(`acceptance for "${entry.package}" expired ${entry.expires} — recheck it or renew it`);
+      problems.push(
+        `acceptance for ${entry.advisory} in "${entry.package}" expired ${entry.expires} — recheck it or renew it`
+      );
       continue;
     }
-    accepted.add(entry.package);
+    // Keyed on the pair: an acceptance covers the advisory it names and nothing else in that package.
+    accepted.set(`${entry.advisory}::${entry.package}`, entry);
   }
 
   return {accepted, problems};

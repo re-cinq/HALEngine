@@ -28,11 +28,14 @@ This is a breaking change under AGENTS.md § Breaking Changes and inherits that 
 
 - Importing the package root MUST NOT require either optional peer to be installed. Measured on the built `dist/`: a bare root import loaded 38 `@google-cloud/vertexai` modules before this change and 0 after, with Bedrock at 0 throughout. The automated form of this check is the tarball smoke test.
 - An absent peer MUST fail at provider construction, not at import — the contract `src/providers/bedrock/bedrockProvider.ts` already kept and `createVertexProvider` now matches.
-- Both providers route their absent-peer failure through one helper, so the message names the package and its install command rather than surfacing a raw `MODULE_NOT_FOUND` from inside `dist/` ([validated by](../../src/providers/requireOptionalPeer.test.ts#L12)).
-- That failure is an `AIError` carrying the code `OPTIONAL_PEER_MISSING`, not a bare module-resolution error ([validated by](../../src/providers/requireOptionalPeer.test.ts#L19)).
-- It is not retryable, because installing a package is not a retry ([validated by](../../src/providers/requireOptionalPeer.test.ts#L23)).
-- An installed peer is returned unchanged ([validated by](../../src/providers/requireOptionalPeer.test.ts#L8)).
+- Both providers route their absent-peer failure through one helper, so the message names the package and its install command rather than surfacing a raw `MODULE_NOT_FOUND` from inside `dist/` ([validated by](../../src/providers/requireOptionalPeer.test.ts#L15)).
+- That failure is an `AIError` carrying the code `OPTIONAL_PEER_MISSING`, not a bare module-resolution error ([validated by](../../src/providers/requireOptionalPeer.test.ts#L22)).
+- It is not retryable, because installing a package is not a retry ([validated by](../../src/providers/requireOptionalPeer.test.ts#L26)).
+- An installed peer is returned unchanged ([validated by](../../src/providers/requireOptionalPeer.test.ts#L11)).
 - The helper decides "absent" structurally rather than with `instanceof Error`, because a module loader running in another realm throws an `Error` this one disowns — measured under jest, where `instanceof Error` is `false` for exactly that failure.
+- "Absent" is decided from the first line of the loader's message, which names the module that was not found. The Require stack below that line holds the peer's own files, so a substring test reports a peer whose own dependency is missing as the peer being absent — telling the caller to install what they already have and discarding the real cause.
+- An installed peer whose own dependency is missing rethrows the loader's error ([validated by](../../src/providers/requireOptionalPeer.test.ts#L58)).
+- That failure is not dressed as an absent optional peer ([validated by](../../src/providers/requireOptionalPeer.test.ts#L62)).
 - The helper lives at the providers-layer root, not in `src/shared/`. `layers.yaml` declares `shared: []` — it may import nothing, `types` included — so `AIError` is unreachable from there, and a helper that could not build the error would defeat its own purpose.
 - Subpath exports are explicitly not the answer here; the `exports` map stays a single root entry.
 
@@ -86,6 +89,21 @@ AGENTS.md § Quality Gates already commits this repository to "npm audit must sh
 - Both checks run as their own CI job rather than as steps on the existing one, because they report on what the build chain pulls in rather than on what the code does, and again before `npm publish`.
 - `npm audit fix` clears the backlog to 3 advisories — 2 moderate, 1 low, none at high or above — touching only `package-lock.json`. No dependency range in `package.json` changes, and the suite passes unchanged, so no acceptance entry is needed to go green.
 - `supertest` and `@types/supertest` stay. An earlier measurement found zero occurrences under `src/`, but `src/transport/routes/chats.test.ts` has imported `supertest` since the chat-ownership tests landed, and removing it would take 11 tests with it. Its `form-data` advisory is resolved by the lockfile update instead.
+
+The gate runs immediately before `npm publish`, so the two ways it can report a clean tree without having checked one are part of its contract rather than details of its implementation. It shells out to `npm audit`, whose registry failures are themselves JSON and carry no `vulnerabilities` key; and an acceptance names an advisory, which means an acceptance recorded for one advisory must not absorb the next one in the same package.
+
+- A report carrying no vulnerability data fails the check rather than reading as nothing-to-report ([validated by](../../scripts/check-audit.test.ts#L73)).
+- That failure names the reason rather than exiting silently ([validated by](../../scripts/check-audit.test.ts#L79)).
+- Output that is not JSON at all fails the same way ([validated by](../../scripts/check-audit.test.ts#L85)).
+- An unacknowledged advisory at `high` or above fails the check ([validated by](../../scripts/check-audit.test.ts#L93)).
+- The blocking line carries the package, the affected range, the advisory id, its title and the path it is reached through ([validated by](../../scripts/check-audit.test.ts#L97)).
+- An acceptance naming that advisory passes it ([validated by](../../scripts/check-audit.test.ts#L103)).
+- An acceptance naming a different advisory in the same package does not ([validated by](../../scripts/check-audit.test.ts#L110)).
+- Such an acceptance is itself reported as matching no current advisory ([validated by](../../scripts/check-audit.test.ts#L117)).
+- A second advisory in an otherwise accepted package still fails ([validated by](../../scripts/check-audit.test.ts#L138)).
+- An expired acceptance fails the check ([validated by](../../scripts/check-audit.test.ts#L124)).
+- An expired acceptance is named by advisory and package ([validated by](../../scripts/check-audit.test.ts#L131)).
+- A clean report with no acceptances passes ([validated by](../../scripts/check-audit.test.ts#L150)).
 
 ### Tarball smoke test
 
@@ -209,8 +227,8 @@ A log call must not be able to take down the call site it observes. `JSON.string
 
 `logger` is declared on `HalEngineConfig`, is documented in five places, and was read by nothing: every line went through the module singleton regardless. It is the fifth instance of the seam this spec records above, and the one with a migration instruction resting on it - the release notes told consumers to supply a logger to keep the old line format. Seven modules import `log` at module scope, so the swap is a module-level one and is process-wide rather than per engine; `docs/logging.md` states that limit.
 
-- A logger passed to `createHalEngine` receives the package's own log lines ([validated by](../../src/config.test.ts#L62)).
-- Supplying none leaves the built-in console logger in place ([validated by](../../src/config.test.ts#L74)).
+- A logger passed to `createHalEngine` receives the package's own log lines ([validated by](../../src/config.test.ts#L63)).
+- Supplying none leaves the built-in console logger in place ([validated by](../../src/config.test.ts#L75)).
 - `setLogger` sends lines to the supplied implementation instead of the console, and the console receives nothing ([validated by](../../src/shared/logger.test.ts#L158)).
 - Calling `setLogger` with nothing restores the built-in one ([validated by](../../src/shared/logger.test.ts#L177)).
 - No call site changes. All 29 `log.*` calls under `src/` keep their category, message, level and data - 28 at the time this was written, plus the hook-failure line T015 added.
@@ -244,9 +262,11 @@ The alias is removed. `user_message` is the only wire name, which is what the ex
 
 `createHalEngine` forwarded `maxToolRounds` and `contextConfig` to the orchestrator it builds and stopped there, and passed no port to the server at all. Both options are declared on `HalEngineConfig`, both are documented, and neither did anything - the third and fourth instances of the same seam after `onConnect` and the `send_message` alias.
 
-- `orchestrator.hooks` is declared and forwarded, so a hook passed through the factory fires ([validated by](../../src/config.test.ts#L16)).
-- `transport.port` reaches the server, and the resolution order is the `start(port)` argument, then `transport.port`, then `PORT`, then `8086` ([validated by](../../src/config.test.ts#L33)).
-- An explicit `start(port)` still wins over the configured one ([validated by](../../src/config.test.ts#L44)).
+- `orchestrator.hooks` is declared and forwarded, so a hook passed through the factory fires ([validated by](../../src/config.test.ts#L17)).
+- `transport.port` reaches the server, and the resolution order is the `start(port)` argument, then `transport.port`, then `PORT`, then `8086` ([validated by](../../src/config.test.ts#L34)).
+- An explicit `start(port)` still wins over the configured one ([validated by](../../src/config.test.ts#L45)).
+- The started line logs the bound port rather than the requested one, which is what a configured `0` makes visible.
+- A port that cannot be bound rejects the promise `start()` returned, rather than surfacing as an unhandled `error` event that ends the process ([validated by](../../src/config.test.ts#L92)).
 - `transport.port` resolves with `??` rather than `||`, so a configured `0` means "let the OS choose a free port" instead of collapsing to the default. `PORT` keeps its `||`, because an environment variable that fails to parse should not silently bind port 0.
 - Writing the tests exposed a third defect: `createServer` opened its heartbeat interval at construction, so an engine that was built and never started held the Node event loop open forever. The timer is now `unref`ed - the listening socket is what should keep a process alive.
 
@@ -278,7 +298,7 @@ This package had nowhere for a vulnerability report to arrive. The package is pu
 - The provider table scores each provider per method rather than per provider. `AIProvider` has two methods, and Bedrock's `generateStructured` throws while Vertex's does not, so two rows currently read identically while one provider does half of what the other does. Each cell reads `Implemented` or the literal thrown string, which is checkable by grep.
 - The "switching providers is config-only" claim is qualified: a consumer calling `generateStructured` cannot move from Vertex to Bedrock.
 - An Install section above the quick start names the registry specifier as the supported path, and states what the git specifier does differently: it builds `dist` from a checkout via `prepare`, carries no provenance attestation, holds whatever commit the lockfile pinned, and installs under the dependency's key rather than its name — so the existing `"hal-engine": "github:…"` entry keeps resolving silently after the rename, with no failure mode to surface it. Measured, not reasoned: installing the packed tarball under the key `hal-engine` puts a package declaring `@re-cinq/hal-engine` at `node_modules/hal-engine`, where `import 'hal-engine'` loads it and `import '@re-cinq/hal-engine'` fails with `ERR_MODULE_NOT_FOUND`. Following the rename is what breaks, not ignoring it.
-- A Configuration section carries the only table in the repository of the environment variables this package actually reads: `CORS_ORIGIN` at `src/transport/createApp.ts:23`, `PORT` at `src/transport/createServer.ts:87`, and `LOG_LEVEL` at `src/shared/logger.ts:12`. Each row names the reading site, what overrides it, and the default. `CORS_ORIGIN` carries one origin only — the value reaches `cors({origin})` unsplit, so a comma-separated list is a single literal matching no browser origin.
+- A Configuration section carries the only table in the repository of the environment variables this package actually reads: `CORS_ORIGIN` at `src/transport/createApp.ts:23`, `PORT` at `src/transport/createServer.ts:93`, and `LOG_LEVEL` at `src/shared/logger.ts:12`. Each row names the reading site, what overrides it, and the default. `CORS_ORIGIN` carries one origin only — the value reaches `cors({origin})` unsplit, so a comma-separated list is a single literal matching no browser origin.
 
 ### Documented code is generated, not transcribed
 
