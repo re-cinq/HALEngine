@@ -12,6 +12,11 @@ on:
       - 'specs/**'
       - 'teams/**'
       - '.specify/**'
+  # Manual backfill. The push trigger above only ever carries a diff, so
+  # context that predates this workflow - everything the repo already had at
+  # onboarding - is invisible to it. A dispatch sends the full tracked context
+  # instead.
+  workflow_dispatch:
 
 jobs:
   ingest:
@@ -21,12 +26,41 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Get changed files
+      - name: Collect context files
         id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          # --no-renames: a moved file must arrive as its old path (a delete)
-          # plus its new path, or the old path's chunks outlive the file.
-          FILES=$(git diff --name-only --no-renames HEAD~1 HEAD | jq -R -s -c 'split("\n") | map(select(. != ""))')
+          # A dispatch runs on whichever ref was picked, and the endpoint has no
+          # notion of a branch - backfilling from a feature branch would land
+          # that branch's content as the repo's canonical context.
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] && [ "${REF_NAME}" != "${DEFAULT_BRANCH}" ]; then
+            echo "::error::a backfill must run on ${DEFAULT_BRANCH}, not ${REF_NAME} - context was NOT ingested"
+            exit 1
+          fi
+          # Kept in step with the push paths filter above. Bare directory
+          # pathspecs match recursively, and one that matches nothing is not an
+          # error, so a repo without runbooks/ needs no guard here.
+          CONTEXT_PATHS='CLAUDE.md AGENTS.md adrs runbooks specs teams .specify'
+          # A root commit has no HEAD~1, where the bare diff below exited 128
+          # and took the step down under `bash -e` - which is how the very first
+          # push, the one carrying the whole corpus, ingested nothing. Treat it
+          # like a dispatch and send everything.
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || ! git rev-parse --verify --quiet HEAD~1 >/dev/null; then
+            echo "Backfilling the full tracked context (event: ${EVENT_NAME})"
+            # Scoped to CONTEXT_PATHS deliberately: the diff arm below reports
+            # whatever the commit touched and lets Lore filter, but a backfill
+            # unscoped would ship the entire tree.
+            FILES=$(git ls-files -- ${CONTEXT_PATHS} | jq -R -s -c 'split("\n") | map(select(. != ""))')
+          else
+            # --no-renames: a moved file must arrive as its old path (a delete)
+            # plus its new path, or the old path's chunks outlive the file.
+            # ls-files cannot stand in for this arm: a backfill lists what
+            # exists, but an incremental push must also report what was deleted.
+            FILES=$(git diff --name-only --no-renames HEAD~1 HEAD | jq -R -s -c 'split("\n") | map(select(. != ""))')
+          fi
           echo "files=${FILES}" >> "$GITHUB_OUTPUT"
 
       - name: Notify Lore to ingest
@@ -118,7 +152,16 @@ jobs:
         env:
           LORE_INGEST_TOKEN: ${{ secrets.LORE_INGEST_TOKEN }}
           LORE_INGEST_URL: ${{ secrets.LORE_INGEST_URL || vars.LORE_INGEST_URL || vars.LORE_API_URL }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
+          # Same rail as the ingest job: this posts github.sha, so a dispatch
+          # from a feature branch would project that branch into the graph.
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] && [ "${REF_NAME}" != "${DEFAULT_BRANCH}" ]; then
+            echo "::error::a backfill must run on ${DEFAULT_BRANCH}, not ${REF_NAME} - ${{ matrix.kind }} were NOT projected"
+            exit 1
+          fi
           # Actions masks secrets automatically but not repository variables, and this
           # value may arrive as either - mask it so the endpoint cannot reach the log.
           if [ -n "${LORE_INGEST_URL}" ]; then echo "::add-mask::${LORE_INGEST_URL}"; fi
