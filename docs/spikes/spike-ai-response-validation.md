@@ -1,5 +1,18 @@
 # Spike: AI Response Reliability and Validation
 
+> **Status: spike. Almost none of it shipped.** Reviewed 2026-09-11.
+>
+> **Shipped.** Structured output with a response schema, which §1 argues for, exists — but as `AIProvider.generateStructured`, implemented for Vertex only, not as the Zod pipeline below. Zod is not a dependency of this package.
+>
+> **Superseded.** §3's logging wrapper is superseded by `src/shared/logger.ts` and [docs/logging.md](../logging.md), which solve the same problem differently: one JSON object per line with a fixed key set, no wrapper around the provider call. The model id in §7 is retired.
+>
+> **Still open, and this is most of the document.** §1 schema validation is [ADR-002](../../adrs/ADR-002-response-validation.md), §7 observability is [ADR-003](../../adrs/ADR-003-llm-observability.md), §8 guardrails are [ADR-004](../../adrs/ADR-004-bedrock-guardrails.md) — all three recorded 2026-04-02 and all three still `proposed`. §2 sanity checks, §4 hallucination detection and §6 the pre-deployment checklist have no ADR and no code.
+>
+> **One warning if you arrived here searching for observability.** §7 specifies CloudWatch alarms and a particular vendor's collector, for a single-cloud deployment. This package is provider-agnostic and emits no telemetry at all: it writes log lines and nothing else. Taking §7 as the current design would be a mistake — it is a proposal for a deployment nobody built.
+>
+> Nothing below this block has been changed.
+
+
 ## Context
 
 The team needs to validate AI responses for accuracy, detect hallucinations, and ensure tool calls are being made correctly.

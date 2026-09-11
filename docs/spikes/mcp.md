@@ -1,5 +1,16 @@
 # Building a Modular AI Agent with MCP
 
+> **Status: spike. Nothing here is built.** Reviewed 2026-09-11.
+>
+> **Shipped.** Nothing from this document. The tool system it motivates does exist — `ToolRegistry`, `ToolDefinition`, `ToolExecutor` in `src/orchestration/tools/` — but tools are registered in-process against that registry, not served over MCP. No MCP client, server or transport is in `src/`.
+>
+> **Superseded.** §4's bridge from tools to Bedrock is now `src/providers/bedrock/`, which maps tool calls to and from provider format inside the provider layer. That section describes work the architecture has since absorbed.
+>
+> **Still open.** Integrating MCP as a tool source is [ADR-005](../../adrs/ADR-005-mcp-tool-integration.md), recorded 2026-04-02 and still `proposed`.
+>
+> Nothing below this block has been changed.
+
+
 Date: January 15, 2026
 Topic: Modular AI Tool Integration
 
