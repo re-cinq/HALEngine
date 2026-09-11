@@ -20,6 +20,14 @@ The logger is public surface: `src/index.ts` exports both the `log` object and t
 
 Caller fields are nested under `data` rather than spread across the top level. That is deliberate: a field named `severity` or `timestamp` cannot overwrite the line's own, so the five keys above mean the same thing on every line regardless of what a call site passes.
 
+If `data` cannot be serialised -- a circular reference, a `BigInt` -- the line is still written, with the other four keys intact and `data` replaced by a string naming the reason. The emitter never throws: a logger that can take down the call site it is observing is the wrong failure mode, and a collector still needs the severity and the message.
+
+```json
+{"severity":"INFO","message":"connected","timestamp":"2026-09-11T09:41:02.517Z","category":"ws","data":"[unserialisable]: Converting circular structure to JSON"}
+```
+
+Note the shape change: `data` is a string here rather than an object. A consumer indexing that field should expect either.
+
 ## Levels
 
 `LOG_LEVEL` selects the threshold, read once at module load and compared numerically: `debug` (0), `info` (1), `warn` (2), `error` (3). Anything below the threshold is dropped before the line is built. An unrecognised value falls back to `info`, and so does an unset one.
@@ -38,6 +46,12 @@ Because the threshold is resolved at import time, changing `process.env.LOG_LEVE
 `ERROR` goes to `console.error` (stderr). `DEBUG`, `INFO` and `WARN` go to `console.log` (stdout).
 
 The split matters where the collector has no JSON parser in front of it: a container runtime that separates stdout from stderr can route or alert on failures without reading the payload at all. Where a parser is present, filtering on `severity` gives the same answer.
+
+## Supplying your own
+
+Pass `logger` in `HalEngineConfig` and every line above goes to your implementation instead of the console, with the same four arguments the `Logger` interface declares -- `category`, `message` and the optional fields object. Nothing else changes: `LOG_LEVEL` still gates which calls reach you, because the threshold is applied before the line is built.
+
+One caveat, and it is the reason this is documented rather than assumed. The swap is **process-wide, not per engine**. Seven modules import the `log` object at module scope, so there is one logger per process; two engines in the same process share whichever was constructed last. If you run more than one engine in a process and need their lines apart, put the distinguishing field in your own implementation rather than expecting the package to carry it.
 
 ## Fields that can identify a person
 
