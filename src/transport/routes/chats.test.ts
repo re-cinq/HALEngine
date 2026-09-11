@@ -1,3 +1,4 @@
+import {jest} from '@jest/globals';
 import express from 'express';
 import type {Request} from 'express';
 import request from 'supertest';
@@ -17,7 +18,7 @@ const BOB: TestUser = {id: 'bob'};
 
 const harness = () => {
   let user: TestUser | undefined;
-  const processMessage = jest.fn<Promise<string>, unknown[]>().mockResolvedValue('assistant reply');
+  const processMessage = jest.fn<(...args: unknown[]) => Promise<string>>().mockResolvedValue('assistant reply');
   const orchestrator = {processMessage} as unknown as ChatOrchestrator;
 
   const app = express();

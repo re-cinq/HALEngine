@@ -1,11 +1,23 @@
+import {jest} from '@jest/globals';
 import type {ResponseSchema} from '../../types/ai.js';
 import {collectChunks, userMessage} from '../providerTestSupport.js';
 
-const mockGenerateContentStream = jest.fn();
-const mockGenerateContent = jest.fn();
-const mockGetGenerativeModel = jest.fn();
+// @jest/globals types a bare jest.fn() as taking no arguments; these name what the assertions read back.
+interface VertexRequest {
+  contents: {role: string}[];
+}
+interface VertexModelConfig {
+  generationConfig?: Record<string, unknown>;
+}
 
-jest.mock('@google-cloud/vertexai', () => ({
+const mockGenerateContentStream = jest.fn<(request: VertexRequest) => Promise<unknown>>();
+const mockGenerateContent = jest.fn<(request: VertexRequest) => Promise<unknown>>();
+const mockGetGenerativeModel = jest.fn<(config: VertexModelConfig) => unknown>();
+
+const callMock = () => jest.fn<(request: VertexRequest) => Promise<unknown>>();
+
+// ESM has no hoisted jest.mock: register the mock, then import the subject.
+jest.unstable_mockModule('@google-cloud/vertexai', () => ({
   VertexAI: jest.fn().mockImplementation(() => ({
     getGenerativeModel: mockGetGenerativeModel,
   })),
@@ -18,7 +30,8 @@ jest.mock('@google-cloud/vertexai', () => ({
   },
 }));
 
-import {createVertexProvider, VertexConfig} from './vertexProvider.js';
+const {createVertexProvider} = await import('./vertexProvider.js');
+type VertexConfig = import('./vertexProvider.js').VertexConfig;
 
 const defaultConfig: VertexConfig = {
   type: 'vertex',
@@ -200,7 +213,7 @@ describe('createVertexProvider', () => {
     it('returns parsed JSON from Vertex response', async () => {
       const expected = {followUpQuestion: 'Tell me more?', confidenceScore: 85};
       mockGetGenerativeModel.mockReturnValue({
-        generateContent: jest.fn().mockResolvedValue({
+        generateContent: callMock().mockResolvedValue({
           response: {
             candidates: [{content: {parts: [{text: JSON.stringify(expected)}]}}],
           },
@@ -219,7 +232,7 @@ describe('createVertexProvider', () => {
 
     it('configures model with responseMimeType and responseSchema', async () => {
       mockGetGenerativeModel.mockReturnValue({
-        generateContent: jest.fn().mockResolvedValue({
+        generateContent: callMock().mockResolvedValue({
           response: {candidates: [{content: {parts: [{text: '{}'}]}}]},
         }),
       });
@@ -254,7 +267,7 @@ describe('createVertexProvider', () => {
 
     it('throws AIError with PARSE_ERROR on invalid JSON', async () => {
       mockGetGenerativeModel.mockReturnValue({
-        generateContent: jest.fn().mockResolvedValue({
+        generateContent: callMock().mockResolvedValue({
           response: {candidates: [{content: {parts: [{text: 'not json'}]}}]},
         }),
       });
@@ -268,7 +281,7 @@ describe('createVertexProvider', () => {
 
     it('throws mapped AIError on Vertex API failure', async () => {
       mockGetGenerativeModel.mockReturnValue({
-        generateContent: jest.fn().mockRejectedValue(new Error('RESOURCE_EXHAUSTED')),
+        generateContent: callMock().mockRejectedValue(new Error('RESOURCE_EXHAUSTED')),
       });
 
       await expect(requestEvaluation()).rejects.toMatchObject({

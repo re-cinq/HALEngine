@@ -13,28 +13,28 @@ The HTTP chat routes are the non-streaming counterpart to the WebSocket protocol
 
 ### Resolution order
 
-- The chat is looked up first. An id with no chat is `404 Chat not found` ([validated by](../../src/transport/routes/chats.test.ts#L67)).
-- Ownership is checked second. A caller who is not the recorded owner gets `403 Forbidden` and no part of the chat ([validated by](../../src/transport/routes/chats.test.ts#L58)).
-- A caller who is not the owner still sees `404` for an id that does not exist, so ownership never becomes an oracle for which ids are real ([validated by](../../src/transport/routes/chats.test.ts#L75)).
-- Owner ids are compared strictly, so numeric `1` and string `"1"` are different users rather than the same one ([validated by](../../src/transport/routes/chats.test.ts#L93)).
+- The chat is looked up first. An id with no chat is `404 Chat not found` ([validated by](../../src/transport/routes/chats.test.ts#L68)).
+- Ownership is checked second. A caller who is not the recorded owner gets `403 Forbidden` and no part of the chat ([validated by](../../src/transport/routes/chats.test.ts#L59)).
+- A caller who is not the owner still sees `404` for an id that does not exist, so ownership never becomes an oracle for which ids are real ([validated by](../../src/transport/routes/chats.test.ts#L76)).
+- Owner ids are compared strictly, so numeric `1` and string `"1"` are different users rather than the same one ([validated by](../../src/transport/routes/chats.test.ts#L94)).
 
 ### When the guard does nothing
 
-The guard only refuses a caller it can identify, so a request carrying no `user` — no auth middleware configured, or middleware that attaches nothing — passes through to the chat unchecked ([validated by](../../src/transport/routes/chats.test.ts#L84)).
+The guard only refuses a caller it can identify, so a request carrying no `user` — no auth middleware configured, or middleware that attaches nothing — passes through to the chat unchecked ([validated by](../../src/transport/routes/chats.test.ts#L85)).
 
 A deployment that serves more than one user MUST configure `authMiddleware`, because without it any caller holding a chat id can read and post to that chat.
 
 ## GET /chats/:id
 
-Returns the chat's id, messages and creation time to its owner ([validated by](../../src/transport/routes/chats.test.ts#L49)).
+Returns the chat's id, messages and creation time to its owner ([validated by](../../src/transport/routes/chats.test.ts#L50)).
 
 ## POST /chats/:id/messages
 
-- The owner's message is accepted and answered `201` ([validated by](../../src/transport/routes/chats.test.ts#L104)).
-- Another user's message is refused, and the orchestrator is never invoked, so a rejected request costs no model call ([validated by](../../src/transport/routes/chats.test.ts#L113)).
-- A message to an id with no chat is `404`, by the same lookup-first order ([validated by](../../src/transport/routes/chats.test.ts#L127)).
-- Ownership is checked before the body is validated, so a wrong owner sending an empty body gets `403` rather than `400` ([validated by](../../src/transport/routes/chats.test.ts#L135)).
-- A refused message is not recorded, so the owner's next read shows no trace of it ([validated by](../../src/transport/routes/chats.test.ts#L144)).
+- The owner's message is accepted and answered `201` ([validated by](../../src/transport/routes/chats.test.ts#L105)).
+- Another user's message is refused, and the orchestrator is never invoked, so a rejected request costs no model call ([validated by](../../src/transport/routes/chats.test.ts#L114)).
+- A message to an id with no chat is `404`, by the same lookup-first order ([validated by](../../src/transport/routes/chats.test.ts#L128)).
+- Ownership is checked before the body is validated, so a wrong owner sending an empty body gets `403` rather than `400` ([validated by](../../src/transport/routes/chats.test.ts#L136)).
+- A refused message is not recorded, so the owner's next read shows no trace of it ([validated by](../../src/transport/routes/chats.test.ts#L145)).
 
 ### Rationale
 

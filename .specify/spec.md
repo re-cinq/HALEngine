@@ -285,5 +285,5 @@ Each layer depends only on layers below it, ensuring clean separation of concern
 - **Testing Framework**: Jest with ts-jest
 - **Linting**: ESLint with flat config
 - **Formatting**: Prettier
-- **Development**: `node --watch` with `ts-node/register`, hot-reloading `example/server.ts`
+- **Development**: `tsx watch`, hot-reloading `example/server.ts`
 - **Build**: TypeScript compiler with declaration maps

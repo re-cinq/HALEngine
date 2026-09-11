@@ -1,3 +1,4 @@
+import {jest} from '@jest/globals';
 import type {WebSocket} from 'ws';
 import {createMessageHandler} from './messageHandler.js';
 import type {ChatOrchestrator} from '../../orchestration/chatOrchestrator.js';

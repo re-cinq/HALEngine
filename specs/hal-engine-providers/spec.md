@@ -76,7 +76,7 @@ See [spike-bedrock-integration.md](../../docs/spikes/spike-bedrock-integration.m
 
 ## Google Vertex AI
 
-Supports streaming through `sendMessage` and structured JSON output through `generateStructured` ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L47), [structured](../../src/providers/vertex/vertexProvider.test.ts#L200)).
+Supports streaming through `sendMessage` and structured JSON output through `generateStructured` ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L60), [structured](../../src/providers/vertex/vertexProvider.test.ts#L213)).
 
 ```typescript
 const engine = createHalEngine({
@@ -127,22 +127,22 @@ const result = await provider.generateStructured<{score: number; feedback: strin
 
 ### Streaming
 
-- A function call part becomes a `tool_use` chunk. Vertex reports no call id of its own, so the function's name is used as the id as well ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L68)).
-- A `MAX_TOKENS` finish reason becomes the stop reason `max_tokens`, so a truncated reply is distinguishable from a completed one ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L102)).
-- A candidate carrying no parts is skipped rather than emitted as an empty chunk ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L150)).
-- The `assistant` role is sent to Vertex as `model`, which is the only role name its API accepts for a prior reply; `user` passes through unchanged ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L167)).
+- A function call part becomes a `tool_use` chunk. Vertex reports no call id of its own, so the function's name is used as the id as well ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L81)).
+- A `MAX_TOKENS` finish reason becomes the stop reason `max_tokens`, so a truncated reply is distinguishable from a completed one ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L115)).
+- A candidate carrying no parts is skipped rather than emitted as an empty chunk ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L163)).
+- The `assistant` role is sent to Vertex as `model`, which is the only role name its API accepts for a prior reply; `user` passes through unchanged ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L180)).
 
 ### Structured output
 
-- `generateStructured` sets `responseMimeType` to `application/json` and passes the schema with its type names upper-cased, which is the form the Vertex SDK expects ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L220)).
-- A response body that is not valid JSON raises `AIError` with code `PARSE_ERROR`, rather than returning something the caller would have to re-check ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L255)).
+- `generateStructured` sets `responseMimeType` to `application/json` and passes the schema with its type names upper-cased, which is the form the Vertex SDK expects ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L233)).
+- A response body that is not valid JSON raises `AIError` with code `PARSE_ERROR`, rather than returning something the caller would have to re-check ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L268)).
 
 ### Error mapping
 
-- A message naming `429` or `RESOURCE_EXHAUSTED` becomes `RATE_LIMITED` and is marked retryable ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L114)).
-- A message naming `401`, `403` or `PERMISSION_DENIED` becomes `AUTH_ERROR` ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L126)).
-- Anything the mapping cannot classify becomes `PROVIDER_ERROR`, so an SDK error never reaches the caller as a raw `Error` ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L138)).
-- The mapping is shared: a failure raised during `generateStructured` is classified exactly as the same failure during `sendMessage` would be ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L269)).
+- A message naming `429` or `RESOURCE_EXHAUSTED` becomes `RATE_LIMITED` and is marked retryable ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L127)).
+- A message naming `401`, `403` or `PERMISSION_DENIED` becomes `AUTH_ERROR` ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L139)).
+- Anything the mapping cannot classify becomes `PROVIDER_ERROR`, so an SDK error never reaches the caller as a raw `Error` ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L151)).
+- The mapping is shared: a failure raised during `generateStructured` is classified exactly as the same failure during `sendMessage` would be ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L282)).
 
 ## OpenAI
 
@@ -296,8 +296,8 @@ export function createCustomProvider(config: CustomConfig): AIProvider {
 
 ```typescript
 // src/providers/custom/index.ts
-export {createCustomProvider} from './customProvider';
-export type {CustomConfig} from './customProvider';
+export {createCustomProvider} from './customProvider.js';
+export type {CustomConfig} from './customProvider.js';
 ```
 
 ### Step 3: Register in the provider factory
@@ -305,8 +305,8 @@ export type {CustomConfig} from './customProvider';
 Open `src/providers/providerFactory.ts` and add your provider:
 
 ```typescript
-import {createCustomProvider} from './custom/index';
-import type {CustomConfig} from './custom/index';
+import {createCustomProvider} from './custom/index.js';
+import type {CustomConfig} from './custom/index.js';
 
 export type ProviderConfig =
   | BedrockConfig

@@ -1,6 +1,7 @@
 {
   "name": "hal-engine",
   "version": "0.1.0",
+  "type": "module",
   "description": "A generic AI chat server framework with pluggable providers, tools, and transport",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -8,11 +9,11 @@
     "dist"
   ],
   "scripts": {
-    "dev": "node --watch -r ts-node/register/transpile-only example/server.ts",
-    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
+    "dev": "tsx watch example/server.ts",
+    "build": "node --input-type=module -e \"import {rmSync} from 'node:fs'; rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
     "prepare": "npm run build",
     "start": "node dist/index.js",
-    "test": "jest",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "typecheck": "tsc --noEmit",
     "eslint": "eslint --max-warnings 0 .",
     "lint:backlog": "eslint -c eslint.config.backlog.mjs .",
@@ -62,7 +63,7 @@
     "prettier": "^3.3.3",
     "supertest": "^7.0.0",
     "ts-jest": "^29.2.4",
-    "ts-node": "^10.9.2",
+    "tsx": "^4.23.13",
     "typescript": "^5.5.4",
     "typescript-eslint": "^8.2.0",
     "yaml": "^2.9.0"

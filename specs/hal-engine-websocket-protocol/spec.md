@@ -222,7 +222,7 @@ Semantics:
 
 ### 5.5 entry_skip
 
-Notifies the client that a session entry was created on the server and will never be sent. This happens under output suppression (see [tool-responses.md](../hal-engine-tool-responses/spec.md)): the server keeps the entry so the model retains context, and the client does not need it for display ([validated by](../../src/transport/ws/messageHandler.test.ts#L170)).
+Notifies the client that a session entry was created on the server and will never be sent. This happens under output suppression (see [tool-responses.md](../hal-engine-tool-responses/spec.md)): the server keeps the entry so the model retains context, and the client does not need it for display ([validated by](../../src/transport/ws/messageHandler.test.ts#L171)).
 
 ```json
 {
@@ -238,14 +238,14 @@ Notifies the client that a session entry was created on the server and will neve
 
 Suppression can begin before or after the server has started sending a reply, and the two cases produce different messages. This distinction is the whole of the protocol here:
 
-- An entry **opened while suppression is already active** is announced with `entry_skip` and nothing else: no `entry_upsert`, no `entry_delta`, no `entry_commit` follows it ([validated by](../../src/transport/ws/messageHandler.test.ts#L162)).
-- An entry **already sent before suppression began** cannot be skipped, because the client is displaying it. The server retracts it instead, by re-sending `entry_upsert` at the same index with the entry's `content` set to `""`. The client renders an empty assistant entry as nothing, so the text disappears ([validated by](../../src/transport/ws/messageHandler.test.ts#L139)).
+- An entry **opened while suppression is already active** is announced with `entry_skip` and nothing else: no `entry_upsert`, no `entry_delta`, no `entry_commit` follows it ([validated by](../../src/transport/ws/messageHandler.test.ts#L163)).
+- An entry **already sent before suppression began** cannot be skipped, because the client is displaying it. The server retracts it instead, by re-sending `entry_upsert` at the same index with the entry's `content` set to `""`. The client renders an empty assistant entry as nothing, so the text disappears ([validated by](../../src/transport/ws/messageHandler.test.ts#L140)).
 
 #### Limits of retraction
 
-- Only assistant entries are ever retracted; a thinking entry is never blanked, even when it was sent before suppression began ([validated by](../../src/transport/ws/messageHandler.test.ts#L154)).
-- Each sent entry is blanked once, so a second suppression in the same stream repeats nothing ([validated by](../../src/transport/ws/messageHandler.test.ts#L188)).
-- An entry the client only ever saw as `entry_skip` is never retracted, because nothing is displayed to retract ([validated by](../../src/transport/ws/messageHandler.test.ts#L180)).
+- Only assistant entries are ever retracted; a thinking entry is never blanked, even when it was sent before suppression began ([validated by](../../src/transport/ws/messageHandler.test.ts#L155)).
+- Each sent entry is blanked once, so a second suppression in the same stream repeats nothing ([validated by](../../src/transport/ws/messageHandler.test.ts#L189)).
+- An entry the client only ever saw as `entry_skip` is never retracted, because nothing is displayed to retract ([validated by](../../src/transport/ws/messageHandler.test.ts#L181)).
 
 Semantics:
 
@@ -284,13 +284,13 @@ Defined error codes:
 
 Semantics:
 
-- A message the server cannot parse into a known type is answered with `INVALID_MESSAGE`, and no message stream is started for it ([validated by](../../src/transport/ws/messageHandler.test.ts#L55)).
-- A rate limit reported by the AI provider is surfaced as `RATE_LIMITED`, which tells the client the same request is worth retrying ([validated by](../../src/transport/ws/messageHandler.test.ts#L198)).
-- Any other failure raised while processing a message is reported as `SERVER_ERROR` ([validated by](../../src/transport/ws/messageHandler.test.ts#L207)).
+- A message the server cannot parse into a known type is answered with `INVALID_MESSAGE`, and no message stream is started for it ([validated by](../../src/transport/ws/messageHandler.test.ts#L56)).
+- A rate limit reported by the AI provider is surfaced as `RATE_LIMITED`, which tells the client the same request is worth retrying ([validated by](../../src/transport/ws/messageHandler.test.ts#L199)).
+- Any other failure raised while processing a message is reported as `SERVER_ERROR` ([validated by](../../src/transport/ws/messageHandler.test.ts#L208)).
 
 ### 5.7 pong
 
-Response to a client `ping`. The server MUST echo the client's timestamp without modification ([validated by](../../src/transport/ws/messageHandler.test.ts#L65)).
+Response to a client `ping`. The server MUST echo the client's timestamp without modification ([validated by](../../src/transport/ws/messageHandler.test.ts#L66)).
 
 ```json
 {
@@ -427,7 +427,7 @@ entry_upsert  -->  entry_delta (0..N)  -->  entry_commit
 
 1. The server sends `entry_upsert` with `isStreaming: true` and an empty `content`.
 2. The server sends zero or more `entry_delta` messages. The client MUST concatenate each `delta` to the entry's `content`.
-3. The server sends `entry_commit`. The client MUST set `isStreaming` to `false`, matching the committed entry the server keeps in the session. No further deltas will arrive for this entry ([validated by](../../src/transport/ws/messageHandler.test.ts#L89)).
+3. The server sends `entry_commit`. The client MUST set `isStreaming` to `false`, matching the committed entry the server keeps in the session. No further deltas will arrive for this entry ([validated by](../../src/transport/ws/messageHandler.test.ts#L90)).
 
 ### 7.2 Non-Streaming Entries (user, tool)
 
@@ -438,7 +438,7 @@ entry_upsert
    |  No delta or commit follows.
 ```
 
-The entry is fully formed in the `entry_upsert` message, so a tool call yields one `entry_upsert` and nothing further. The client MUST NOT expect `entry_delta` or `entry_commit` for these entries ([validated by](../../src/transport/ws/messageHandler.test.ts#L120)).
+The entry is fully formed in the `entry_upsert` message, so a tool call yields one `entry_upsert` and nothing further. The client MUST NOT expect `entry_delta` or `entry_commit` for these entries ([validated by](../../src/transport/ws/messageHandler.test.ts#L121)).
 
 ## 8. Conversation Sequence
 
@@ -453,8 +453,8 @@ Index 3: AssistantEntry    (AI response, streamed)
 
 In multi-tool scenarios, multiple ToolEntry objects may appear between the ThinkingEntry and AssistantEntry. The tool execution loop (Section 9) may produce additional entries.
 
-- A reply with no tool calls and no thinking produces, in order, the user entry, the assistant entry opened empty, one `entry_delta` per text chunk, its `entry_commit`, and `stream_end` ([validated by](../../src/transport/ws/messageHandler.test.ts#L75)).
-- A thinking block is committed before the assistant entry that follows it is opened, so the two never interleave ([validated by](../../src/transport/ws/messageHandler.test.ts#L101)).
+- A reply with no tool calls and no thinking produces, in order, the user entry, the assistant entry opened empty, one `entry_delta` per text chunk, its `entry_commit`, and `stream_end` ([validated by](../../src/transport/ws/messageHandler.test.ts#L76)).
+- A thinking block is committed before the assistant entry that follows it is opened, so the two never interleave ([validated by](../../src/transport/ws/messageHandler.test.ts#L102)).
 
 ### 8.1 Example: Full Conversation Exchange
 
@@ -545,7 +545,7 @@ Round N:  Model streams final text with stopReason "end_turn"
 
 The client observes this as a sequence of `entry_upsert`, `entry_delta`, and `entry_commit` messages, terminated by a `stream_end`. The tool loop is transparent to the client -- it does not need to track rounds.
 
-Messages a tool addresses to the client are forwarded verbatim, in the position the stream produced them, rather than being rewritten into entries of the server's own ([validated by](../../src/transport/ws/messageHandler.test.ts#L128)).
+Messages a tool addresses to the client are forwarded verbatim, in the position the stream produced them, rather than being rewritten into entries of the server's own ([validated by](../../src/transport/ws/messageHandler.test.ts#L129)).
 
 ## 10. Heartbeat
 

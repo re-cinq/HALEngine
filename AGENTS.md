@@ -23,7 +23,7 @@ Agents should read files in this order to understand the HAL Engine codebase:
 
 ### Development
 ```bash
-npm run dev          # Start example/server.ts with hot reload (node --watch + ts-node)
+npm run dev          # Start example/server.ts with hot reload (tsx watch)
 npm run typecheck    # Run TypeScript type checking without emitting
 ```
 

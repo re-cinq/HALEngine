@@ -43,7 +43,12 @@ try {
       '--coverage',
       '--coverageReporters=lcov',
     ],
-    {cwd: process.cwd(), stdio: ['ignore', 'inherit', 'inherit']}
+    {
+      cwd: process.cwd(),
+      stdio: ['ignore', 'inherit', 'inherit'],
+      // The suite runs as ESM; jest needs the flag in every spawn, not just npm test.
+      env: {...process.env, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --experimental-vm-modules`.trim()},
+    }
   );
 } catch {
   runFailed = true;
