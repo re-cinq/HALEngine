@@ -34,7 +34,14 @@ published before it, so there is no upgrade path from `0.1.0` on the registry �
   so `log.error` was indistinguishable from `log.info` to anything reading the stream. Each line now carries
   `severity`, `message`, `timestamp` and `category`, with the call site's fields under `data`. `ERROR` goes to
   stderr; every other level goes to stdout. If you parse this output, it has changed shape — see
-  [docs/logging.md](docs/logging.md). Supply your own `logger` to keep the old format.
+  [docs/logging.md](docs/logging.md). Supply your own `logger` in `HalEngineConfig` to keep the old format, or
+  any other — the option now reaches the package's own log calls, which it did not before this release. The
+  swap is process-wide rather than per engine; `docs/logging.md` says why.
+
+- A log call can no longer throw. `data` that cannot be serialised — a circular reference, a `BigInt` — is
+  written as `"[unserialisable]"` with the rest of the line intact, instead of raising a `TypeError` out of
+  whatever was being logged. A `WsAuthenticator` returning an identity with a back-reference used to take down
+  the connection that carried it and leave its session in the store.
 
 - **Breaking: the package is ESM-only.** `require('@re-cinq/hal-engine')` no longer works. Use
   `import` from an ESM module, or stay on the git specifier until you can. The package declares

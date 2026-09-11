@@ -29,7 +29,7 @@ Pluggable interfaces: `AIProvider`, `SessionStore`, `WsAuthenticator`, `PromptSt
 ## Commands
 
 ```bash
-npm run dev              # Hot-reload dev server: example/server.ts via node --watch
+npm run dev              # Hot-reload dev server: example/server.ts via tsx watch
 npm run typecheck        # Type-check without emitting
 npm test                 # Jest suite
 npm run build            # Compile to dist/

@@ -197,6 +197,22 @@ Trusted publishing cannot be registered against a package name that has never be
 - Nesting them is what makes the key set stable: a field named `severity` cannot overwrite the line's own ([validated by](../../src/shared/logger.test.ts#L64)).
 - `ERROR` goes to `console.error`; the other three levels go to `console.log` ([validated by](../../src/shared/logger.test.ts#L80)).
 - A level below the `LOG_LEVEL` threshold is dropped before the line is built ([validated by](../../src/shared/logger.test.ts#L98)).
+
+A log call must not be able to take down the call site it observes. `JSON.stringify` throws on a circular reference and on a `BigInt`, and one call site passes a value the consumer controls: `connectionHandler.ts` logs `userId`, which is whatever the configured `WsAuthenticator` returned. Before this was guarded, such an identity threw between `sessionStore.create` and the registration of the `close` listener, so the upgraded socket was answered with a raw `500` status line - the client reported a malformed frame - and the session was orphaned in the store permanently, once per connection attempt.
+
+- A field that cannot be serialised does not propagate out of the log call ([validated by](../../src/shared/logger.test.ts#L123)).
+- The line is still written, with the four envelope keys intact and `data` replaced by a string naming the reason ([validated by](../../src/shared/logger.test.ts#L127)).
+- The reason is the serialiser's own, so an operator can tell a cycle from a `BigInt` ([validated by](../../src/shared/logger.test.ts#L139)).
+- A degraded line still goes to the stream its severity selects ([validated by](../../src/shared/logger.test.ts#L145)).
+
+### The logger a consumer supplies is the one that gets used
+
+`logger` is declared on `HalEngineConfig`, is documented in five places, and was read by nothing: every line went through the module singleton regardless. It is the fifth instance of the seam this spec records above, and the one with a migration instruction resting on it - the release notes told consumers to supply a logger to keep the old line format. Seven modules import `log` at module scope, so the swap is a module-level one and is process-wide rather than per engine; `docs/logging.md` states that limit.
+
+- A logger passed to `createHalEngine` receives the package's own log lines ([validated by](../../src/config.test.ts#L62)).
+- Supplying none leaves the built-in console logger in place ([validated by](../../src/config.test.ts#L74)).
+- `setLogger` sends lines to the supplied implementation instead of the console, and the console receives nothing ([validated by](../../src/shared/logger.test.ts#L158)).
+- Calling `setLogger` with nothing restores the built-in one ([validated by](../../src/shared/logger.test.ts#L177)).
 - No call site changes. All 29 `log.*` calls under `src/` keep their category, message, level and data - 28 at the time this was written, plus the hook-failure line T015 added.
 - A new `docs/logging.md` covers the key set, the level mapping, the stream split, and which fields can identify a person.
 
@@ -228,9 +244,9 @@ The alias is removed. `user_message` is the only wire name, which is what the ex
 
 `createHalEngine` forwarded `maxToolRounds` and `contextConfig` to the orchestrator it builds and stopped there, and passed no port to the server at all. Both options are declared on `HalEngineConfig`, both are documented, and neither did anything - the third and fourth instances of the same seam after `onConnect` and the `send_message` alias.
 
-- `orchestrator.hooks` is declared and forwarded, so a hook passed through the factory fires ([validated by](../../src/config.test.ts#L14)).
-- `transport.port` reaches the server, and the resolution order is the `start(port)` argument, then `transport.port`, then `PORT`, then `8086` ([validated by](../../src/config.test.ts#L31)).
-- An explicit `start(port)` still wins over the configured one ([validated by](../../src/config.test.ts#L42)).
+- `orchestrator.hooks` is declared and forwarded, so a hook passed through the factory fires ([validated by](../../src/config.test.ts#L16)).
+- `transport.port` reaches the server, and the resolution order is the `start(port)` argument, then `transport.port`, then `PORT`, then `8086` ([validated by](../../src/config.test.ts#L33)).
+- An explicit `start(port)` still wins over the configured one ([validated by](../../src/config.test.ts#L44)).
 - `transport.port` resolves with `??` rather than `||`, so a configured `0` means "let the OS choose a free port" instead of collapsing to the default. `PORT` keeps its `||`, because an environment variable that fails to parse should not silently bind port 0.
 - Writing the tests exposed a third defect: `createServer` opened its heartbeat interval at construction, so an engine that was built and never started held the Node event loop open forever. The timer is now `unref`ed - the listening socket is what should keep a process alive.
 

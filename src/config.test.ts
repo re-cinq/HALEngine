@@ -1,4 +1,6 @@
 import {createHalEngine} from './config.js';
+import {setLogger} from './shared/logger.js';
+import type {Logger} from './shared/logger.js';
 import type {ChatSession} from './types/session.js';
 import type {WsAuthenticator} from './types/auth.js';
 
@@ -48,5 +50,38 @@ describe('createHalEngine forwarding', () => {
     await engine.stop();
 
     expect({usedTheArgument: port !== 8099, real: port > 0}).toEqual({usedTheArgument: true, real: true});
+  });
+});
+
+// The option was declared on HalEngineConfig and read by nothing, so a supplied logger received no lines.
+describe('createHalEngine logger forwarding', () => {
+  afterEach(() => {
+    setLogger();
+  });
+
+  it("delivers the package's own log lines to a supplied logger", async () => {
+    const lines: {category: string; message: string}[] = [];
+    const collect = (category: string, message: string) => void lines.push({category, message});
+    const logger: Logger = {debug: collect, info: collect, warn: collect, error: collect};
+
+    const engine = createHalEngine({...base, logger, transport: {port: 0}});
+    await engine.start();
+    await engine.stop();
+
+    expect(lines).toContainEqual({category: 'server', message: 'HAL Engine started'});
+  });
+
+  it('leaves the built-in logger in place when none is supplied', async () => {
+    const lines: string[] = [];
+    setLogger({
+      debug: (_c: string, m: string) => void lines.push(m),
+      info: (_c: string, m: string) => void lines.push(m),
+      warn: (_c: string, m: string) => void lines.push(m),
+      error: (_c: string, m: string) => void lines.push(m),
+    });
+
+    createHalEngine({...base});
+
+    expect(lines).toEqual([]);
   });
 });

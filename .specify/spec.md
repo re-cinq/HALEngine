@@ -287,4 +287,4 @@ Each layer depends only on layers below it, ensuring clean separation of concern
 - **Linting**: ESLint with flat config
 - **Formatting**: Prettier
 - **Development**: `tsx watch`, hot-reloading `example/server.ts`
-- **Build**: TypeScript compiler with declaration maps
+- **Build**: TypeScript compiler, declarations only - the published build emits no source or declaration maps
