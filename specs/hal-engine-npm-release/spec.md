@@ -105,6 +105,21 @@ The gate runs immediately before `npm publish`, so the two ways it can report a 
 - An expired acceptance is named by advisory and package ([validated by: names the expired acceptance by advisory and package](../../scripts/check-audit.test.ts#L131)).
 - A clean report with no acceptances passes ([validated by: passes a clean report with no acceptances](../../scripts/check-audit.test.ts#L150)).
 
+
+A `uses:` reference is pinned to a commit SHA because a tag is a mutable pointer its owner can repoint under a job holding repository credentials. The scan covers the whole of `.github/`, not `workflows/` alone: a composite action carries its own `uses:` lines and runs inside whichever job calls it, so scanning only workflows leaves it unpinnable with nothing to notice.
+
+- A reference pinned to a 40-hex commit SHA is accepted ([validated by: accepts a reference pinned to a 40-hex commit SHA](../../scripts/check-action-pins.test.ts#L17)).
+- A reference pinned to a tag is refused ([validated by: refuses a reference pinned to a tag](../../scripts/check-action-pins.test.ts#L21)).
+- The report names the file, the line and the reference ([validated by: names the file, the line and the reference it refused](../../scripts/check-action-pins.test.ts#L25)).
+- A local `./` reference is skipped, having no SHA to pin ([validated by: skips a local reference, which cannot be pinned to a SHA](../../scripts/check-action-pins.test.ts#L29)).
+- An unpinned reference inside a composite action is refused ([validated by: refuses an unpinned reference inside a composite action, not just a workflow](../../scripts/check-action-pins.test.ts#L34)).
+- That same composite passes under a workflows-only scan, which is the gap the wider scope closes ([validated by: would have passed that composite under a workflows-only scan, which is why the scope widened](../../scripts/check-action-pins.test.ts#L38)).
+
+The pack list is checked for what it must carry as well as what it must not. A pure absence check calls an empty `dist/` clean: `npm publish` would then ship a package with no entry point, unpublishable after 72 hours and permanent after that. The required set is `package.json`, `README.md`, `LICENSE`, `dist/index.js` and `dist/index.d.ts`.
+
+`npm` is installed at `^11.5.1` rather than `latest` in the publish job. Trusted publishing needs 11.5.1 or newer, and that job is the one holding `id-token: write` - `latest` lets a major nobody here has run decide how the publish behaves.
+
+The trust-boundary check runs before the gates rather than after them. A tag pushed from a branch that never reached `main` is rejected in seconds instead of after a full build and test run.
 Three holes in the first version of this gate, each of which let it pass on something it should have stopped. `metadata.vulnerabilities` was accepted as an alternative to the real map, so a report carrying counts but no listing printed a critical count and the word clean in the same sentence; every modern `npm audit --json` carries the map, so the alternative bought nothing. The `unknown:` fallback for a missing advisory id was applied on a cycle-pruned re-entry, so an ordinary circular `via` pair fabricated an advisory that no acceptance could name and no maintainer could clear, on a tag that cannot be re-pointed. And `source` is npm's id for the package rather than the advisory, so two advisories on one package collapsed to one id and a single acceptance silenced both.
 
 - A report carrying only metadata counts is rejected rather than read as zero findings ([validated by: rejects a report carrying only metadata counts, which declares vulnerabilities it cannot list](../../scripts/check-audit.test.ts#L159)).

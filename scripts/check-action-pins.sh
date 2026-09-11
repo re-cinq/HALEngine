@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
-# Fails when a `uses:` reference in .github/workflows/ is not pinned to a full
+# Fails when a `uses:` reference anywhere under .github/ is not pinned to a full
 # 40-hex commit SHA. A tag is a mutable pointer its owner can repoint, and these
 # workflows run with repository credentials - after the release workflow lands,
 # one of them holds id-token: write and signs what it publishes.
 #
 # Usage:
-#   bash scripts/check-action-pins.sh
+#   bash scripts/check-action-pins.sh [dir]
+#
+# The whole of .github/, not just workflows/: a composite action under
+# .github/actions/ carries its own `uses:` lines, runs inside whichever job calls
+# it, and is exactly as able to repoint itself as a workflow step is.
 #
 # Local `./` and `docker://` references are not pinnable this way and are skipped.
 set -uo pipefail
 
-workflows_dir="${1:-.github/workflows}"
+scan_dir="${1:-.github}"
 findings=0
 
 while IFS= read -r line; do
@@ -28,7 +32,7 @@ while IFS= read -r line; do
     printf 'check-action-pins: %s:%s pins "%s" — expected a 40-hex commit SHA\n' "$file" "$lineno" "$ref" >&2
     findings=$((findings + 1))
   fi
-done < <(grep -rn -E '^[[:space:]]*-?[[:space:]]*uses:' "$workflows_dir" 2>/dev/null || true)
+done < <(grep -rn --include='*.yml' --include='*.yaml' -E '^[[:space:]]*-?[[:space:]]*uses:' "$scan_dir" 2>/dev/null || true)
 
 if [[ "$findings" -gt 0 ]]; then
   printf '\ncheck-action-pins: %d unpinned reference(s).\n' "$findings" >&2
