@@ -1,7 +1,9 @@
 # HAL Engine on npm — tasks
 
 Ordered by dependency. `[P]` marks a task with no unmet dependency inside its
-own phase, so it can run alongside its siblings.
+own phase, so it can run alongside its siblings. Ids are assigned on creation
+and never reused, so a task added later sits where the dependencies put it
+rather than at the end.
 
 Two hard sequencing facts govern everything below. `npm publish` cannot be
 undone, so T031 runs last. And the repository-visibility ADR (T006) decides
@@ -30,6 +32,8 @@ workflow, so it should be opened at the start of this phase, not at its end.
 - [x] T009 Smoke-test the packed tarball. Commit a `smoke/` consumer fixture (own `package.json` with `private: true` and `"type": "module"`, an ESM entry point, a TypeScript file importing the types, its own `tsconfig.json`); add `scripts/smoke.sh` that packs, installs into a temp dir **outside** the repository tree, and runs it with no optional peer installed; add a CI job; exclude `smoke/` from `tsconfig.json` and `tsconfig.build.json` the way `example` already is (the jest roots never reach it). Commit the fixture rather than generating it in YAML, so it runs on a laptop too. Depends on T002, T003, T004.
 - [x] T010 [P] Settle the release-notes convention. Add `CHANGELOG.md` (Keep a Changelog 1.1.0, `## [Unreleased]` first) with entries for the ESM conversion and the scope rename written for a consumer, not a committer. Replace `AGENTS.md:330` with the real rule. Add a checklist box to `.github/PULL_REQUEST_TEMPLATE.md` and a CI step that fails when a diff touching `src/` leaves `CHANGELOG.md` untouched, with a label as the escape hatch.
 - [ ] T011 Publish from a `v*` tag. Add `.github/workflows/publish.yml` (Trusted Publishing over OIDC, no `NPM_TOKEN`, `--access public`, `--provenance` per T006's answer) and `scripts/check-version.sh` (tag vs. committed version, a script so it runs before a tag is pushed). Call the T008 and T009 checks before `npm publish`, and add a step that fails when the pack list contains any `*.test.*` entry. Add § Releasing to `AGENTS.md`: bump in the PR, merge, tag `vX.Y.Z` on `main`, push. `npm ci --ignore-scripts` throughout, because `prepare` runs on both `ci` and `publish`. Depends on T009, T010, T006.
+
+- [ ] T032 [P] Alarm on a commit that reaches `main` outside a pull request. Add `.github/workflows/guard-main-pushes.yml` — `on: push: branches: [main]`, least privilege (`contents: read`, `issues: write`, `pull-requests: read`), and a job that resolves each pushed commit to its associated pull requests and opens one issue per commit that has none, naming the sha, the author and the committer. Branch protection is the lock and this is the detector behind it: `main` requires a PR, blocks force-pushes and deletion, and enforces all of it for admins, but a protection rule that is relaxed or bypassed leaves no alarm of its own. It matters in this repository specifically because T011 authenticates to the registry over OIDC with nothing stored to revoke, so push access to `main` is transitively the right to publish under the scope. Must land before T031; depends on nothing.
 
 ## Phase 3 — Correctness the first release must not ship
 
@@ -62,11 +66,13 @@ land after the first publish.
 - [ ] T029 Generate the documented TypeScript blocks. Add `scripts/check-doc-blocks.mjs` with `docs:check` and `docs:fix` scripts and a CI call site. Every fenced `typescript` block in `README.md`, `docs/getting-started.md` and `specs/hal-engine-architecture/spec.md` carries a marker naming either an exported source declaration or a `#region` span in a checked file under `example/`. An unmarked block fails; an uncheckable block carries a reasoned opt-out. Depends on T019.
 - [ ] T030 Extend the extractor to the remaining documents. Roughly 70 blocks across eight files. Two known defects fall out of it: a documented `ToolExecutor` signature missing the parameter carrying `userId`, `sessionId` and `authHeaders`, and a complete tool example importing from a path that has never resolved from where the example sits. Depends on T029.
 
+- [ ] T033 [P] Say how an outside contributor works here. Add `CONTRIBUTING.md`: the pre-commit sequence, the commit format and its scope list, the five-layer rule and the fact that a shortcut fails lint rather than review, the spec-and-ADR convention including what the header table's `Status` actually tracks, and the changelog entry T010 turned into a gate. State that a pull request from a fork runs a reduced set of checks, because a fork receives no repository secrets and a read-only token — otherwise a contributor reads a skipped advisory check as something they broke. Link to `AGENTS.md` and `CLAUDE.md` rather than restating what either already governs: a second copy of a rule is a second thing to keep true. Depends on T010.
+
 ## Phase 5 — First publish
 
 One task, and it is irreversible.
 
-- [ ] T031 Bootstrap tokenless publishing. In order: create a short-lived granular token and store it as `NPM_TOKEN`; add a single-use `workflow_dispatch` workflow; run it once so `@re-cinq/hal-engine@0.2.0` exists; register the trusted publisher against `publish.yml`; revoke the token, delete the secret, delete the single-use workflow; tag `v0.2.1` and confirm it publishes with no secret in the repository. Run the token publish from CI, not a laptop, so the provenance attestation comes from the GitHub OIDC token. Depends on T011, all of phase 3, and T019–T022.
+- [ ] T031 Bootstrap tokenless publishing. In order: create a short-lived granular token and store it as `NPM_TOKEN`; add a single-use `workflow_dispatch` workflow; run it once so `@re-cinq/hal-engine@0.2.0` exists; register the trusted publisher against `publish.yml`; revoke the token, delete the secret, delete the single-use workflow; tag `v0.2.1` and confirm it publishes with no secret in the repository. Run the token publish from CI, not a laptop, so the provenance attestation comes from the GitHub OIDC token. Depends on T011, T032, all of phase 3, and T019–T022.
 
 ## Not scoped here
 
