@@ -194,4 +194,4 @@ npm run dev          # Dev server with hot reload
 
 ## License
 
-ISC
+Apache-2.0. The full text is in [LICENSE](LICENSE), and the same identifier is the `license` field of `package.json`.
