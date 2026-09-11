@@ -68,8 +68,10 @@ function runAudit() {
   return report;
 }
 
+// `metadata` counts are not a substitute: a report carrying them with no `vulnerabilities` map would
+// read as zero findings while declaring a critical, and every modern `npm audit --json` carries the map.
 function isReport(report) {
-  return typeof report.vulnerabilities === 'object' || typeof report.metadata?.vulnerabilities === 'object';
+  return typeof report.vulnerabilities === 'object' && report.vulnerabilities !== null;
 }
 
 function abort(message) {
@@ -87,7 +89,7 @@ function collectFindings(audit) {
   for (const [name, vulnerability] of Object.entries(vulnerabilities)) {
     if (!FAIL_AT.includes(vulnerability.severity)) continue;
 
-    for (const advisory of advisoriesFor(name, vulnerabilities)) {
+    for (const advisory of withFallback(name, advisoriesFor(name, vulnerabilities))) {
       findings.push({
         name,
         severity: vulnerability.severity,
@@ -102,6 +104,13 @@ function collectFindings(audit) {
   return findings;
 }
 
+// Applied once per package, never on a cycle-pruned re-entry: a circular `via` pair would otherwise
+// fabricate an `unknown:` advisory that no acceptance can name and no maintainer can clear.
+function withFallback(name, advisories) {
+  if (advisories.length > 0) return advisories;
+  return [{id: `unknown:${name}`, title: 'advisory id absent from the report'}];
+}
+
 // A transitive entry's `via` names packages rather than advisories, so the ids come from following it.
 function advisoriesFor(name, vulnerabilities, seen = new Set()) {
   if (seen.has(name)) return [];
@@ -114,15 +123,23 @@ function advisoriesFor(name, vulnerabilities, seen = new Set()) {
   const inherited = via
     .filter(entry => typeof entry === 'string')
     .flatMap(dep => advisoriesFor(dep, vulnerabilities, seen));
-  const all = [...own, ...inherited];
 
-  return all.length > 0 ? all : [{id: `unknown:${name}`, title: 'advisory id absent from the report'}];
+  return dedupe([...own, ...inherited]);
 }
 
-// The GHSA id is in the advisory URL; `source` is npm's own numeric id and is the fallback.
+// A diamond in `via` reaches the same advisory twice; one advisory is one finding.
+function dedupe(advisories) {
+  const byId = new Map();
+  for (const advisory of advisories) if (!byId.has(advisory.id)) byId.set(advisory.id, advisory);
+  return [...byId.values()];
+}
+
+// The GHSA id is in the advisory URL. `source` is npm's id for the PACKAGE, so two advisories on one
+// package share it - the title disambiguates them, otherwise one acceptance would silence both.
 function advisoryId(entry) {
   const ghsa = /GHSA-[0-9a-z-]+/i.exec(entry.url ?? '');
-  return ghsa ? ghsa[0] : `npm:${entry.source ?? 'unknown'}`;
+  if (ghsa) return ghsa[0];
+  return `npm:${entry.source ?? 'unknown'}:${entry.title ?? 'untitled'}`;
 }
 
 function reachedThrough(name, vulnerability) {

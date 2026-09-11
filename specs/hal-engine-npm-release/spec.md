@@ -105,6 +105,12 @@ The gate runs immediately before `npm publish`, so the two ways it can report a 
 - An expired acceptance is named by advisory and package ([validated by](../../scripts/check-audit.test.ts#L131)).
 - A clean report with no acceptances passes ([validated by](../../scripts/check-audit.test.ts#L150)).
 
+Three holes in the first version of this gate, each of which let it pass on something it should have stopped. `metadata.vulnerabilities` was accepted as an alternative to the real map, so a report carrying counts but no listing printed a critical count and the word clean in the same sentence; every modern `npm audit --json` carries the map, so the alternative bought nothing. The `unknown:` fallback for a missing advisory id was applied on a cycle-pruned re-entry, so an ordinary circular `via` pair fabricated an advisory that no acceptance could name and no maintainer could clear, on a tag that cannot be re-pointed. And `source` is npm's id for the package rather than the advisory, so two advisories on one package collapsed to one id and a single acceptance silenced both.
+
+- A report carrying only metadata counts is rejected rather than read as zero findings ([validated by](../../scripts/check-audit.test.ts#L159)).
+- A `via` cycle produces no fabricated advisory ([validated by](../../scripts/check-audit.test.ts#L165)).
+- Two advisories on one package stay distinct when neither carries a GHSA url ([validated by](../../scripts/check-audit.test.ts#L186)).
+
 ### Tarball smoke test
 
 Nothing in this repository has ever installed the package from a tarball. A git specifier builds from source and therefore exercises neither the `exports` map, nor `files`, nor the dependency list, nor the emitted `.d.ts` files.
@@ -228,9 +234,19 @@ A log call must not be able to take down the call site it observes. `JSON.string
 `logger` is declared on `HalEngineConfig`, is documented in five places, and was read by nothing: every line went through the module singleton regardless. It is the fifth instance of the seam this spec records above, and the one with a migration instruction resting on it - the release notes told consumers to supply a logger to keep the old line format. Seven modules import `log` at module scope, so the swap is a module-level one and is process-wide rather than per engine; `docs/logging.md` states that limit.
 
 - A logger passed to `createHalEngine` receives the package's own log lines ([validated by](../../src/config.test.ts#L63)).
-- Supplying none leaves the built-in console logger in place ([validated by](../../src/config.test.ts#L75)).
+- Supplying none leaves the built-in console logger in place ([validated by](../../src/config.test.ts#L76)).
 - `setLogger` sends lines to the supplied implementation instead of the console, and the console receives nothing ([validated by](../../src/shared/logger.test.ts#L158)).
 - Calling `setLogger` with nothing restores the built-in one ([validated by](../../src/shared/logger.test.ts#L177)).
+
+Delegating to a supplied logger initially bypassed both of the built-in emitter's guarantees, because both lived in the emitter rather than in the dispatch above it. The level test and the throw guard now sit in one place, applied before the active logger is called, so they hold whichever logger is installed.
+
+- `LOG_LEVEL` gates a supplied logger exactly as it gates the built-in one ([validated by](../../src/shared/logger.test.ts#L200)).
+- A supplied logger that throws does not propagate into the call site being logged ([validated by](../../src/shared/logger.test.ts#L210)).
+- The line is written to the console instead rather than being lost ([validated by](../../src/shared/logger.test.ts#L223)).
+- A logger missing one of the four methods fails the same way rather than at an arbitrary later call ([validated by](../../src/shared/logger.test.ts#L240)).
+- A value whose `toString` throws still produces a line ([validated by](../../src/shared/logger.test.ts#L253)).
+- `setLogger` is exported from `src/index.ts`, so a consumer can put the built-in logger back; without it the process-global swap had no documented way out.
+- `createHalEngine` installs a logger only when the config names one, so a second engine naming none keeps the first one's logger ([validated by](../../src/config.test.ts#L76)).
 - No call site changes. All 29 `log.*` calls under `src/` keep their category, message, level and data - 28 at the time this was written, plus the hook-failure line T015 added.
 - A new `docs/logging.md` covers the key set, the level mapping, the stream split, and which fields can identify a person.
 
@@ -266,7 +282,7 @@ The alias is removed. `user_message` is the only wire name, which is what the ex
 - `transport.port` reaches the server, and the resolution order is the `start(port)` argument, then `transport.port`, then `PORT`, then `8086` ([validated by](../../src/config.test.ts#L34)).
 - An explicit `start(port)` still wins over the configured one ([validated by](../../src/config.test.ts#L45)).
 - The started line logs the bound port rather than the requested one, which is what a configured `0` makes visible.
-- A port that cannot be bound rejects the promise `start()` returned, rather than surfacing as an unhandled `error` event that ends the process ([validated by](../../src/config.test.ts#L92)).
+- A port that cannot be bound rejects the promise `start()` returned, rather than surfacing as an unhandled `error` event that ends the process ([validated by](../../src/config.test.ts#L94)).
 - `transport.port` resolves with `??` rather than `||`, so a configured `0` means "let the OS choose a free port" instead of collapsing to the default. `PORT` keeps its `||`, because an environment variable that fails to parse should not silently bind port 0.
 - Writing the tests exposed a third defect: `createServer` opened its heartbeat interval at construction, so an engine that was built and never started held the Node event loop open forever. The timer is now `unref`ed - the listening socket is what should keep a process alive.
 

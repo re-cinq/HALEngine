@@ -155,4 +155,54 @@ describe("check-audit acceptances", () => {
 
     expect(run(dir)).toMatchObject({ status: 0 });
   });
+
+  it("rejects a report carrying only metadata counts, which declares vulnerabilities it cannot list", () => {
+    const dir = workspace(JSON.stringify({ metadata: { vulnerabilities: { critical: 1, high: 0 } } }));
+
+    expect(run(dir)).toMatchObject({ status: 1 });
+  });
+
+  it("does not fabricate an advisory when two packages reach each other through via", () => {
+    const dir = workspace(
+      JSON.stringify({
+        vulnerabilities: {
+          foo: { name: "foo", severity: "high", isDirect: true, range: "*", via: ["bar"], effects: [] },
+          bar: {
+            name: "bar",
+            severity: "high",
+            isDirect: false,
+            range: "<2",
+            via: [advisory("GHSA-aaaa-bbbb-cccc", "high", "Prototype pollution"), "foo"],
+            effects: ["foo"],
+          },
+        },
+        metadata: { vulnerabilities: { critical: 0, high: 2 } },
+      })
+    );
+
+    expect(run(dir).stderr).not.toContain("unknown:");
+  });
+
+  it("keeps two advisories on one package distinct when neither carries a GHSA url", () => {
+    const dir = workspace(
+      JSON.stringify({
+        vulnerabilities: {
+          p: {
+            name: "p",
+            severity: "high",
+            isDirect: true,
+            range: "*",
+            via: [
+              { source: 101, name: "p", title: "A", severity: "high" },
+              { source: 101, name: "p", title: "B", severity: "high" },
+            ],
+            effects: [],
+          },
+        },
+        metadata: { vulnerabilities: { critical: 0, high: 1 } },
+      })
+    );
+
+    expect(run(dir).stderr).toContain("npm:101:B");
+  });
 });
