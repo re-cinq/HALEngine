@@ -28,6 +28,7 @@ That last one has a trap in it. An existing `"hal-engine": "github:…"` entry k
 
 ## Quick Start
 
+<!-- doc-block: example/server.ts#quick-start -->
 ```typescript
 import {createHalEngine, ToolRegistry} from '@re-cinq/hal-engine';
 
@@ -61,6 +62,7 @@ const engine = createHalEngine({
   },
   tools,
   auth: {
+    // No `http` middleware here, so the chat routes under /api/chats answer 401 rather than serving anyone.
     ws: async req => {
       const token = req.headers.authorization;
       if (!token) return null;
@@ -104,6 +106,7 @@ See [the providers spec](specs/hal-engine-providers/spec.md) for configuration a
 
 The `createHalEngine()` function accepts a single config object:
 
+<!-- doc-block: none -- annotated for the npm front page; the unannotated interface is HalEngineConfig in src/config.ts, which typecheck covers -->
 ```typescript
 interface HalEngineConfig {
   provider: ProviderConfig;        // Which AI provider to use

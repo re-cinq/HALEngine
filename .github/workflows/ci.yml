@@ -91,6 +91,11 @@ jobs:
       # so the spec reads as cited while its coverage is zero. A red check is
       # fixed by moving the link to the end of its statement, never by deleting
       # it (AGENTS.md § Spec Test Links).
+      # Every fenced typescript block in the three documented files is generated
+      # from source; hand transcription is what produced the defects this catches.
+      - name: Documented code blocks
+        run: npm run docs:check
+
       - name: Spec link placement
         run: npm run check:spec-links
 

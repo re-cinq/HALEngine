@@ -77,6 +77,7 @@ hal-engine is designed around pluggable interfaces that let consumers customize 
 
 Controls where session data is stored: the default `InMemorySessionStore` keeps sessions in a `Map` ([validated by](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L10)). Implement this interface to persist sessions in Redis, a database, or any other backing store. The store is generic -- pass your own session type extending `BaseSession`.
 
+<!-- doc-block: src/types/sessionStore.ts#SessionStore -->
 ```typescript
 interface SessionStore<T extends BaseSession = ChatSession> {
   create(sessionId: string, userId: string | number, options?: SessionCreateOptions): T;
@@ -98,9 +99,13 @@ interface SessionStore<T extends BaseSession = ChatSession> {
 
 Authenticates WebSocket connections during the handshake. It receives the whole Node `IncomingMessage`, not a pre-extracted token, so it can read credentials from wherever the client put them. Return the authenticated user to accept the connection, or `null` to reject it with HTTP 401 -- a rejection is a returned `null`, not a thrown error.
 
+<!-- doc-block: src/types/auth.ts#WsAuthenticator -->
 ```typescript
 type WsAuthenticator = (req: IncomingMessage) => Promise<AuthenticatedUser | null>;
+```
 
+<!-- doc-block: src/types/session.ts#AuthenticatedUser -->
+```typescript
 interface AuthenticatedUser {
   id: string | number;
   [key: string]: unknown;
@@ -113,6 +118,7 @@ The connection handler takes `id` as the session's `userId` and picks up `worksp
 
 The core abstraction for AI model communication. Each provider (Bedrock, Vertex, OpenAI, Anthropic) implements this interface. The orchestrator depends only on this interface, never on provider-specific code.
 
+<!-- doc-block: src/types/ai.ts#AIProvider -->
 ```typescript
 interface AIProvider {
   sendMessage(params: SendMessageParams): AsyncGenerator<MessageChunk>;
@@ -127,6 +133,7 @@ interface AIProvider {
 
 Loads prompt templates by name with variable substitution ([validated by](../../src/infrastructure/stores/inMemoryPromptStore.test.ts#L11), [resolve](../../src/infrastructure/stores/inMemoryPromptStore.test.ts#L28)). Use this for database-driven prompts instead of static `PromptBuilder` configuration.
 
+<!-- doc-block: src/types/promptStore.ts#PromptStore -->
 ```typescript
 interface PromptStore {
   findByName(name: string): Promise<PromptTemplate | undefined>;
@@ -145,6 +152,7 @@ interface PromptStore {
 
 Tracks AI call metadata such as token counts and model version, for cost monitoring ([validated by](../../src/infrastructure/stores/inMemoryUsageStore.test.ts#L24)).
 
+<!-- doc-block: src/types/usageStore.ts#UsageStore -->
 ```typescript
 interface UsageStore {
   record(entry: UsageRecord): Promise<void>;
@@ -159,6 +167,7 @@ interface UsageStore {
 
 Configures static system prompt assembly. Provide your AI identity, domain context, response guidelines, and custom instructions. The `PromptBuilder` combines these with tool instructions from the registry into the final system prompt.
 
+<!-- doc-block: src/infrastructure/builders/promptBuilder.ts#PromptBuilderConfig -->
 ```typescript
 interface PromptBuilderConfig {
   identity: string;
@@ -174,14 +183,15 @@ interface PromptBuilderConfig {
 
 Async lifecycle hooks for customizing the orchestration flow. Every hook is optional and receives the current session, and an orchestrator built with none behaves exactly as one built with an empty set ([validated by](../../src/orchestration/chatOrchestrator.test.ts#L359)).
 
+<!-- doc-block: src/orchestration/chatOrchestrator.ts#OrchestratorHooks -->
 ```typescript
 interface OrchestratorHooks {
   beforeSession?: (session: ChatSession) => Promise<void>;
+  afterSession?: (session: ChatSession) => Promise<void>;
   beforeUserInput?: (session: ChatSession, userMessage: string) => Promise<string>;
   afterUserInput?: (session: ChatSession, userMessage: string) => Promise<void>;
   beforeModelResponse?: (session: ChatSession, systemPrompt: string) => Promise<string>;
   afterModelResponse?: (session: ChatSession, responseText: string, usage?: UsageMetadata) => Promise<void>;
-  afterSession?: (session: ChatSession) => Promise<void>;
   onError?: (session: ChatSession, error: Error) => Promise<void>;
 }
 ```

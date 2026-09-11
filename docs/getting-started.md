@@ -12,6 +12,7 @@ npm install @re-cinq/hal-engine
 
 The simplest possible setup requires two things: an AI provider configuration and a WebSocket authenticator.
 
+<!-- doc-block: example/minimal.ts#minimal -->
 ```typescript
 import {createHalEngine} from '@re-cinq/hal-engine';
 
@@ -47,6 +48,7 @@ This starts a server with:
 
 Tools let the AI fetch data or perform actions. Register them on the engine's `toolRegistry`:
 
+<!-- doc-block: none -- a worked tool for a fictional weather API, not a declaration this repository exports -->
 ```typescript
 import {createHalEngine, ToolRegistry} from '@re-cinq/hal-engine';
 import type {ToolDefinition} from '@re-cinq/hal-engine';
@@ -97,6 +99,7 @@ const engine = createHalEngine({
 
 Here is every option available on `HalEngineConfig`:
 
+<!-- doc-block: none -- a composed configuration using a provider this repository cannot call in CI -->
 ```typescript
 const engine = createHalEngine({
   // REQUIRED: AI provider settings
@@ -158,6 +161,7 @@ const engine = createHalEngine({
 
 To use them, assemble the parts yourself. `createChatOrchestrator`, `createApp`, `createServer` and the `OrchestratorHooks` type are all exported for that purpose:
 
+<!-- doc-block: none -- the annotated configuration reference; every field is checked by typecheck through src/config.ts -->
 ```typescript
 import {createChatOrchestrator, createApp, createServer} from '@re-cinq/hal-engine';
 
@@ -174,6 +178,7 @@ const orchestrator = createChatOrchestrator(provider, promptBuilder, toolRegistr
 
 The WebSocket protocol is documented in [websocket-protocol.md](../specs/hal-engine-websocket-protocol/spec.md). A minimal client connection:
 
+<!-- doc-block: none -- illustrates assembling the parts by hand, which no single declaration or example region carries -->
 ```typescript
 // 1. Create a chat session
 const response = await fetch('http://localhost:3000/hal/chats', {
@@ -221,6 +226,7 @@ ws.send(JSON.stringify({
 
 Implement the `SessionStore` interface to persist sessions beyond in-memory storage:
 
+<!-- doc-block: none -- a Redis store a reader writes, not code this repository ships -->
 ```typescript
 import type {SessionStore} from '@re-cinq/hal-engine';
 import type {ChatSession} from '@re-cinq/hal-engine';

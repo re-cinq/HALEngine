@@ -1,3 +1,4 @@
+// #region quick-start
 import {createHalEngine, ToolRegistry} from '../src/index.js';
 
 const tools = new ToolRegistry();
@@ -43,11 +44,12 @@ const engine = createHalEngine({
   },
 });
 
-engine.start().then(() => {
-  // eslint-disable-next-line no-console
-  console.log('HAL Engine running on http://localhost:8086');
-  // eslint-disable-next-line no-console
-  console.log('Health check: http://localhost:8086/api/health');
-  // eslint-disable-next-line no-console
-  console.log('WebSocket: ws://localhost:8086/api/ws');
-});
+await engine.start();
+// #endregion
+
+// eslint-disable-next-line no-console
+console.log('HAL Engine running on http://localhost:8086');
+// eslint-disable-next-line no-console
+console.log('Health check: http://localhost:8086/api/health');
+// eslint-disable-next-line no-console
+console.log('WebSocket: ws://localhost:8086/api/ws');
