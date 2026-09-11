@@ -357,6 +357,10 @@ For new provider support:
 - The tag must be `vMAJOR.MINOR.PATCH` and match `package.json` exactly.
   Prerelease tags are rejected because nothing passes `--tag`, so one would
   publish as `latest` and every plain `npm install` would resolve to it
+- Tag a commit that is already merged to `main`. The workflow refuses a tag whose
+  commit is not an ancestor of `origin/main`: a tag is pushable from any branch,
+  so without that check the protection on `main` is not the boundary the release
+  rests on
 - `.github/workflows/publish.yml` re-runs the version guard, the build-chain
   checks and the packed-tarball smoke test against the tagged commit, and
   refuses a pack list carrying any `*.test.*` entry, before anything is

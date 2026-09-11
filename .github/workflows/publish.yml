@@ -31,6 +31,9 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+          # Ancestry needs the graph connecting the tag to main; a tag push
+          # checks out one commit by default.
+          fetch-depth: 0
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -42,6 +45,22 @@ jobs:
 
       - name: Tag matches the committed version
         run: npm run check:version
+
+      # main is the trust boundary: it requires a pull request, blocks
+      # force-pushes, and publishing over OIDC makes push access to it the right
+      # to release. A tag can be pushed from any branch, so without this the
+      # boundary is bypassable by whoever can push a tag. Not repeated in the
+      # publish job below - `needs` carries it, and ancestry once true stays
+      # true while force-pushes to main are blocked.
+      - name: Tagged commit is on main
+        run: |
+          git fetch --quiet --no-tags origin main
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" FETCH_HEAD; then
+            echo "publish: FAILED - ${GITHUB_SHA} is not an ancestor of origin/main" >&2
+            echo "publish: tag a commit that has been merged to main" >&2
+            exit 1
+          fi
+          echo "publish: tagged commit is on main"
 
       - name: Build chain
         run: npm run check:build-chain
