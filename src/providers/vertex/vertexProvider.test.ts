@@ -31,7 +31,7 @@ type VertexConfig = import('./vertexProvider.js').VertexConfig;
 const defaultConfig: VertexConfig = {
   type: 'vertex',
   projectId: 'test-project',
-  location: 'us-central1',
+  location: 'europe-west4',
   modelId: 'gemini-1.5-flash',
   maxTokens: 1024,
 };

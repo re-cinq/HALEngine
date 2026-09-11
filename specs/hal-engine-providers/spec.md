@@ -86,7 +86,7 @@ const engine = createHalEngine({
   provider: {
     type: 'vertex',
     projectId: 'my-gcp-project',
-    location: 'us-central1',
+    location: 'europe-west4',
     modelId: 'gemini-1.5-pro',
     maxTokens: 4096,
     googleAuthOptions: {
@@ -96,6 +96,8 @@ const engine = createHalEngine({
   // ...
 });
 ```
+
+`location` selects the regional endpoint, so it decides where the request is processed and which jurisdiction the data stays in - not merely which datacentre is nearest. It is passed straight to `new VertexAI({location})` and the engine does not validate it: a region that does not serve the model surfaces as a vendor error on the first call, not at construction. The examples here use `europe-west4`.
 
 **Credentials:**
 ```bash
@@ -111,7 +113,7 @@ import {createVertexProvider} from '@re-cinq/hal-engine';
 const provider = createVertexProvider({
   type: 'vertex',
   projectId: 'my-project',
-  location: 'us-central1',
+  location: 'europe-west4',
   modelId: 'gemini-1.5-flash',
 });
 
