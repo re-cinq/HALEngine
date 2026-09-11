@@ -30,7 +30,8 @@ export interface ConnectionHandlerDeps {
     rawMessage: unknown
   ) => Promise<void>;
   basePath: string;
-  onDisconnect?: (sessionId: string) => void;
+  onConnect?: (session: import('../../types/session.js').ChatSession) => void | Promise<void>;
+  onDisconnect?: (sessionId: string) => void | Promise<void>;
 }
 export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandlerDeps) {
   return function handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
@@ -94,6 +95,11 @@ export function createConnectionHandler(deps: ConnectionHandlerDeps, exampleProm
     };
     ws.send(JSON.stringify(connected));
 
+    // Deferred, not inline: a synchronous throw in the `connection` listener corrupts an already-upgraded socket.
+
+    // A microtask, not setImmediate: it drains before the loop delivers any inbound frame on this socket.
+    queueMicrotask(() => runHook('onConnect', sessionId, () => deps.onConnect?.(session)));
+
     ws.on('pong', () => {
       ws.isAlive = true;
     });
@@ -115,7 +121,26 @@ export function createConnectionHandler(deps: ConnectionHandlerDeps, exampleProm
     ws.on('close', () => {
       log.info('ws', 'disconnected', {sessionId});
       deps.sessionStore.delete(sessionId);
-      deps.onDisconnect?.(sessionId);
+      runHook('onDisconnect', sessionId, () => deps.onDisconnect?.(sessionId));
     });
   };
+}
+
+// Consumer hooks are fire-and-forget: the engine never awaits one and never lets one take the connection down.
+function runHook(name: string, sessionId: string, call: () => void | Promise<void>): void {
+  try {
+    // Promise.resolve also absorbs a thenable from another realm, where `instanceof Promise` is false.
+    void Promise.resolve(call()).catch((error: unknown) => logHookFailure(name, sessionId, error));
+  } catch (error) {
+    logHookFailure(name, sessionId, error);
+  }
+}
+
+function logHookFailure(name: string, sessionId: string, error: unknown): void {
+  log.error('ws', `${name} hook failed`, {sessionId, error: messageOf(error)});
+}
+
+function messageOf(error: unknown): string {
+  if (typeof error === 'object' && error !== null && 'message' in error) return String(error.message);
+  return String(error);
 }

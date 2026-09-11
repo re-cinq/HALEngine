@@ -89,8 +89,8 @@ interface HalEngineConfig {
     maxToolRounds?: number;        // Max tool loop iterations (default: 5)
     contextConfig?: Partial<ContextConfig>;
   };
-  onConnect?: (session) => void;
-  onDisconnect?: (sessionId) => void;
+  onConnect?: (session) => void | Promise<void>;      // Fire-and-forget; never awaited
+  onDisconnect?: (sessionId) => void | Promise<void>;  // Fire-and-forget; never awaited
 }
 ```
 

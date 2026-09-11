@@ -34,8 +34,8 @@ export interface HalEngineConfig {
     contextConfig?: Partial<ContextConfig>;
   };
   logger?: Logger;
-  onConnect?: (session: ChatSession) => void;
-  onDisconnect?: (sessionId: string) => void;
+  onConnect?: (session: ChatSession) => void | Promise<void>;
+  onDisconnect?: (sessionId: string) => void | Promise<void>;
 }
 
 export interface HalEngine extends HalServer {

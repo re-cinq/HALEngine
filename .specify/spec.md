@@ -47,7 +47,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 - In-memory default session store (`InMemorySessionStore`)
 - Pluggable interface for custom stores (Redis, database, etc.)
 - Automatic session lifecycle (creation, retrieval, cleanup)
-- Hooks for `onConnect` and `onDisconnect` events
+- Fire-and-forget `onConnect` and `onDisconnect` hooks, neither awaited and neither able to fail a connection
 - Session persistence across WebSocket reconnections
 
 ### 6. Configurable Prompts
@@ -138,7 +138,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 - Registers domain-specific tools via `ToolRegistry`
 - Defines prompt templates and system instructions
 - Implements custom `SessionStore` if needed
-- Handles `onConnect`/`onDisconnect` lifecycle hooks
+- Handles `onConnect`/`onDisconnect` lifecycle hooks, both returning `void | Promise<void>`
 - Consumes published API from `createHalEngine()`
 
 ### 3. **End User**
@@ -268,7 +268,7 @@ Each layer depends only on layers below it, ensuring clean separation of concern
 - `transport`: Port, CORS, base path, heartbeat interval
 - `auth.http`: Express middleware for HTTP endpoints
 - `orchestrator`: Max tool rounds, context config
-- `onConnect`/`onDisconnect`: Lifecycle hooks
+- `onConnect`/`onDisconnect`: Lifecycle hooks, fire-and-forget
 - `logger`: Custom logger instance
 
 ### Deployment Artifacts

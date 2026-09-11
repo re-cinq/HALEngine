@@ -17,8 +17,8 @@ export interface HalServerOptions {
   toolRegistry?: ToolRegistry;
   basePath?: string;
   heartbeatIntervalMs?: number;
-  onConnect?: (session: import('../types/session.js').ChatSession) => void;
-  onDisconnect?: (sessionId: string) => void;
+  onConnect?: (session: import('../types/session.js').ChatSession) => void | Promise<void>;
+  onDisconnect?: (sessionId: string) => void | Promise<void>;
 }
 
 export interface HalServer {
@@ -47,6 +47,7 @@ export function createServer(options: HalServerOptions): HalServer {
     sessionStore: options.sessionStore,
     handleMessage,
     basePath,
+    onConnect: options.onConnect,
     onDisconnect: options.onDisconnect,
   };
 

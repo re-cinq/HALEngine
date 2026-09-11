@@ -49,6 +49,15 @@ published before it, so there is no upgrade path from `0.1.0` on the registry â€
 
 ### Fixed
 
+- `onConnect` is now called. It was declared on the config, forwarded through `createHalEngine`, and then
+  dropped before the connection handler ever saw it, so it never fired â€” while its sibling `onDisconnect`
+  worked, which is what made the gap hard to notice. It runs once per accepted connection, after the
+  `connected` frame.
+- Neither lifecycle hook can take a connection down. Both now return `void | Promise<void>`, are never
+  awaited, and route through one helper that logs and swallows a throw or a rejection. A rejecting
+  `onDisconnect` previously reached the process as an unhandled rejection, which ends it under Node's
+  defaults.
+
 - Importing the package root no longer loads the Google Vertex AI SDK. It previously pulled in 38
   `@google-cloud/vertexai` modules whether or not you used Vertex, so a consumer of the mock or Bedrock
   provider could not install without it.

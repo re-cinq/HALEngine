@@ -156,7 +156,7 @@ const engine = createHalEngine({
   logger: myLogger,
 
   // OPTIONAL: Lifecycle hooks
-  onConnect: (session) => console.log(`Connected: ${session.id}`),
+  onConnect: (session) => console.log(`Connected: ${session.sessionId}`),
   onDisconnect: (sessionId) => console.log(`Disconnected: ${sessionId}`),
 });
 ```

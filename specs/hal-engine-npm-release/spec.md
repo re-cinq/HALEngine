@@ -163,10 +163,17 @@ Trusted publishing cannot be registered against a package name that has never be
 
 `HalEngineConfig.onConnect` is declared at `src/config.ts:37`, forwarded at `:75`, and declared again on `HalServerOptions` at `src/transport/createServer.ts:20` — and then omitted from the `deps` object at `:50` that the connection handler receives. Its sibling `onDisconnect` is forwarded on the adjacent line and is invoked on every close, so a consumer sees half the pair work. Four committed documents say both work.
 
-- `onConnect` is invoked on every accepted connection, after the `connected` frame is sent and before the first inbound message is processed.
-- It is not invoked inline in the `connection` listener: a synchronous throw there corrupts an already-upgraded socket. It runs through a deferred continuation instead.
-- Both hooks widen to `void | Promise<void>` and are documented as fire-and-forget. The engine never awaits either.
-- Both route through one helper that logs and swallows a throw or a rejection. `onDisconnect` today is invoked bare inside a `close` listener, where an unhandled rejection ends the process under Node's defaults.
+- `createServer` forwards `onConnect` into the `deps` object the connection handler receives, which is the omission that made the hook dead ([validated by](../../src/transport/createServer.test.ts#L39)).
+- `onConnect` is invoked once per accepted connection, with the session the socket was given ([validated by](../../src/transport/ws/connectionHandler.test.ts#L43)).
+- It is invoked after the `connected` frame is sent, not before ([validated by](../../src/transport/ws/connectionHandler.test.ts#L54)).
+- It is not invoked inline in the `connection` listener, where a synchronous throw corrupts an already-upgraded socket. It runs on a microtask, which drains before the loop delivers any inbound frame ([validated by](../../src/transport/ws/connectionHandler.test.ts#L65)).
+- Both hooks widen to `void | Promise<void>` and are fire-and-forget. The engine never awaits either, and a hook that rejects does not reach the process ([validated by](../../src/transport/ws/connectionHandler.test.ts#L86)).
+- Both route through one helper that logs `{sessionId, error}` and swallows, so a throwing `onConnect` leaves the connection intact ([validated by](../../src/transport/ws/connectionHandler.test.ts#L74)).
+- The same helper covers the close path, where a throwing `onDisconnect` would otherwise escape the `close` listener ([validated by](../../src/transport/ws/connectionHandler.test.ts#L116)).
+- Either hook may be absent, and a connection without one behaves identically ([validated by](../../src/transport/ws/connectionHandler.test.ts#L94)).
+- `onDisconnect` is called with the session id, after the store entry for it is deleted ([validated by](../../src/transport/ws/connectionHandler.test.ts#L105)).
+- A rejecting `onDisconnect` is swallowed too, where an unhandled rejection would end the process under Node's defaults ([validated by](../../src/transport/ws/connectionHandler.test.ts#L127)).
+- A server configured with neither hook starts and accepts connections unchanged ([validated by](../../src/transport/createServer.test.ts#L50)).
 
 ### Log lines carry a severity
 
