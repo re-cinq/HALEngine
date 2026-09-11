@@ -48,7 +48,7 @@ jobs:
           # Same class of misconfiguration: an unset token means every POST is
           # rejected with 401, which must never pass as a green run.
           if [ -z "${LORE_INGEST_TOKEN}" ]; then
-            echo "::error::curl could not reach the configured Lore endpoint (exit ${CURL_EXIT}) - context was NOT ingested"
+            echo "::error::LORE_INGEST_TOKEN repository secret is not set - context was NOT ingested"
             exit 1
           fi
           # The Authorization header rides in a file so the token never
@@ -86,7 +86,7 @@ jobs:
           # like the unset checks above. TLS failures (exit 35/51/60) stay in
           # the warn arm below: cert rotation windows are genuinely transient.
           if [ "${CURL_EXIT}" = "3" ] || [ "${CURL_EXIT}" = "6" ]; then
-            echo "::error::curl could not reach ${LORE_INGEST_URL} (exit ${CURL_EXIT}) - context was NOT ingested"
+            echo "::error::curl could not reach the configured Lore endpoint (exit ${CURL_EXIT}) - context was NOT ingested"
             exit 1
           fi
           case "${HTTP_STATUS}" in
