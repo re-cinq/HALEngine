@@ -4,6 +4,7 @@ import request from 'supertest';
 import {createChatRoutes} from './chats.js';
 import type {AuthenticatedRequest} from '../../types/auth.js';
 import type {AuthenticatedUser} from '../../types/session.js';
+import {setLogger} from '../../shared/logger.js';
 import type {ChatOrchestrator} from '../../orchestration/chatOrchestrator.js';
 import type {SessionStore} from '../../types/sessionStore.js';
 
@@ -246,5 +247,70 @@ describe('chat routes user identity', () => {
     const response = await as({id: 'alice'}).get('/chats/any-id');
 
     expect(response.status).toBe(404);
+  });
+});
+
+// A refusal that leaves no trace is not an access control, and a trace carrying the request is a new leak.
+describe('what a refused chat request records', () => {
+  const lines: {level: string; category: string; message: string; fields?: Record<string, unknown>}[] = [];
+
+  beforeEach(() => {
+    lines.length = 0;
+    const capture = (level: string) => (category: string, message: string, fields?: Record<string, unknown>) =>
+      void lines.push({level, category, message, fields});
+    setLogger({
+      debug: capture('DEBUG'),
+      info: capture('INFO'),
+      warn: capture('WARN'),
+      error: capture('ERROR'),
+    });
+  });
+
+  afterEach(() => {
+    setLogger();
+  });
+
+  const unguarded = () => {
+    const app = express();
+    app.use(express.json());
+    app.use('/chats', createChatRoutes({} as unknown as ChatOrchestrator, {} as SessionStore));
+    return app;
+  };
+
+  it('emits exactly one warn on category http when no middleware is configured', async () => {
+    await request(unguarded()).post('/chats');
+
+    expect(lines).toEqual([
+      {
+        level: 'WARN',
+        category: 'http',
+        message: 'chat request refused',
+        fields: {reason: 'no auth middleware is configured'},
+      },
+    ]);
+  });
+
+  it('emits exactly one warn when the middleware attaches no usable user', async () => {
+    const {as} = harness();
+
+    await as({id: ''}).post('/chats');
+
+    expect(lines.filter(line => line.level === 'WARN')).toHaveLength(1);
+  });
+
+  it('records nothing derived from the request, so a refusal cannot leak what was asked for', async () => {
+    const {as} = harness();
+
+    await as(undefined).get('/chats/a-secret-looking-chat-id?token=shhh');
+
+    expect(JSON.stringify(lines)).not.toContain('a-secret-looking-chat-id');
+  });
+
+  it('says nothing at all when the request is authorised', async () => {
+    const {as} = harness();
+
+    await as(ALICE).post('/chats');
+
+    expect(lines.filter(line => line.level === 'WARN')).toEqual([]);
   });
 });

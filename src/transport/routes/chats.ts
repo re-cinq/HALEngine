@@ -11,6 +11,7 @@ import type {SessionStore} from '../../types/sessionStore.js';
 import type {AuthenticatedRequest, HttpAuthMiddleware} from '../../types/auth.js';
 import type {AuthenticatedUser} from '../../types/session.js';
 import {AIError} from '../../types/ai.js';
+import {log} from '../../shared/logger.js';
 import type {ChatSession, SessionEntry} from '../../types/session.js';
 
 interface ChatMessage {
@@ -39,7 +40,7 @@ export function createChatRoutes(
   const auth: HttpAuthMiddleware =
     authMiddleware ??
     ((_req, res) => {
-      res.status(401).json({error: 'Unauthorized'});
+      deny(res, 'no auth middleware is configured');
     });
 
   router.post('/', auth, (req: AuthenticatedRequest, res: Response) => {
@@ -157,11 +158,17 @@ function requireUser(
   const {user} = req;
 
   if (!user || !isUsableId(user.id)) {
-    res.status(401).json({error: 'Unauthorized'});
+    deny(res, 'the configured middleware attached no usable user id');
     return null;
   }
 
   return user;
+}
+
+// One line per refusal, and `reason` is a fixed string: nothing request-derived reaches the log.
+function deny(res: Response, reason: string): void {
+  log.warn('http', 'chat request refused', {reason});
+  res.status(401).json({error: 'Unauthorized'});
 }
 
 // Middleware is consumer-supplied, so `id` is untrusted here whatever AuthenticatedUser declares.

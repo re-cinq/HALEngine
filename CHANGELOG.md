@@ -38,6 +38,10 @@ published before it, so there is no upgrade path from `0.1.0` on the registry �
   any other — the option now reaches the package's own log calls, which it did not before this release. The
   swap is process-wide rather than per engine; `docs/logging.md` says why.
 
+- The demo chat routes log a refusal. Every `401` emits one `warn` on category `http` carrying a fixed
+  reason and nothing derived from the request, so a denied call is auditable without the log becoming a
+  second place the request leaks.
+
 - `engine.start()` rejects when the port is unavailable, instead of ending the process. There was no `error`
   listener on the HTTP server, so an `EADDRINUSE` surfaced as an unhandled event while the promise `start()`
   returned never settled — uncatchable, unretryable. The "HAL Engine started" line now logs the port that was
