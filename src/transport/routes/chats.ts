@@ -1,3 +1,9 @@
+// The demo REST chat API: its whole state is the `chats` Map below, one per router and lost on restart.
+
+// `_sessionStore` is unused by design - this router keeps that Map and builds each ChatSession inline.
+
+// A chat id from POST /chats is not a WebSocket session id: the socket mints its own and stores that.
+
 import {Router, Response} from 'express';
 import {randomUUID} from 'crypto';
 import type {ChatOrchestrator} from '../../orchestration/chatOrchestrator.js';
