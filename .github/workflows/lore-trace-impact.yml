@@ -13,6 +13,10 @@ permissions:
 jobs:
   impact:
     runs-on: ubuntu-latest
+    # A fork PR carries no secrets and a read-only GITHUB_TOKEN whatever the
+    # permissions block says, so this check could only ever post "unavailable"
+    # and would 403 doing it. Skip it rather than fail every outside PR.
+    if: github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -198,20 +202,26 @@ jobs:
 
             // The sticky comment is the deliverable — post it first so a denied
             // checks:write scope (GITHUB_TOKEN read-only) can never suppress it.
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.payload.pull_request.number,
-            });
-            const existing = comments.find((c) => c.body && c.body.includes(MARKER));
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body,
+            // Best-effort like the check-run below: pull-requests:write can be
+            // denied too, and an advisory check must not fail the PR over it.
+            try {
+              const { data: comments } = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
               });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner, repo: context.repo.repo, issue_number: context.payload.pull_request.number, body,
-              });
+              const existing = comments.find((c) => c.body && c.body.includes(MARKER));
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body,
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner, repo: context.repo.repo, issue_number: context.payload.pull_request.number, body,
+                });
+              }
+            } catch (err) {
+              core.warning('sticky comment failed (' + err.status + '): grant GITHUB_TOKEN pull-requests:write to enable it.');
             }
 
             // The annotated check-run is a nice-to-have; best-effort so a 401/403

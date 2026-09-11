@@ -5,6 +5,10 @@ on:
   push:
     branches: [main]
 
+# Every job here only reads the checkout; the repo default is write.
+permissions:
+  contents: read
+
 # A newer push to the same branch supersedes an in-flight run. main is exempt:
 # every commit there should have its own recorded result.
 concurrency:

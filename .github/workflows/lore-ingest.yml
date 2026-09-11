@@ -18,6 +18,10 @@ on:
   # instead.
   workflow_dispatch:
 
+# Both jobs POST to Lore with their own token; from the repo they read only.
+permissions:
+  contents: read
+
 jobs:
   ingest:
     runs-on: ubuntu-latest
