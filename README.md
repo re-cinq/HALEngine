@@ -14,11 +14,19 @@ HAL Engine extracts the core patterns of building an AI-powered chat backend int
 - **Configurable prompts**: Identity, domain context, response guidelines -- all injectable
 - **Express + WebSocket**: Full HTTP API and WebSocket server out of the box
 
-## Quick Start
+## Install
 
 ```bash
 npm install @re-cinq/hal-engine
 ```
+
+The registry specifier is the supported install path and the one this project releases against. Every published version is built by a tagged CI run and carries an npm provenance attestation, which `npm audit signatures` verifies.
+
+A git specifier also resolves, and four things differ. It builds `dist/` from a checkout through the `prepare` script rather than installing a built artefact, so your install runs this package's TypeScript compiler. It carries no provenance, because provenance is produced at publish time and nothing is published. It pins whatever commit your lockfile recorded, not a version, so `npm outdated` has nothing to compare and a fix reaches you only when you repoint it. And npm installs a dependency under its **key**, not the package's `name`.
+
+That last one has a trap in it. An existing `"hal-engine": "github:…"` entry keeps resolving after the rename — the directory is still `node_modules/hal-engine`, so `import 'hal-engine'` keeps working while the package inside it declares `@re-cinq/hal-engine`. The rename produces no error, no warning and no failed build. Worse, following the rename and switching your imports to `@re-cinq/hal-engine` is what breaks: that specifier resolves to nothing until the key is renamed too. Move to the registry specifier, or rename the key and the imports together.
+
+## Quick Start
 
 ```typescript
 import {createHalEngine, ToolRegistry} from '@re-cinq/hal-engine';

@@ -13,6 +13,12 @@ published before it, so there is no upgrade path from `0.1.0` on the registry â€
 
 ### Changed
 
+- The README now states which install path is supported. The registry specifier is the product; a git
+  specifier builds from a checkout, carries no provenance, and pins a commit rather than a version. If you
+  install from git under the key `hal-engine`, note that the rename is silent â€” `import 'hal-engine'` keeps
+  working and `import '@re-cinq/hal-engine'` is what fails, because npm installs under the dependency key
+  rather than the package name.
+
 - **Log output is JSON, one object per line.** Lines were unstructured text (`[time] [LEVEL] [category] msg`),
   so `log.error` was indistinguishable from `log.info` to anything reading the stream. Each line now carries
   `severity`, `message`, `timestamp` and `category`, with the call site's fields under `data`. `ERROR` goes to

@@ -378,7 +378,12 @@ For new provider support:
 - MUST include migration guide in PR
 - MUST increment MINOR version (semver)
 - MUST update README quick start example if API changes
-- MUST add deprecation period (1 minor version) when possible
+- MUST add deprecation period (1 minor version) when possible. The unit is a
+  published registry version and the audience is a consumer resolving one:
+  a deprecation runs from the version that announces it to the version that
+  removes the behaviour. A consumer on a git specifier is outside the clause -
+  they pin a commit, so nothing announces anything to them and no minor
+  elapses on their side
 
 ### AI Provider Compliance
 - No hardcoded API keys or secrets (use environment variables)
