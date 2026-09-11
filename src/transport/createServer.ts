@@ -96,11 +96,13 @@ export function createServer(options: HalServerOptions): HalServer {
         const onError = (error: Error) => reject(error);
         server.once('error', onError);
 
+        // A listener left from a previous start would report this bind failure as a running server breaking.
+        server.removeListener('error', logLateError);
+
         server.listen(p, () => {
           server.removeListener('error', onError);
 
           // Past the listen window nothing is listening, and an 'error' with no handler ends the process.
-          server.removeListener('error', logLateError);
           server.on('error', logLateError);
 
           // The bound port, not the requested one: a configured 0 means the OS chose it.

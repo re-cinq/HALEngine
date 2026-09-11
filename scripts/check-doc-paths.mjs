@@ -27,10 +27,18 @@ const DEFAULT_GLOBS = [
 ];
 
 // A backticked path into the source tree, with an optional :line or :line-line suffix.
-const PATH_IN_PROSE = /`((?:src|scripts|example|smoke)\/[A-Za-z0-9_./-]+?)(?::\d+(?:-\d+)?)?`/g;
+const PATH_IN_PROSE =
+  /`((?:src|scripts|example|smoke|docs|specs|adrs|dist|\.github|\.specify)\/[A-Za-z0-9_./-]+?)(?::\d+(?:-\d+)?)?`/g;
 
 // A placeholder is not a citation: `src/providers/<name>/index.ts` names a file the reader creates.
 const PLACEHOLDER = /[*<>{}]|\.\.\./;
+
+// Paths that legitimately do not resolve, each with the reason it does not. An exception has to be
+// written down to be an exception; without this the gate is narrowed instead, which hides the rest.
+const ABSENT_BY_DESIGN = new Map([
+  ['.github/audit-acknowledgements.json', 'created by whoever records the first audit acceptance; absent means none'],
+  ['docs/adding-tool-evaluation.md', 'the path this document had before it moved under docs/spikes/'],
+]);
 
 const files = process.argv.slice(2);
 const documents = files.length > 0 ? files : tracked();
@@ -44,6 +52,8 @@ for (const doc of documents) {
     for (const match of line.matchAll(PATH_IN_PROSE)) {
       const path = match[1];
       if (PLACEHOLDER.test(path)) continue;
+
+      if (ABSENT_BY_DESIGN.has(path)) continue;
 
       checked += 1;
       if (!existsSync(join(root, path))) findings.push(`${doc}:${index + 1} names ${path}, which does not exist`);

@@ -22,6 +22,7 @@ const DEFAULT_GLOBS = ['README.md', 'docs/*.md', 'specs/**/*.md', 'example/*.ts'
 const REGION_FIELD = /\b(?:location|region)\s*:\s*['"]([a-z0-9-]+)['"]/g;
 const REGION_ENV = /\b(?:AWS_REGION|GOOGLE_CLOUD_REGION|CLOUDSDK_COMPUTE_REGION)\s*=\s*([a-z0-9-]+)/g;
 const EU = /^(?:eu-|europe-)/;
+const FENCE = /^( {0,3})(`{3,}|~{3,})/;
 
 const files = process.argv.slice(2);
 const documents = files.length > 0 ? files : tracked();
@@ -34,14 +35,20 @@ for (const doc of documents) {
   // Only inside a fence, and only for markdown: a region a reader copies lives in an example, while
   // prose quoting an old value - a spec recording the defect it fixed - is a record, not a snippet.
   const markdown = doc.endsWith('.md');
-  let fenced = !markdown;
+  let open = markdown ? null : {marker: '', indent: ''};
 
   lines.forEach((line, index) => {
-    if (markdown && line.startsWith('```')) {
-      fenced = !fenced;
+    const fence = FENCE.exec(line);
+
+    if (markdown && fence) {
+      // CommonMark allows ~~~ as well as ```, up to three spaces of indent, and closes only on the
+      // same character: a fence in a numbered list is indented, which is how a guide writes a step.
+      const [, indent, marker] = fence;
+      if (open === null) open = {marker: marker[0], indent};
+      else if (marker[0] === open.marker && marker.length >= open.marker.length) open = null;
       return;
     }
-    if (!fenced) return;
+    if (open === null) return;
 
     for (const pattern of [REGION_FIELD, REGION_ENV]) {
       for (const match of line.matchAll(pattern)) {

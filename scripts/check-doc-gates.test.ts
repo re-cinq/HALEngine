@@ -70,4 +70,8 @@ describe('check-doc-regions', () => {
   it('names the region it refused', () => {
     expect(regions.run(`${fixtures}/region-us.md`).stderr).toContain('names the region us-central1');
   });
+
+  it('reads an indented fence and a tilde fence, which a guide writes as a step', () => {
+    expect(regions.run(`${fixtures}/region-indented.md`)).toMatchObject({status: 1});
+  });
 });

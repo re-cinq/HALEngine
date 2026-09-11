@@ -1,4 +1,6 @@
 import {jest} from '@jest/globals';
+import net from 'node:net';
+import {setLogger} from '../shared/logger.js';
 import type {Express} from 'express';
 import {createServer} from './createServer.js';
 import type {ExtWebSocket} from './ws/connectionHandler.js';
@@ -55,5 +57,68 @@ describe('createServer hook wiring', () => {
     hal.wss.emit('close');
 
     expect(hal.wss.listenerCount('connection')).toBe(1);
+  });
+});
+
+// An EventEmitter with no `error` listener throws, so a socket error on a running server ended the process.
+describe('a server error after start', () => {
+  const engineLines: string[] = [];
+
+  beforeEach(() => {
+    engineLines.length = 0;
+    const collect = (_category: string, message: string) => void engineLines.push(message);
+    setLogger({debug: collect, info: collect, warn: collect, error: collect});
+  });
+
+  afterEach(() => {
+    setLogger();
+  });
+
+  const started = async () => {
+    const {hal} = harness();
+    await hal.start(0);
+    return hal;
+  };
+
+  it('is reported rather than ending the process', async () => {
+    const hal = await started();
+
+    hal.server.emit('error', new Error('late failure'));
+    await hal.stop();
+
+    expect(engineLines).toContain('server error after start');
+  });
+
+  it('leaves exactly one listener behind, however many times the server is restarted', async () => {
+    const hal = await started();
+    await hal.stop();
+    await hal.start(0);
+
+    const count = hal.server.listenerCount('error');
+    await hal.stop();
+
+    expect(count).toBe(1);
+  });
+
+  it('is still reported after stop, because an error with no handler ends the process', async () => {
+    const hal = await started();
+    await hal.stop();
+
+    hal.server.emit('error', new Error('after stop'));
+
+    expect(engineLines).toContain('server error after start');
+  });
+
+  it('is not reported for a start that was cleanly refused, because nothing was running', async () => {
+    const hal = await started();
+    await hal.stop();
+    const blocker = net.createServer();
+    await new Promise<void>(resolve => blocker.listen(0, resolve));
+    const taken = (blocker.address() as net.AddressInfo).port;
+
+    await hal.start(taken).catch((error: NodeJS.ErrnoException) => engineLines.push(`rejected ${error.code}`));
+    await new Promise<void>(resolve => blocker.close(() => resolve()));
+
+    expect(engineLines).toEqual(['HAL Engine started', 'rejected EADDRINUSE']);
   });
 });

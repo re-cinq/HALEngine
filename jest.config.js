@@ -22,17 +22,21 @@ export default {
   // The one exception: deleting covered code shrinks the denominator and lowers
   // the percentage while the uncovered count is unchanged. Compare covered/total
   // absolutes before re-baselining, and say so in the commit.
-  // Per-path floors for the four directories that have tests, so a regression concentrated in one
-  // module cannot hide inside a global figure the rest of the tree holds up. Set at 70, the review bar
-  // in AGENTS.md, rather than at measurement: all four sit well above it and the global row is the ratchet.
-  // Naming a path REMOVES its files from the `global` group, so the global numbers below cover the
-  // remainder - the provider adapters and ws helpers that have no suite - and are lower than the
-  // whole-tree figure for that reason alone, not because coverage fell.
+  // Per-path floors set at measurement, exactly as the global row is. An earlier version set them at
+  // 70 with a comment claiming all four sat well above it - vertex's branches were 69.23, below it, and
+  // four groups gained an 18-to-30 point regression budget the single global floor had never allowed.
+  // `src/orchestration/tools/` is named separately because a path floor is a prefix match: without it a
+  // regression in the tools registry hides inside the orchestration figure, which is what these exist
+  // to prevent. Naming a path REMOVES its files from the `global` group, so the global numbers below
+  // cover the remainder - the provider adapters and ws helpers with no suite - and are lower for that
+  // reason rather than because coverage fell. Raise any of these with the measurement; never lower one
+  // to go green (specs/hal-engine-npm-release/spec.md).
   coverageThreshold: {
+    'src/orchestration/': {statements: 88.3, branches: 85.91, functions: 92, lines: 87.91},
+    'src/orchestration/tools/': {statements: 66.66, branches: 57.14, functions: 71.42, lines: 70.83},
+    'src/infrastructure/stores/': {statements: 100, branches: 100, functions: 100, lines: 100},
+    'src/providers/vertex/': {statements: 87.95, branches: 69.23, functions: 93.33, lines: 91.78},
+    'src/providers/mock/': {statements: 100, branches: 75, functions: 100, lines: 100},
     global: {statements: 71.48, branches: 59.42, functions: 68.57, lines: 71.9},
-    'src/orchestration/': {statements: 70, branches: 70, functions: 70, lines: 70},
-    'src/infrastructure/stores/': {statements: 70, branches: 70, functions: 70, lines: 70},
-    'src/providers/vertex/': {statements: 70, branches: 65, functions: 70, lines: 70},
-    'src/providers/mock/': {statements: 70, branches: 70, functions: 70, lines: 70},
   },
 };

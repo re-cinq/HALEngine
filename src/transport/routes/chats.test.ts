@@ -126,7 +126,7 @@ describe('chat routes ownership guard', () => {
       });
     });
 
-    it('answers 404 for a chat that does not exist', async () => {
+    it('answers 404 when the chat a message names does not exist', async () => {
       const {as} = harness();
 
       const response = await as(ALICE).post('/chats/no-such-chat/messages').send({content: 'hello'});

@@ -58,7 +58,7 @@ Returns the chat's id, messages and creation time to its owner ([validated by: s
 
 - The owner's message is accepted and answered `201` ([validated by: accepts a message from the user who created the chat](../../src/transport/routes/chats.test.ts#L106)).
 - Another user's message is refused, and the orchestrator is never invoked, so a rejected request costs no model call ([validated by: refuses a different user and never reaches the orchestrator](../../src/transport/routes/chats.test.ts#L115)).
-- A message to an id with no chat is `404`, by the same lookup-first order ([validated by: answers 404 for a chat that does not exist](../../src/transport/routes/chats.test.ts#L129)).
+- A message to an id with no chat is `404`, by the same lookup-first order ([validated by: answers 404 when the chat a message names does not exist](../../src/transport/routes/chats.test.ts#L129)).
 - Ownership is checked before the body is validated, so a wrong owner sending an empty body gets `403` rather than `400` ([validated by: refuses a different user before validating the body, so 403 beats 400](../../src/transport/routes/chats.test.ts#L137)).
 - A refused message is not recorded, so the owner's next read shows no trace of it ([validated by: does not record the rejected message in the chat](../../src/transport/routes/chats.test.ts#L146)).
 

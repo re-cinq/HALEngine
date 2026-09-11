@@ -53,38 +53,48 @@ for (const spec of named.length > 0 ? named : specs()) {
         findings.push(`${spec}: ${groups.path}#L${groups.line} is not a declaration, so no name can be read from it`);
         return whole;
       }
+      if (nameIsAmbiguous(declarations, atLine.name)) {
+        findings.push(ambiguity(spec, groups.path, atLine.name, declarations));
+        return whole;
+      }
       if (!fix) {
         findings.push(`${spec}: ${groups.path}#L${groups.line} carries no test name`);
         return whole;
       }
-      repaired += 1;
-      changed = true;
-      return citation(atLine.name, groups.path, atLine.line);
+      return rewrite(atLine.name, groups.path, atLine.line);
+    }
+
+    // Checked before the line is consulted: a name that identifies two declarations is not an
+    // identifier, and while the line happens to agree nothing would ever say so.
+    if (nameIsAmbiguous(declarations, named)) {
+      findings.push(ambiguity(spec, groups.path, named, declarations));
+      return whole;
     }
 
     if (atLine && atLine.name === named) return whole;
 
-    const matches = declarations.filter(declaration => declaration.name === named);
-    if (matches.length === 0) {
+    const [match] = declarations.filter(declaration => declaration.name === named);
+    if (!match) {
       findings.push(`${spec}: names "${named}", which no declaration in ${groups.path} has`);
       return whole;
     }
-    // A name declared more than once resolves to the nearest one: a citation goes stale by a line
-    // shift, and the declaration a few lines from where it used to be is the one the author meant.
-    const nearest = closestTo(Number(groups.line), matches);
-    if (nearest === null) {
-      findings.push(
-        `${spec}: names "${named}", which ${groups.path} declares ${matches.length} times at equal distance`
-      );
-      return whole;
-    }
     if (!fix) {
-      findings.push(`${spec}: names "${named}" but points at #L${groups.line}; it is at #L${nearest.line}`);
+      findings.push(`${spec}: names "${named}" but points at #L${groups.line}; it is at #L${match.line}`);
       return whole;
     }
-    repaired += 1;
-    changed = true;
-    return citation(named, groups.path, nearest.line);
+    return rewrite(named, groups.path, match.line);
+
+    function rewrite(name, path, line) {
+      // A name carrying a bracket would close the markdown label early: the citation stops being a
+      // link, stops matching CITATION, and disappears from this gate and from the coverage job.
+      if (/[[\]]/.test(name)) {
+        findings.push(`${spec}: "${name}" carries a bracket and cannot be written into a markdown label`);
+        return whole;
+      }
+      repaired += 1;
+      changed = true;
+      return citation(name, path, line);
+    }
   });
 
   if (changed) writeFileSync(join(root, spec), rewritten);
@@ -101,13 +111,13 @@ if (findings.length > 0) {
 const verb = fix ? `repointed ${repaired},` : '';
 process.stdout.write(`check-spec-anchor-names: ${verb} ${checked} citation(s) name the test they point at\n`);
 
-// null when two candidates sit equally far from the cited line, which no shift produces.
-function closestTo(line, matches) {
-  const distance = match => Math.abs(match.line - line);
-  const best = matches.reduce((a, b) => (distance(b) < distance(a) ? b : a));
-  const tied = matches.filter(match => distance(match) === distance(best));
+function nameIsAmbiguous(declarations, name) {
+  return declarations.filter(declaration => declaration.name === name).length > 1;
+}
 
-  return tied.length === 1 ? best : null;
+function ambiguity(spec, path, name, declarations) {
+  const lines = declarations.filter(declaration => declaration.name === name).map(d => `#L${d.line}`);
+  return `${spec}: "${name}" names ${lines.length} declarations in ${path} (${lines.join(', ')}) — rename one`;
 }
 
 function citation(name, path, line) {

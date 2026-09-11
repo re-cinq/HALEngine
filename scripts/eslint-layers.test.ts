@@ -32,7 +32,8 @@ const ORCHESTRATION_TO_PROVIDER =
 const TYPES_TO_TRANSPORT =
   "import {createServer} from '../transport/createServer.js';\nexport const probe = createServer;\n";
 const TYPES_TO_SHARED = "import {log} from '../shared/logger.js';\nexport const probe = log;\n";
-const SHARED_TO_TYPES = "import type {AIProvider} from '../types/ai.js';\nexport const probe: AIProvider | null = null;\n";
+const SHARED_TO_TYPES =
+  "import type {AIProvider} from '../types/ai.js';\nexport const probe: AIProvider | null = null;\n";
 
 describe('the layering gate', () => {
   it('reports orchestration importing a concrete provider, the coupling the architecture forbids', () => {

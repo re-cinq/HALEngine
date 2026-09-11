@@ -54,8 +54,8 @@
     "check:regions": "node scripts/check-doc-regions.mjs",
     "docs:fix": "node scripts/check-doc-blocks.mjs --fix",
     "check:build-chain": "npm run check:audit && npm run check:action-pins",
-    "prettier": "prettier --write \"src/**/*.ts\"",
-    "prettier:check": "prettier --check \"src/**/*.ts\""
+    "prettier": "prettier --write \"{src,scripts,smoke}/**/*.ts\"",
+    "prettier:check": "prettier --check \"{src,scripts,smoke}/**/*.ts\""
   },
   "dependencies": {
     "@types/express": "^5.0.0",

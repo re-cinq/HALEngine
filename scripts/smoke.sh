@@ -18,6 +18,8 @@
 set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+workdirs=()
+trap 'rm -rf "${workdirs[@]+${workdirs[@]}}"' EXIT
 variant="${1:-all}"
 typescript_version="$(node -p "require('$repo/package.json').devDependencies.typescript")"
 
@@ -72,7 +74,9 @@ run_variant() {
   local name="$1"
   local work
   work="$(mktemp -d "${TMPDIR:-/tmp}/hal-engine-smoke-$name.XXXXXX")"
-  trap 'rm -rf "$work"' RETURN
+  # EXIT, not RETURN: an `exit` from the watchdog or from `set -u` unwinds past a RETURN trap and
+  # leaves the directory behind. `workdirs` accumulates so both variants are cleaned either way.
+  workdirs+=("$work")
   assert_outside_repo "$work"
 
   echo "smoke [$name]: packing $repo"
@@ -95,7 +99,9 @@ run_variant() {
   fi
 
   echo "smoke [$name]: installing tarball + typescript${peers:+ + optional peers} into $work"
-  npm install --silent --save "./$tarball" "typescript@$typescript_version" "${peers[@]}" >/dev/null
+  # ${arr[@]+...} because bash 3.2 - which is /bin/bash on macOS - calls an empty array unbound
+  # under `set -u`, and AGENTS.md tells a maintainer to run this locally before a release.
+  npm install --silent --save "./$tarball" "typescript@$typescript_version" ${peers[@]+"${peers[@]}"} >/dev/null
 
   for peer in @google-cloud/vertexai @aws-sdk/client-bedrock-runtime; do
     if [ -d "node_modules/$peer" ] && [ "$name" = "bare" ]; then

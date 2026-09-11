@@ -26,19 +26,19 @@ Segmentation is not reimplemented here. `scripts/check-spec-links.mjs` imports `
 
 `npm run check:spec-links` runs `scripts/check-spec-links.mjs` on plain Node - the Node 22 that CI pins, above the plugin's `>=20` floor.
 
-- With no path arguments it scans every `specs/<slug>/spec.md` in sorted slug order followed by `.specify/spec.md`, which is exactly the list an explicit invocation of those paths produces ([validated by: no spec paths scans the sorted specs directories plus .specify/spec.md](../../scripts/check-spec-links.test.ts#L143)).
+- With no path arguments it scans every `specs/<slug>/spec.md` in sorted slug order followed by `.specify/spec.md`, which is exactly the list an explicit invocation of those paths produces ([validated by: no spec paths scans the sorted specs directories plus .specify/spec.md](../../scripts/check-spec-links.test.ts#L141)).
 - Each finding prints one line carrying the spec, the statement's line, the cited path with its `#L` anchor, and the words `cited outside the statement's trailing parenthetical` ([validated by: a spec with misplaced citations exits 1 and summarises findings, specs and statements](../../scripts/check-spec-links.test.ts#L79)).
 - A citation written with no `#L` anchor prints the path alone ([validated by: a citation with no #L anchor is reported with the path alone](../../scripts/check-spec-links.test.ts#L55)).
 - The run closes with `misplaced: <N> across <M> specs (<S> statements scanned)` and exits 1 when `N` is above zero ([validated by: a spec with misplaced citations exits 1 and summarises findings, specs and statements](../../scripts/check-spec-links.test.ts#L79)).
 - A spec whose citations all sit in trailing parentheticals exits 0 under the same summary line ([validated by: a spec citing only in trailing parentheticals exits 0 with a zero summary](../../scripts/check-spec-links.test.ts#L73)).
 - `--json` replaces the report with an array alone, each entry carrying `spec`, `line`, `path`, `anchorLine`, `label` and `statement` ([validated by: --json prints only an array of findings carrying every reported field](../../scripts/check-spec-links.test.ts#L88)).
 - An unrecognised flag exits 2 with the usage line rather than scanning anything ([validated by: an unknown flag exits 2 with the usage line](../../scripts/check-spec-links.test.ts#L104)).
-- A spec path that cannot be read exits 2 naming that path, so a typo is never reported as a clean run ([validated by: a spec path that cannot be read exits 2 naming the path](../../scripts/check-spec-links.test.ts#L120)).
+- A spec path that cannot be read exits 2 naming that path, so a typo is never reported as a clean run ([validated by: a spec path that cannot be read exits 2 naming the path](../../scripts/check-spec-links.test.ts#L118)).
 
 Paths are resolved against the repo root, not the working directory, because the script locates the root from its own module URL and every reported path is printed root-relative.
 
-- A relative path means the same spec from any working directory ([validated by: a relative spec path resolves against the repo root, not the working directory](../../scripts/check-spec-links.test.ts#L129)).
-- An absolute path is accepted and reported root-relative ([validated by: an absolute spec path is scanned and reported repo-relative](../../scripts/check-spec-links.test.ts#L136)).
+- A relative path means the same spec from any working directory ([validated by: a relative spec path resolves against the repo root, not the working directory](../../scripts/check-spec-links.test.ts#L127)).
+- An absolute path is accepted and reported root-relative ([validated by: an absolute spec path is scanned and reported repo-relative](../../scripts/check-spec-links.test.ts#L134)).
 - The usage line states both facts ([validated by: the usage line says paths resolve against the repo root](../../scripts/check-spec-links.test.ts#L114)).
 
 ## CI
@@ -47,7 +47,7 @@ Paths are resolved against the repo root, not the working directory, because the
 
 ## Recorded decisions
 
-- **`.specify/spec.md` is in scope here and nowhere else.** AGENTS.md exempts it from the header table and the lead paragraph, because its content is frozen; link placement still applies to it, and the script scans it accordingly ([validated by: no spec paths scans the sorted specs directories plus .specify/spec.md](../../scripts/check-spec-links.test.ts#L143)).
+- **`.specify/spec.md` is in scope here and nowhere else.** AGENTS.md exempts it from the header table and the lead paragraph, because its content is frozen; link placement still applies to it, and the script scans it accordingly ([validated by: no spec paths scans the sorted specs directories plus .specify/spec.md](../../scripts/check-spec-links.test.ts#L141)).
 - **Fixtures, not the repo's own specs.** The behavioural pins run against two invented specs under `scripts/fixtures/spec-links/` rather than against `specs/`, so a sweep that fixes a real citation cannot turn a pin red. The one test that does read `specs/` asserts an equality between two runs rather than a count, so it survives every sweep too.
 - **The test drives the script as a subprocess.** `scripts/check-spec-links.test.ts` spawns `scripts/check-spec-links.mjs` exactly as the npm script does: exit codes and the exact stdout are the contract, and importing the module would test neither.
 - **No autofix.** Moving a citation changes the sentence it belongs to, and choosing which statement a link was meant for is a judgement the script has no basis to make. It reports; a person moves the link.

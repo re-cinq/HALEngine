@@ -97,13 +97,13 @@ The gate runs immediately before `npm publish`, so the two ways it can report a 
 - Output that is not JSON at all fails the same way ([validated by: refuses to report clean when npm returns no JSON at all](../../scripts/check-audit.test.ts#L85)).
 - An unacknowledged advisory at `high` or above fails the check ([validated by: fails on an unacknowledged critical advisory](../../scripts/check-audit.test.ts#L93)).
 - The blocking line carries the package, the affected range, the advisory id, its title and the path it is reached through ([validated by: names the package, version range, advisory id and path in the blocking line](../../scripts/check-audit.test.ts#L97)).
-- An acceptance naming that advisory passes it ([validated by: passes when the acceptance names that advisory](../../scripts/check-audit.test.ts#L103)).
-- An acceptance naming a different advisory in the same package does not ([validated by: does not let an acceptance for one advisory cover a different one in the same package](../../scripts/check-audit.test.ts#L110)).
-- Such an acceptance is itself reported as matching no current advisory ([validated by: reports the unmatched acceptance as stale rather than ignoring it](../../scripts/check-audit.test.ts#L117)).
-- A second advisory in an otherwise accepted package still fails ([validated by: still fails on a second unacknowledged advisory in an otherwise accepted package](../../scripts/check-audit.test.ts#L138)).
-- An expired acceptance fails the check ([validated by: fails on an acceptance whose expiry has passed](../../scripts/check-audit.test.ts#L124)).
-- An expired acceptance is named by advisory and package ([validated by: names the expired acceptance by advisory and package](../../scripts/check-audit.test.ts#L131)).
-- A clean report with no acceptances passes ([validated by: passes a clean report with no acceptances](../../scripts/check-audit.test.ts#L150)).
+- An acceptance naming that advisory passes it ([validated by: passes when the acceptance names that advisory](../../scripts/check-audit.test.ts#L105)).
+- An acceptance naming a different advisory in the same package does not ([validated by: does not let an acceptance for one advisory cover a different one in the same package](../../scripts/check-audit.test.ts#L112)).
+- Such an acceptance is itself reported as matching no current advisory ([validated by: reports the unmatched acceptance as stale rather than ignoring it](../../scripts/check-audit.test.ts#L119)).
+- A second advisory in an otherwise accepted package still fails ([validated by: still fails on a second unacknowledged advisory in an otherwise accepted package](../../scripts/check-audit.test.ts#L140)).
+- An expired acceptance fails the check ([validated by: fails on an acceptance whose expiry has passed](../../scripts/check-audit.test.ts#L126)).
+- An expired acceptance is named by advisory and package ([validated by: names the expired acceptance by advisory and package](../../scripts/check-audit.test.ts#L133)).
+- A clean report with no acceptances passes ([validated by: passes a clean report with no acceptances](../../scripts/check-audit.test.ts#L152)).
 
 
 A `uses:` reference is pinned to a commit SHA because a tag is a mutable pointer its owner can repoint under a job holding repository credentials. The scan covers the whole of `.github/`, not `workflows/` alone: a composite action carries its own `uses:` lines and runs inside whichever job calls it, so scanning only workflows leaves it unpinnable with nothing to notice.
@@ -122,9 +122,10 @@ The pack list is checked for what it must carry as well as what it must not. A p
 The trust-boundary check runs before the gates rather than after them. A tag pushed from a branch that never reached `main` is rejected in seconds instead of after a full build and test run.
 Three holes in the first version of this gate, each of which let it pass on something it should have stopped. `metadata.vulnerabilities` was accepted as an alternative to the real map, so a report carrying counts but no listing printed a critical count and the word clean in the same sentence; every modern `npm audit --json` carries the map, so the alternative bought nothing. The `unknown:` fallback for a missing advisory id was applied on a cycle-pruned re-entry, so an ordinary circular `via` pair fabricated an advisory that no acceptance could name and no maintainer could clear, on a tag that cannot be re-pointed. And `source` is npm's id for the package rather than the advisory, so two advisories on one package collapsed to one id and a single acceptance silenced both.
 
-- A report carrying only metadata counts is rejected rather than read as zero findings ([validated by: rejects a report carrying only metadata counts, which declares vulnerabilities it cannot list](../../scripts/check-audit.test.ts#L159)).
-- A `via` cycle produces no fabricated advisory ([validated by: does not fabricate an advisory when two packages reach each other through via](../../scripts/check-audit.test.ts#L165)).
-- Two advisories on one package stay distinct when neither carries a GHSA url ([validated by: keeps two advisories on one package distinct when neither carries a GHSA url](../../scripts/check-audit.test.ts#L186)).
+- A report carrying only metadata counts is rejected rather than read as zero findings ([validated by: rejects a report carrying only metadata counts, which declares vulnerabilities it cannot list](../../scripts/check-audit.test.ts#L161)).
+- A `via` cycle produces no fabricated advisory ([validated by: does not fabricate an advisory when two packages reach each other through via](../../scripts/check-audit.test.ts#L167)).
+- An advisory reached twice through `via` is reported once ([validated by: reports an advisory reached twice through via once, not twice](../../scripts/check-audit.test.ts#L198)).
+- Two advisories on one package stay distinct when neither carries a GHSA url ([validated by: keeps two advisories on one package distinct when neither carries a GHSA url](../../scripts/check-audit.test.ts#L217)).
 
 ### Tarball smoke test
 
@@ -227,7 +228,7 @@ Trusted publishing cannot be registered against a package name that has never be
 
 `HalEngineConfig.onConnect` is declared at `src/config.ts:37`, forwarded at `:75`, and declared again on `HalServerOptions` at `src/transport/createServer.ts:20` — and then omitted from the `deps` object at `:50` that the connection handler receives. Its sibling `onDisconnect` is forwarded on the adjacent line and is invoked on every close, so a consumer sees half the pair work. Four committed documents say both work.
 
-- `createServer` forwards `onConnect` into the `deps` object the connection handler receives, which is the omission that made the hook dead ([validated by: forwards onConnect to the connection handler](../../src/transport/createServer.test.ts#L39)).
+- `createServer` forwards `onConnect` into the `deps` object the connection handler receives, which is the omission that made the hook dead ([validated by: forwards onConnect to the connection handler](../../src/transport/createServer.test.ts#L41)).
 - `onConnect` is invoked once per accepted connection, with the session the socket was given ([validated by: is called once for an accepted connection, with the session the socket was given](../../src/transport/ws/connectionHandler.test.ts#L43)).
 - It is invoked after the `connected` frame is sent, not before ([validated by: runs after the connected frame is sent, not before it](../../src/transport/ws/connectionHandler.test.ts#L54)).
 - It is not invoked inline in the `connection` listener, where a synchronous throw corrupts an already-upgraded socket. It runs on a microtask, which drains before the loop delivers any inbound frame ([validated by: is deferred, so it never runs inside the connection listener](../../src/transport/ws/connectionHandler.test.ts#L65)).
@@ -237,7 +238,7 @@ Trusted publishing cannot be registered against a package name that has never be
 - Either hook may be absent, and a connection without one behaves identically ([validated by: is optional, so a connection without one still sends its frame](../../src/transport/ws/connectionHandler.test.ts#L94)).
 - `onDisconnect` is called with the session id, after the store entry for it is deleted ([validated by: is called with the session id after the store entry is deleted](../../src/transport/ws/connectionHandler.test.ts#L105)).
 - A rejecting `onDisconnect` is swallowed too, where an unhandled rejection would end the process under Node's defaults ([validated by: does not let a rejecting hook reach the process](../../src/transport/ws/connectionHandler.test.ts#L127)).
-- A server configured with neither hook starts and accepts connections unchanged ([validated by: accepts a server configured without either hook](../../src/transport/createServer.test.ts#L50)).
+- A server configured with neither hook starts and accepts connections unchanged ([validated by: accepts a server configured without either hook](../../src/transport/createServer.test.ts#L52)).
 
 ### Log lines carry a severity
 
@@ -313,6 +314,13 @@ The alias is removed. `user_message` is the only wire name, which is what the ex
 - An explicit `start(port)` still wins over the configured one ([validated by: lets an explicit start(port) win over the configured one](../../src/config.test.ts#L45)).
 - The started line logs the bound port rather than the requested one, which is what a configured `0` makes visible.
 - A port that cannot be bound rejects the promise `start()` returned, rather than surfacing as an unhandled `error` event that ends the process ([validated by: rejects instead of taking the process down with an unhandled error event](../../src/config.test.ts#L94)).
+
+Removing that listener once `listen` succeeded left the running server with none, and an `EventEmitter` with no `error` listener throws - so a socket error on a started server ended the process. A persistent listener replaces it, and its lifetime is the part worth stating: it is removed before each bind attempt, and never on `stop()`.
+
+- An error on a running server is reported rather than ending the process ([validated by: is reported rather than ending the process](../../src/transport/createServer.test.ts#L83)).
+- Restarting does not accumulate listeners ([validated by: leaves exactly one listener behind, however many times the server is restarted](../../src/transport/createServer.test.ts#L92)).
+- The listener survives `stop()`, because an error arriving with no handler ends the process whether or not the server is running ([validated by: is still reported after stop, because an error with no handler ends the process](../../src/transport/createServer.test.ts#L103)).
+- A bind failure is not reported as a running server's error: the stale listener is removed before each attempt, so a refused `start()` rejects and logs nothing ([validated by: is not reported for a start that was cleanly refused, because nothing was running](../../src/transport/createServer.test.ts#L112)).
 - `transport.port` resolves with `??` rather than `||`, so a configured `0` means "let the OS choose a free port" instead of collapsing to the default. `PORT` keeps its `||`, because an environment variable that fails to parse should not silently bind port 0.
 - Writing the tests exposed a third defect: `createServer` opened its heartbeat interval at construction, so an engine that was built and never started held the Node event loop open forever. The timer is now `unref`ed - the listening socket is what should keep a process alive.
 

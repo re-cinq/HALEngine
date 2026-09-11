@@ -62,4 +62,22 @@ describe('check-spec-anchor-names', () => {
 
     expect(after).toBe(before);
   });
+
+  it('reports a name that two declarations share, rather than choosing between them', () => {
+    expect(run(spec('ambiguous')).stderr).toContain('names 2 declarations');
+  });
+
+  it('refuses to rewrite an ambiguous citation', () => {
+    const before = readFileSync(join(process.cwd(), spec('ambiguous')), 'utf8');
+    const after = onACopy('ambiguous', path => run(path, '--fix'));
+
+    expect(after).toBe(before);
+  });
+
+  it('refuses to write a name that would break the markdown label', () => {
+    const before = readFileSync(join(process.cwd(), spec('bracket')), 'utf8');
+    const after = onACopy('bracket', path => run(path, '--fix'));
+
+    expect(after).toBe(before);
+  });
 });

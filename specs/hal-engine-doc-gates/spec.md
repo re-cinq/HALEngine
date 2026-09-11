@@ -34,7 +34,7 @@ The fence tag is the gate's own blind spot, because a block it does not recognis
 
 ## Paths in prose resolve
 
-`npm run docs:check-paths` resolves every backticked repository path written in a document. A path in prose is a citation, and a citation nobody resolves rots in silence: the file moves, the sentence naming it stays, and the next reader follows it to nothing.
+`npm run docs:check-paths` resolves every backticked repository path written in a document - `src/`, `scripts/`, `example/`, `smoke/`, `docs/`, `specs/`, `adrs/`, `dist/`, `.github/` and `.specify/`. A path that legitimately does not resolve is named in the script's own allowlist with the reason, because an exception has to be written down to be one; narrowing the pattern instead would hide every other path behind the same prefix. A path in prose is a citation, and a citation nobody resolves rots in silence: the file moves, the sentence naming it stays, and the next reader follows it to nothing.
 
 - A document whose cited paths all resolve passes, including one written with a line suffix - which line a citation lands on is `repoint-spec-anchors.mjs`'s question, not this one ([validated by: passes a document whose cited paths all resolve, including one carrying a line suffix](../../scripts/check-doc-gates.test.ts#L12)).
 - A placeholder and a glob name no single file and are not checked ([validated by: ignores a placeholder and a glob, which name no single file](../../scripts/check-doc-gates.test.ts#L16)).
@@ -54,13 +54,14 @@ The fence tag is the gate's own blind spot, because a block it does not recognis
 
 `npm run check:regions` refuses a cloud region outside the EU in anything a reader copies. `location` and `region` reach the vendor SDK unvalidated, so a US region in an example is a cross-border transfer somebody made by following the documentation.
 
-The check reads fenced blocks and source files, not prose. A spec sentence recording that an example *used to* name a US region is a record of a correction, not a snippet, and rewriting it would erase the account of the defect.
+The check reads fenced blocks and source files, not prose. Fences are read as CommonMark writes them: three backticks or three tildes, up to three spaces of indent, closing only on the same character - because the ordinary way a guide shows a step is an indented fence inside a numbered list, and reading only the unindented backtick spelling made exactly that invisible. A spec sentence recording that an example *used to* name a US region is a record of a correction, not a snippet, and rewriting it would erase the account of the defect.
 
 - An EU region in an example passes ([validated by: passes an EU region in an example](../../scripts/check-doc-gates.test.ts#L50)).
 - A non-EU region in an example fails ([validated by: fails a non-EU region in an example](../../scripts/check-doc-gates.test.ts#L54)).
 - A non-EU region set through an environment variable fails ([validated by: fails a non-EU region set through an environment variable](../../scripts/check-doc-gates.test.ts#L58)).
 - A region named in prose is not a snippet and is not checked ([validated by: ignores a region named in prose, which records a change rather than instructing](../../scripts/check-doc-gates.test.ts#L62)).
 - Every line of a source example is checked, having no fence to sit inside ([validated by: checks every line of a source example, which has no fence to sit inside](../../scripts/check-doc-gates.test.ts#L66)).
+- An indented fence inside a numbered list is read, and so is a tilde fence ([validated by: reads an indented fence and a tilde fence, which a guide writes as a step](../../scripts/check-doc-gates.test.ts#L74)).
 - The report names the region it refused ([validated by: names the region it refused](../../scripts/check-doc-gates.test.ts#L70)).
 
 The prefix rule is a vendor naming convention rather than a legal test. `eu-west-2` is London, which passes this check while sitting outside the EU; where data may actually come to rest is a transfer-basis question this gate does not answer and should not be read as answering.
@@ -82,4 +83,8 @@ The `#Lnn` stays. The lint rule and the coverage job both index by line, and a c
 - `--fix` fills in a missing name from the declaration its line points at ([validated by: fills in a missing name from the declaration the line points at](../../scripts/check-spec-anchor-names.test.ts#L53)).
 - `--fix` leaves a citation that already agrees untouched ([validated by: leaves a citation that already agrees with its declaration untouched](../../scripts/check-spec-anchor-names.test.ts#L59)).
 
-A name declared more than once in one file resolves to the nearest declaration, because a citation goes stale by a line shift and the match a few lines from where it used to be is the one the author meant. Two candidates equally far from the cited line are reported rather than guessed at.
+A name declared more than once in one file is reported and never guessed at, whether or not the line currently agrees. Resolving it by proximity was tried and removed: the nearest declaration is the one the author meant only while the shift is smaller than half the gap between the duplicates, and past that the tool rewrites the spec to cite the wrong test, after which every gate reports clean. That was not hypothetical - `src/transport/routes/chats.test.ts` declared one name twice, both were cited, and `--fix` collapsed them onto one line. The two tests were renamed apart; the mechanism that allowed it is gone.
+
+- A name matching two declarations is reported rather than repointed ([validated by: reports a name that two declarations share, rather than choosing between them](../../scripts/check-spec-anchor-names.test.ts#L66)).
+- `--fix` leaves an ambiguous citation exactly as it found it ([validated by: refuses to rewrite an ambiguous citation](../../scripts/check-spec-anchor-names.test.ts#L70)).
+- A name carrying a bracket is refused rather than written into a label it would break ([validated by: refuses to write a name that would break the markdown label](../../scripts/check-spec-anchor-names.test.ts#L77)).
