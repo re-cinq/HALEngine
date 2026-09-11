@@ -32,7 +32,10 @@ const DOCS = [
 // example/ imports the source tree; a reader installs the package.
 const IMPORT_REWRITES = [[/from '\.\.\/src\/index\.js'/g, "from '@re-cinq/hal-engine'"]];
 
-const TYPESCRIPT_FENCE = /^```(typescript|ts)$/;
+// Every spelling a renderer treats as TypeScript, plus any info string after it: accepting only one
+// spelling let a block keep its marker, stop being compared, and still render as code.
+const TYPESCRIPT_FENCE = /^```[ \t]*(typescript|ts|tsx)\b[^`]*$/i;
+const CLOSING_FENCE = /^```[ \t]*$/;
 
 const args = process.argv.slice(2);
 const fix = args.includes('--fix');
@@ -102,11 +105,9 @@ for (const doc of DOCS) {
   let changed = false;
 
   for (let i = 0; i < lines.length; i += 1) {
-    // `ts` as well as `typescript`: both render identically, so accepting only one lets a retagged
-    // fence leave the gate silently - the block keeps its marker and stops being compared.
     if (!TYPESCRIPT_FENCE.test(lines[i])) continue;
 
-    const close = lines.findIndex((l, j) => j > i && l === '```');
+    const close = lines.findIndex((l, j) => j > i && CLOSING_FENCE.test(l));
     if (close < 0) {
       findings.push(`${doc}:${i + 1} typescript block is never closed`);
       continue;
