@@ -9,7 +9,8 @@ import {join} from 'node:path';
 import process from 'node:process';
 import {root} from './lib/repo-root.mjs';
 
-const USAGE = 'usage: check-doc-blocks.mjs [--fix]\n\nmarkers, on the line before the fence:\n  <!-- doc-block: src/types/ai.ts#AIProvider -->   an exported declaration\n  <!-- doc-block: example/server.ts#quick-start --> a #region span in a checked example\n  <!-- doc-block: none -- reason -->                opt out, reason required';
+const USAGE =
+  'usage: check-doc-blocks.mjs [--fix]\n\nmarkers, on the line before the fence:\n  <!-- doc-block: src/types/ai.ts#AIProvider -->   an exported declaration\n  <!-- doc-block: example/server.ts#quick-start --> a #region span in a checked example\n  <!-- doc-block: none -- reason -->                opt out, reason required';
 
 const DOCS = [
   'README.md',
@@ -30,6 +31,8 @@ const DOCS = [
 
 // example/ imports the source tree; a reader installs the package.
 const IMPORT_REWRITES = [[/from '\.\.\/src\/index\.js'/g, "from '@re-cinq/hal-engine'"]];
+
+const TYPESCRIPT_FENCE = /^```(typescript|ts)$/;
 
 const args = process.argv.slice(2);
 const fix = args.includes('--fix');
@@ -99,9 +102,15 @@ for (const doc of DOCS) {
   let changed = false;
 
   for (let i = 0; i < lines.length; i += 1) {
-    if (lines[i] !== '```typescript') continue;
+    // `ts` as well as `typescript`: both render identically, so accepting only one lets a retagged
+    // fence leave the gate silently - the block keeps its marker and stops being compared.
+    if (!TYPESCRIPT_FENCE.test(lines[i])) continue;
 
     const close = lines.findIndex((l, j) => j > i && l === '```');
+    if (close < 0) {
+      findings.push(`${doc}:${i + 1} typescript block is never closed`);
+      continue;
+    }
     const previous = (lines[i - 1] ?? '').trim();
     const match = previous.match(/^<!-- doc-block: (.+?) -->$/);
 

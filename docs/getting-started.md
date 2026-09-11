@@ -175,20 +175,12 @@ beforeSession → beforeUserInput → afterUserInput → beforeModelResponse →
 
 The WebSocket protocol is documented in [websocket-protocol.md](../specs/hal-engine-websocket-protocol/spec.md). A minimal client connection:
 
+The demo chat routes are not part of this flow. A `POST /chats` id is not a WebSocket session id -- the socket mints its own and ignores whatever follows `/ws` in the path -- so there is no create-then-connect handshake to perform.
+
 <!-- doc-block: none -- illustrates assembling the parts by hand, which no single declaration or example region carries -->
 ```typescript
-// 1. Create a chat session
-const response = await fetch('http://localhost:3000/hal/chats', {
-  method: 'POST',
-  headers: {Authorization: `Bearer ${token}`},
-});
-const {chatId} = await response.json();
-
-// 2. Connect via WebSocket (token as subprotocol)
-const ws = new WebSocket(
-  `ws://localhost:3000/hal/ws/${chatId}`,
-  [token]
-);
+// 1. Connect. The server mints the session id and sends it back in the `connected` frame.
+const ws = new WebSocket('ws://localhost:8086/api/ws', [token]);
 
 ws.onmessage = (event) => {
   const message = JSON.parse(event.data);
@@ -212,7 +204,7 @@ ws.onmessage = (event) => {
   }
 };
 
-// 3. Send a message
+// 2. Send a message
 ws.send(JSON.stringify({
   type: 'user_message',
   content: 'What is the weather in Berlin?',
