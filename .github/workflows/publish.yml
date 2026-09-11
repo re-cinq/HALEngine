@@ -46,6 +46,25 @@ jobs:
       - name: Tag matches the committed version
         run: npm run check:version
 
+      # The pre-commit sequence AGENTS.md documents, re-run against the tagged
+      # commit. Not redundant with CI: a tag points at whatever commit its author
+      # chose, so a green run on main is evidence about main rather than about
+      # what is being published. Separate steps so a red release names its gate.
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Type check the example
+        run: npm run typecheck:example
+
+      - name: Lint (--max-warnings 0)
+        run: npm run eslint
+
+      - name: Format check
+        run: npm run prettier:check
+
+      - name: Test (with coverage floor)
+        run: npm run test:coverage
+
       # main is the trust boundary: it requires a pull request, blocks
       # force-pushes, and publishing over OIDC makes push access to it the right
       # to release. A tag can be pushed from any branch, so without this the
