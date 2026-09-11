@@ -1,0 +1,7 @@
+{
+  "name": "hal-engine-smoke-consumer",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Fixture consumer for scripts/smoke.sh. Never published; installed into a temp dir outside this repo."
+}

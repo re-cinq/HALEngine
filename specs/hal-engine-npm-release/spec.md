@@ -89,10 +89,14 @@ AGENTS.md § Quality Gates already commits this repository to "npm audit must sh
 
 Nothing in this repository has ever installed the package from a tarball. A git specifier builds from source and therefore exercises neither the `exports` map, nor `files`, nor the dependency list, nor the emitted `.d.ts` files.
 
-- A committed consumer fixture — its own `package.json`, an ESM entry point, and a TypeScript file that imports the types — installs the packed tarball outside the repository tree and runs.
-- It runs with no optional peer installed, which is the specific failure the optional-peer work above prevents.
-- It type-checks against the published `.d.ts` files, which import `express`, `http` and `ws` while their `@types/*` packages are all devDependencies.
-- It runs as its own CI job and again in the publish workflow before `npm publish`.
+- A committed consumer fixture under `smoke/` — its own `package.json`, an ESM entry point, a TypeScript file that imports the types, and a `tsconfig.json` — is installed from the packed tarball and run by `scripts/smoke.sh`.
+- The install happens in a temp directory **outside** the repository tree. Installed inside it, Node and `tsc` walk up to this repo's own `node_modules` and every missing dependency resolves anyway, so the check passes on a package that would fail for a real consumer.
+- Everything is installed in one `npm install`. A later `--no-save` install prunes packages absent from `package.json`, which silently removes the subject and turns the type check into a "cannot find module" false negative — measured while writing T004.
+- The fixture asserts that neither optional peer is present, then that the mock provider streams to a `stop` chunk, then that constructing Vertex or Bedrock throws an `AIError` with code `OPTIONAL_PEER_MISSING` naming the missing package.
+- It type-checks with `skipLibCheck: false`, so the published `.d.ts` files must compile on their own rather than being waved through. That setting is what surfaced `@types/express`, `@types/node` and `@types/ws` sitting in devDependencies.
+- `smoke/` is excluded from `tsconfig.json` and `tsconfig.build.json` the way `example` is, because it compiles against the published package rather than against `src/`. It is outside the jest roots and outside `files`, so it is neither tested in place nor published.
+- It runs as its own CI job, and T011 calls it in the publish workflow before `npm publish`.
+- The check is load-bearing rather than decorative: reverting the T004 dependency move reproduces 8 `tsc` errors, and restoring the top-level Vertex import from before T002 reproduces `ERR_MODULE_NOT_FOUND` — both caught by this script alone.
 
 ### Release workflow
 

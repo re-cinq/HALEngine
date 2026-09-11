@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.json",
   "//": "Build-only. tsconfig.json stays the whole-repo view so `npm run typecheck` and ts-jest keep checking tests; this one drops them from the emitted package. `exclude` REPLACES the parent's rather than merging, so the base entries are repeated here.",
-  "exclude": ["node_modules", "dist", "example", "**/*.test.ts", "src/providers/providerTestSupport.ts"]
+  "exclude": ["node_modules", "dist", "example", "smoke", "**/*.test.ts", "src/providers/providerTestSupport.ts"]
 }
