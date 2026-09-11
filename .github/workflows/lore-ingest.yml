@@ -33,7 +33,6 @@ jobs:
         if: steps.changes.outputs.files != '[]'
         env:
           LORE_INGEST_TOKEN: ${{ secrets.LORE_INGEST_TOKEN }}
-          # Secret first, then repo vars: onboarding writes the var, a secret overrides it.
           LORE_INGEST_URL: ${{ secrets.LORE_INGEST_URL || vars.LORE_INGEST_URL || vars.LORE_API_URL }}
           FILES: ${{ steps.changes.outputs.files }}
         run: |
@@ -118,7 +117,6 @@ jobs:
       - name: Project ${{ matrix.kind }} into the graph
         env:
           LORE_INGEST_TOKEN: ${{ secrets.LORE_INGEST_TOKEN }}
-          # Secret first, then repo vars: onboarding writes the var, a secret overrides it.
           LORE_INGEST_URL: ${{ secrets.LORE_INGEST_URL || vars.LORE_INGEST_URL || vars.LORE_API_URL }}
         run: |
           # Actions masks secrets automatically but not repository variables, and this

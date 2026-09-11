@@ -22,7 +22,6 @@ jobs:
         id: baseline
         env:
           LORE_INGEST_TOKEN: ${{ secrets.LORE_INGEST_TOKEN }}
-          # Secret first, then repo vars: onboarding writes the var, a secret overrides it.
           LORE_INGEST_URL: ${{ secrets.LORE_INGEST_URL || vars.LORE_INGEST_URL || vars.LORE_API_URL }}
         run: |
           # Actions masks secrets automatically but not repository variables, and this
@@ -142,7 +141,6 @@ jobs:
         id: query
         env:
           LORE_INGEST_TOKEN: ${{ secrets.LORE_INGEST_TOKEN }}
-          # Secret first, then repo vars: onboarding writes the var, a secret overrides it.
           LORE_INGEST_URL: ${{ secrets.LORE_INGEST_URL || vars.LORE_INGEST_URL || vars.LORE_API_URL }}
           COMMIT: ${{ github.event.pull_request.head.sha }}
           GRAPH_COMMIT: ${{ steps.baseline.outputs.graph_commit }}
