@@ -222,7 +222,7 @@ Semantics:
 
 ### 5.5 entry_skip
 
-Notifies the client that a session entry was created on the server and will never be sent. This happens under output suppression (see [tool-responses.md](../hal-engine-tool-responses/spec.md)): the server keeps the entry so the model retains context, and the client does not need it for display ([validated by](../../src/transport/ws/messageHandler.test.ts#L171)).
+Notifies the client that a session entry was created on the server and will never be sent. This happens under output suppression (see [tool-responses.md](../hal-engine-tool-responses/spec.md)): the server keeps the entry so the model retains context, and the client does not need it for display ([validated by](../../src/transport/ws/messageHandler.test.ts#L196)).
 
 ```json
 {
@@ -238,14 +238,14 @@ Notifies the client that a session entry was created on the server and will neve
 
 Suppression can begin before or after the server has started sending a reply, and the two cases produce different messages. This distinction is the whole of the protocol here:
 
-- An entry **opened while suppression is already active** is announced with `entry_skip` and nothing else: no `entry_upsert`, no `entry_delta`, no `entry_commit` follows it ([validated by](../../src/transport/ws/messageHandler.test.ts#L163)).
-- An entry **already sent before suppression began** cannot be skipped, because the client is displaying it. The server retracts it instead, by re-sending `entry_upsert` at the same index with the entry's `content` set to `""`. The client renders an empty assistant entry as nothing, so the text disappears ([validated by](../../src/transport/ws/messageHandler.test.ts#L140)).
+- An entry **opened while suppression is already active** is announced with `entry_skip` and nothing else: no `entry_upsert`, no `entry_delta`, no `entry_commit` follows it ([validated by](../../src/transport/ws/messageHandler.test.ts#L188)).
+- An entry **already sent before suppression began** cannot be skipped, because the client is displaying it. The server retracts it instead, by re-sending `entry_upsert` at the same index with the entry's `content` set to `""`. The client renders an empty assistant entry as nothing, so the text disappears ([validated by](../../src/transport/ws/messageHandler.test.ts#L165)).
 
 #### Limits of retraction
 
-- Only assistant entries are ever retracted; a thinking entry is never blanked, even when it was sent before suppression began ([validated by](../../src/transport/ws/messageHandler.test.ts#L155)).
-- Each sent entry is blanked once, so a second suppression in the same stream repeats nothing ([validated by](../../src/transport/ws/messageHandler.test.ts#L189)).
-- An entry the client only ever saw as `entry_skip` is never retracted, because nothing is displayed to retract ([validated by](../../src/transport/ws/messageHandler.test.ts#L181)).
+- Only assistant entries are ever retracted; a thinking entry is never blanked, even when it was sent before suppression began ([validated by](../../src/transport/ws/messageHandler.test.ts#L180)).
+- Each sent entry is blanked once, so a second suppression in the same stream repeats nothing ([validated by](../../src/transport/ws/messageHandler.test.ts#L214)).
+- An entry the client only ever saw as `entry_skip` is never retracted, because nothing is displayed to retract ([validated by](../../src/transport/ws/messageHandler.test.ts#L206)).
 
 Semantics:
 
@@ -285,8 +285,8 @@ Defined error codes:
 Semantics:
 
 - A message the server cannot parse into a known type is answered with `INVALID_MESSAGE`, and no message stream is started for it ([validated by](../../src/transport/ws/messageHandler.test.ts#L56)).
-- A rate limit reported by the AI provider is surfaced as `RATE_LIMITED`, which tells the client the same request is worth retrying ([validated by](../../src/transport/ws/messageHandler.test.ts#L199)).
-- Any other failure raised while processing a message is reported as `SERVER_ERROR` ([validated by](../../src/transport/ws/messageHandler.test.ts#L208)).
+- A rate limit reported by the AI provider is surfaced as `RATE_LIMITED`, which tells the client the same request is worth retrying ([validated by](../../src/transport/ws/messageHandler.test.ts#L224)).
+- Any other failure raised while processing a message is reported as `SERVER_ERROR` ([validated by](../../src/transport/ws/messageHandler.test.ts#L233)).
 
 ### 5.7 pong
 
@@ -438,7 +438,7 @@ entry_upsert
    |  No delta or commit follows.
 ```
 
-The entry is fully formed in the `entry_upsert` message, so a tool call yields one `entry_upsert` and nothing further. The client MUST NOT expect `entry_delta` or `entry_commit` for these entries ([validated by](../../src/transport/ws/messageHandler.test.ts#L121)).
+The entry is fully formed in the `entry_upsert` message, so a tool call yields one `entry_upsert` and nothing further. The client MUST NOT expect `entry_delta` or `entry_commit` for these entries ([validated by](../../src/transport/ws/messageHandler.test.ts#L146)).
 
 ## 8. Conversation Sequence
 
@@ -466,8 +466,8 @@ In multi-tool scenarios, multiple ToolEntry objects may appear between the Think
 <-- {"type": "entry_upsert", "index": 0, "entry": {"role": "user", "content": "What is the weather in Berlin?", "timestamp": "2026-01-15T14:30:00Z"}}
 <-- {"type": "entry_upsert", "index": 1, "entry": {"role": "thinking", "content": "", "isStreaming": true}}
 <-- {"type": "entry_delta",  "index": 1, "delta": "I should look up the weather for Berlin."}
-<-- {"type": "entry_commit", "index": 1}
 <-- {"type": "entry_upsert", "index": 2, "entry": {"role": "tool", "toolName": "get_weather", "toolInput": {"location": "Berlin"}}}
+<-- {"type": "entry_commit", "index": 1}
 <-- {"type": "entry_upsert", "index": 3, "entry": {"role": "assistant", "content": "", "timestamp": "2026-01-15T14:30:02Z", "isStreaming": true}}
 <-- {"type": "entry_delta",  "index": 3, "delta": "Berlin currently has "}
 <-- {"type": "entry_delta",  "index": 3, "delta": "a temperature of 18 degrees Celsius with clear skies."}
@@ -476,6 +476,8 @@ In multi-tool scenarios, multiple ToolEntry objects may appear between the Think
 ```
 
 Notation: `-->` is client-to-server, `<--` is server-to-client.
+
+**Commit frames are not emitted in index order.** Above, `entry_commit` for index 1 arrives after `entry_upsert` for index 2. A thinking entry is committed when the next text segment arrives, not when a tool entry appears, so a tool call between thinking and the answer lands in the gap. A client that assumes commits arrive in ascending index order, or that an entry is committed before the next one opens, will mis-render this exchange ([validated by](../../src/transport/ws/messageHandler.test.ts#L119)).
 
 ### 8.2 Example: Tool with Suppression and Index Skip
 
@@ -545,7 +547,7 @@ Round N:  Model streams final text with stopReason "end_turn"
 
 The client observes this as a sequence of `entry_upsert`, `entry_delta`, and `entry_commit` messages, terminated by a `stream_end`. The tool loop is transparent to the client -- it does not need to track rounds.
 
-Messages a tool addresses to the client are forwarded verbatim, in the position the stream produced them, rather than being rewritten into entries of the server's own ([validated by](../../src/transport/ws/messageHandler.test.ts#L129)).
+Messages a tool addresses to the client are forwarded verbatim, in the position the stream produced them, rather than being rewritten into entries of the server's own ([validated by](../../src/transport/ws/messageHandler.test.ts#L154)).
 
 ## 10. Heartbeat
 
