@@ -98,6 +98,11 @@ export function createServer(options: HalServerOptions): HalServer {
 
         server.listen(p, () => {
           server.removeListener('error', onError);
+
+          // Past the listen window nothing is listening, and an 'error' with no handler ends the process.
+          server.removeListener('error', logLateError);
+          server.on('error', logLateError);
+
           // The bound port, not the requested one: a configured 0 means the OS chose it.
           log.info('server', 'HAL Engine started', {port: boundPort(server, p)});
           resolve();
@@ -111,6 +116,11 @@ export function createServer(options: HalServerOptions): HalServer {
         server.close(err => (err ? reject(err) : resolve()));
       }),
   };
+}
+
+// A running server's error is a condition to report, not a reason to exit; the consumer decides what to do.
+function logLateError(error: Error): void {
+  log.error('server', 'server error after start', {error: error.message});
 }
 
 function boundPort(server: http.Server, requested: number): number {
