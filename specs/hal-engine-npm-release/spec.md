@@ -53,6 +53,10 @@ This is a breaking change under AGENTS.md § Breaking Changes and inherits that 
 
 `main` and `types` are kept alongside `exports`, matching the reference implementation. `prepare: "npm run build"` is kept, which means npm runs it on both `npm ci` and `npm publish` — every CI install in this repository therefore uses `--ignore-scripts`.
 
+`@types/express`, `@types/node` and `@types/ws` move from `devDependencies` to `dependencies`. The emitted `.d.ts` files import `express`, `http`, `stream` and `ws` unconditionally — `types/auth.d.ts` and three files under `transport/` — so with those packages dev-only a consumer resolves the runtime fine and fails to type-check. Measured on the packed tarball in an empty project: eight `TS7016`/`TS2591`/`TS2307` errors before the move, and a clean `tsc` exit after it. This is a manifest defect rather than a smoke-test finding, which is why it lands with the manifest; the smoke test is what stops it returning.
+
+The `@aws-sdk/client-bedrock-runtime` reference in the emitted types is not the same problem. It survives the peer being absent, because it is a `typeof import(...)` inside a function body rather than a type in the public surface — verified by type-checking a consumer with neither optional peer installed.
+
 ### What `dist/` contains
 
 `tsconfig.build.json` already excludes `**/*.test.ts` from emit while `tsconfig.json` keeps type-checking them, so compiled test files no longer reach the package. What is missing is a check: the publish workflow MUST fail when the pack list contains any `*.test.*` entry, so this cannot silently regress.

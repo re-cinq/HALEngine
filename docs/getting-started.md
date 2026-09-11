@@ -5,7 +5,7 @@ This guide shows how to set up hal-engine in your application with `createHalEng
 ## Installation
 
 ```bash
-npm install hal-engine
+npm install @re-cinq/hal-engine
 ```
 
 ## Minimal Setup
@@ -13,7 +13,7 @@ npm install hal-engine
 The simplest possible setup requires two things: an AI provider configuration and a WebSocket authenticator.
 
 ```typescript
-import {createHalEngine} from 'hal-engine';
+import {createHalEngine} from '@re-cinq/hal-engine';
 
 const engine = createHalEngine({
   provider: {
@@ -47,8 +47,8 @@ This starts a server with:
 Tools let the AI fetch data or perform actions. Register them on the engine's `toolRegistry`:
 
 ```typescript
-import {createHalEngine, ToolRegistry} from 'hal-engine';
-import type {ToolDefinition} from 'hal-engine';
+import {createHalEngine, ToolRegistry} from '@re-cinq/hal-engine';
+import type {ToolDefinition} from '@re-cinq/hal-engine';
 
 const weatherTool: ToolDefinition = {
   name: 'get_weather',
@@ -214,8 +214,8 @@ ws.send(JSON.stringify({
 Implement the `SessionStore` interface to persist sessions beyond in-memory storage:
 
 ```typescript
-import type {SessionStore} from 'hal-engine';
-import type {ChatSession} from 'hal-engine';
+import type {SessionStore} from '@re-cinq/hal-engine';
+import type {ChatSession} from '@re-cinq/hal-engine';
 
 class RedisSessionStore implements SessionStore {
   constructor(private redis: RedisClient) {}

@@ -1,13 +1,30 @@
 {
-  "name": "hal-engine",
-  "version": "0.1.0",
+  "name": "@re-cinq/hal-engine",
+  "version": "0.2.0",
   "type": "module",
   "description": "A generic AI chat server framework with pluggable providers, tools, and transport",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/re-cinq/HALEngine.git"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "files": [
     "dist"
   ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "dev": "tsx watch example/server.ts",
     "build": "node --input-type=module -e \"import {rmSync} from 'node:fs'; rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
@@ -23,6 +40,9 @@
     "prettier:check": "prettier --check \"src/**/*.ts\""
   },
   "dependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.5.0",
+    "@types/ws": "^8.5.10",
     "cookie": "^0.6.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
@@ -51,12 +71,9 @@
     "@types/cookie": "^0.6.0",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
-    "@types/express": "^5.0.0",
     "@types/jest": "^29.5.12",
-    "@types/node": "^22.5.0",
     "@types/supertest": "^6.0.2",
     "@types/uuid": "^9.0.7",
-    "@types/ws": "^8.5.10",
     "eslint": "^9.9.0",
     "jest": "^29.7.0",
     "jscpd": "^5.2.0",

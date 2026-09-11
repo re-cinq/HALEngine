@@ -22,7 +22,7 @@ hal-engine ships with built-in support for multiple AI providers. All providers 
 Pass the provider config to `createHalEngine()` or use `createProvider()` directly:
 
 ```typescript
-import {createHalEngine} from 'hal-engine';
+import {createHalEngine} from '@re-cinq/hal-engine';
 
 // Via createHalEngine
 const engine = createHalEngine({
@@ -36,7 +36,7 @@ const engine = createHalEngine({
 });
 
 // Or standalone
-import {createProvider} from 'hal-engine';
+import {createProvider} from '@re-cinq/hal-engine';
 
 const provider = createProvider({
   type: 'openai',
@@ -102,7 +102,7 @@ GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 
 **Structured output example:**
 ```typescript
-import {createVertexProvider} from 'hal-engine';
+import {createVertexProvider} from '@re-cinq/hal-engine';
 
 const provider = createVertexProvider({
   type: 'vertex',

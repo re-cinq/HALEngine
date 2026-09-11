@@ -17,11 +17,11 @@ HAL Engine extracts the core patterns of building an AI-powered chat backend int
 ## Quick Start
 
 ```bash
-npm install hal-engine
+npm install @re-cinq/hal-engine
 ```
 
 ```typescript
-import {createHalEngine, ToolRegistry} from 'hal-engine';
+import {createHalEngine, ToolRegistry} from '@re-cinq/hal-engine';
 
 const tools = new ToolRegistry();
 tools.register(
