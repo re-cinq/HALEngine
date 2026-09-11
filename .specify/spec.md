@@ -6,7 +6,6 @@ HAL Engine is a generic, production-ready AI chat server framework designed to a
 
 The system handles core patterns including streaming responses, tool execution loops, WebSocket connections, session persistence, and message orchestration. It is structured as a layered application with clear separation of concerns from core types through infrastructure and transport.
 
-**Version**: 0.1.0  
 **Primary Language**: TypeScript (ES2022, strict mode)  
 **Entry Point**: `src/config.ts` (`createHalEngine()` factory function)  
 
@@ -273,9 +272,10 @@ Each layer depends only on layers below it, ensuring clean separation of concern
 - `logger`: Custom logger instance
 
 ### Deployment Artifacts
-- Builds to `dist/` directory (ES2022, CommonJS only - no `type: module` and no `exports` map)
+- Builds to `dist/` directory (ES2022, ESM only - `type: module`, resolved through the `exports` map)
 - Type definitions included (`dist/index.d.ts`)
-- Published as npm package `hal-engine`
+- Published as npm package `@re-cinq/hal-engine`, Apache-2.0, `engines: node >=22`
+- `@types/express`, `@types/node` and `@types/ws` are runtime `dependencies`, not dev: the emitted `.d.ts` files import `express`, `http`, `stream` and `ws`, so a consumer cannot type-check without them
 
 ---
 

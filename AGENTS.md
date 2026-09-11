@@ -312,11 +312,18 @@ For new provider support:
 - WebSocket protocol defined in types/messages.ts (additive changes only for backward compatibility)
 
 ### Dependency Management
-- Core dependencies only (Express, ws, uuid, cookie)
+- Core dependencies only (Express, ws, uuid, cookie, cors, cookie-parser)
+- `@types/express`, `@types/node` and `@types/ws` are dependencies rather than
+  devDependencies, because the emitted `.d.ts` files import `express`, `http`,
+  `stream` and `ws`. Moving them back breaks a consumer's `tsc`, not ours
 - Provider SDKs as optional peerDependencies
 - No peer dependency version conflicts
 - Security: npm audit must show no vulnerabilities (npm ci to lock)
-- License: ISC (maintain license header in files)
+- License: Apache-2.0, declared in `package.json` and carried in `LICENSE`. No
+  per-file licence headers: `re-lint/max-comment-lines` caps a comment at one
+  line and exempts only tooling directives, so the thirteen-line Apache notice
+  cannot go in a source file. Apache-2.0 recommends headers, it does not
+  require them
 
 ### Documentation Requirements
 - A comment may span at most one line, JSDoc included — see Code Style. What a
@@ -326,6 +333,10 @@ For new provider support:
   "what". Anything longer goes to `specs/` or `adrs/`
 - README.md kept in sync with actual features/examples
 - specs/ directory is source of truth for architecture and protocols; adrs/ records decisions
+- `.specify/spec.md` is the repo-level system spec. It is ingested by context
+  tooling and served as authority, so a claim left stale there reaches every
+  agent that assembles context for this repo. Keep it true when the manifest
+  changes
 - CHANGELOG implied by conventional commits
 
 ### Breaking Changes
