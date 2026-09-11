@@ -29,6 +29,9 @@ published before it, so there is no upgrade path from `0.1.0` on the registry â€
 
 - `LICENSE` (Apache-2.0), declared in `package.json`.
 - `exports`, `repository`, `engines` and `publishConfig` entries in the manifest.
+- Every published version carries an npm provenance attestation, so you can verify with
+  `npm audit signatures` that the tarball was built by this repository's release workflow from the
+  commit the version was tagged at, rather than uploaded by whoever held a token.
 
 ### Fixed
 

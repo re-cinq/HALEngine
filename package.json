@@ -40,6 +40,7 @@
     "check:spec-status": "node scripts/check-spec-status.mjs",
     "check:audit": "node scripts/check-audit.mjs",
     "check:action-pins": "bash scripts/check-action-pins.sh",
+    "check:version": "bash scripts/check-version.sh",
     "check:build-chain": "npm run check:audit && npm run check:action-pins",
     "prettier": "prettier --write \"src/**/*.ts\"",
     "prettier:check": "prettier --check \"src/**/*.ts\""

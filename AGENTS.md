@@ -346,6 +346,29 @@ For new provider support:
   installable observes. Not derived from commit messages - a release note and a
   commit subject have different readers
 
+### Releasing
+- Four human steps: bump `version` in `package.json` inside the pull request,
+  merge it, tag `vX.Y.Z` on `main`, push the tag. Everything after the tag is CI
+- Rename `CHANGELOG.md`'s `## [Unreleased]` heading to the version being
+  released in that same pull request, and open a fresh `## [Unreleased]` above it
+- Run `npm run check:version -- vX.Y.Z` before pushing the tag. A tag can be
+  deleted; a published version cannot be replaced, and after 72 hours cannot be
+  withdrawn
+- The tag must be `vMAJOR.MINOR.PATCH` and match `package.json` exactly.
+  Prerelease tags are rejected because nothing passes `--tag`, so one would
+  publish as `latest` and every plain `npm install` would resolve to it
+- `.github/workflows/publish.yml` re-runs the version guard, the build-chain
+  checks and the packed-tarball smoke test against the tagged commit, and
+  refuses a pack list carrying any `*.test.*` entry, before anything is
+  published. A tag points wherever its author chose, so a green run on `main` is
+  not evidence about what is being released
+- Authentication is npm Trusted Publishing over OIDC. There is no `NPM_TOKEN`
+  secret, and the trusted publisher is registered against the workflow file's
+  path - renaming or moving `publish.yml` stops publishing until it is
+  re-registered
+- The publish carries `--provenance`, which is available only because ADR-007
+  makes the source repository public
+
 ### Breaking Changes
 - MUST be discussed in issue before implementation
 - MUST include migration guide in PR

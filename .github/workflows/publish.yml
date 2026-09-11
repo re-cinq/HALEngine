@@ -1,0 +1,106 @@
+name: Publish
+
+# Publishes the tagged version to the public registry.
+#
+# Auth is tokenless: npm Trusted Publishing mints a short-lived credential from
+# the GitHub OIDC token, so no NPM_TOKEN secret exists here after the bootstrap.
+# The trusted publisher is registered against THIS file's path - renaming or
+# moving it breaks publishing until it is re-registered.
+#
+# --provenance is carried because ADR-007 makes the repository public. npm
+# refuses an attestation whose source repository an unauthenticated client
+# cannot resolve.
+
+on:
+  push:
+    tags: ['v*']
+
+# Least privilege by default: only the publish job opts into id-token: write,
+# and it does not start until every gate below has passed.
+permissions:
+  contents: read
+
+jobs:
+  # The same gates CI runs on a pull request, re-run against the tagged commit.
+  # A tag points at whatever its author chose, so passing on main is not
+  # evidence about what is being published.
+  verify:
+    name: Verify the release candidate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install (no build)
+        run: npm ci --ignore-scripts
+
+      - name: Tag matches the committed version
+        run: npm run check:version
+
+      - name: Build chain
+        run: npm run check:build-chain
+
+      - name: Smoke (packed tarball)
+        run: npm run smoke
+
+      # `files` is ["dist"] and tests live beside their source, so nothing should
+      # reach the tarball - but the pack list is the only place that is a fact
+      # rather than an intention. npm pack runs `prepare`, so this lists what
+      # this commit would actually ship.
+      - name: No test files in the pack list
+        run: |
+          npm pack --dry-run --json > pack.json
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const files = JSON.parse(readFileSync("pack.json", "utf8"))[0].files.map((f) => f.path);
+            const tests = files.filter((p) => /(^|\/)[^/]*\.test\.[^/]*$/.test(p));
+            if (tests.length > 0) {
+              console.error("pack list carries test files:\n  " + tests.join("\n  "));
+              process.exit(1);
+            }
+            console.log(`pack list clean: ${files.length} files, no *.test.* entry`);
+          '
+
+  publish:
+    name: Publish to npm
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm OIDC trusted publishing
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+          registry-url: 'https://registry.npmjs.org'
+
+      # Trusted publishing needs npm >= 11.5.1; Node 22 ships an older npm.
+      - name: Upgrade npm for OIDC trusted publishing
+        run: npm install -g npm@latest
+
+      - name: Install (no build)
+        run: npm ci --ignore-scripts
+
+      # Repeated from `verify` deliberately: it is the last gate before the one
+      # step in this repository that cannot be undone.
+      - name: Tag matches the committed version
+        run: npm run check:version
+
+      - name: Build
+        run: npm run build
+
+      # --ignore-scripts so `prepare` does not rebuild: what ships is the tree
+      # the step above produced, not a second build of it.
+      - name: Publish
+        run: npm publish --access public --provenance --ignore-scripts
