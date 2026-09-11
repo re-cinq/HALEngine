@@ -273,7 +273,8 @@ Delegating to a supplied logger initially bypassed both of the built-in emitter'
 
 - `LOG_LEVEL` gates a supplied logger exactly as it gates the built-in one ([validated by: is gated by LOG_LEVEL exactly as the built-in logger is](../../src/shared/logger.test.ts#L200)).
 - A supplied logger that throws does not propagate into the call site being logged ([validated by: does not let its own throw escape into the call site being logged](../../src/shared/logger.test.ts#L210)).
-- The line is written to the console instead rather than being lost ([validated by: falls back to the console when it throws, so the line is not lost](../../src/shared/logger.test.ts#L223)).
+- The line is written to the console so that it is not lost ([validated by: falls back to the console when it throws, so the line is not lost](../../src/shared/logger.test.ts#L223)).
+- A logger that writes and then throws therefore emits twice, once itself and once to the console. The fallback guarantees a line is never lost, not that it appears once; a consumer who prefers the opposite catches inside their own implementation.
 - A logger missing one of the four methods fails the same way rather than at an arbitrary later call ([validated by: survives a partially implemented logger rather than failing at an arbitrary later call](../../src/shared/logger.test.ts#L240)).
 - A value whose `toString` throws still produces a line ([validated by: still writes a line rather than throwing out of the emitter](../../src/shared/logger.test.ts#L253)).
 - `setLogger` is exported from `src/index.ts`, so a consumer can put the built-in logger back; without it the process-global swap had no documented way out.
