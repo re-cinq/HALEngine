@@ -367,7 +367,7 @@ When a thinking block closes, the handler commits the `ThinkingEntry` before sta
 1. The client calls `POST {basePath}/chats` to create a chat, getting back a `chatId`
 2. The client builds a WebSocket URL: `wss://{host}{basePath}/ws/{chatId}`. The server checks only the `{basePath}/ws` prefix and never parses `{chatId}` -- the session is the `sessionId` it mints in step 5
 3. The access token is passed as a WebSocket subprotocol (no query string exposure)
-4. The server's `handleUpgrade` authenticates the token via the configured `WsAuthenticator` before completing the handshake
+4. The server's `handleUpgrade` passes the upgrade request to the configured `WsAuthenticator`, which returns a user or `null`, before completing the handshake; what it reads from that request - a header, a cookie, a subprotocol - is the consumer's business, not this package's
 5. On connection, the server creates a `ChatSession` and sends a `connected` message (including `examplePrompts` collected from the tool registry)
 
 ### Heartbeat

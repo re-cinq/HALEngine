@@ -20,7 +20,7 @@ The system handles core patterns including streaming responses, tool execution l
 - **Anthropic / Claude** (stub with guidance for implementation)
 - **Mock Provider** (built-in for testing)
 
-Providers are abstractly defined via the `AIProvider` interface and instantiated through the `createProvider()` factory. Stub providers throw descriptive errors with implementation guidance. Status is per method rather than per provider, and `README.md` carries the only matrix - a second copy would drift.
+Providers are abstractly defined via the `AIProvider` interface and instantiated through the `createProvider()` factory. A method that is not implemented throws a descriptive error carrying implementation guidance. Status is per method rather than per provider, and `README.md` carries the only matrix - a second copy would drift.
 
 ### 2. Tool System
 - Dynamic tool registration via `ToolRegistry`

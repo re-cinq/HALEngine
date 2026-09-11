@@ -7,7 +7,7 @@ HAL Engine extracts the core patterns of building an AI-powered chat backend int
 ## Features
 
 - **Multi-provider support**: AWS Bedrock and Google Vertex AI implemented, OpenAI and Anthropic stubbed, plus a built-in Mock. Scored per method in [Providers](#providers) — a provider can implement one of `AIProvider`'s two methods without the other
-- **Tool system**: Register custom tools with JSON Schema validation, executed in parallel within a configurable tool loop
+- **Tool system**: Register custom tools with a JSON Schema `inputSchema`, executed in parallel within a configurable tool loop. The schema is forwarded to the model to shape the call it produces; it is **not** enforced before your executor runs, so validate the input you are handed
 - **Streaming**: Real-time WebSocket streaming with thinking tag parsing and entry-based protocol
 - **Pluggable auth**: Bring your own WebSocket and HTTP authentication
 - **Pluggable session store**: In-memory default, swap in Redis/database/etc.
