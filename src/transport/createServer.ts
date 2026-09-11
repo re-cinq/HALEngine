@@ -88,11 +88,18 @@ export function createServer(options: HalServerOptions): HalServer {
     server,
     wss,
     start: (port?: number) =>
-      new Promise<void>(resolve => {
+      new Promise<void>((resolve, reject) => {
         // ?? not ||, so a configured port 0 means "let the OS choose" rather than 8086.
         const p = port ?? options.port ?? (Number(process.env.PORT) || 8086);
+
+        // Without this an EADDRINUSE settles nothing and takes the process down as an unhandled event.
+        const onError = (error: Error) => reject(error);
+        server.once('error', onError);
+
         server.listen(p, () => {
-          log.info('server', 'HAL Engine started', {port: p});
+          server.removeListener('error', onError);
+          // The bound port, not the requested one: a configured 0 means the OS chose it.
+          log.info('server', 'HAL Engine started', {port: boundPort(server, p)});
           resolve();
         });
       }),
@@ -104,4 +111,9 @@ export function createServer(options: HalServerOptions): HalServer {
         server.close(err => (err ? reject(err) : resolve()));
       }),
   };
+}
+
+function boundPort(server: http.Server, requested: number): number {
+  const address = server.address();
+  return typeof address === 'object' && address !== null ? address.port : requested;
 }

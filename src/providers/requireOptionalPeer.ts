@@ -20,6 +20,10 @@ export function requireOptionalPeer<T>(specifier: string): T {
 function isModuleNotFound(error: unknown, specifier: string): boolean {
   if (typeof error !== 'object' || error === null) return false;
   const {code, message} = error as {code?: unknown; message?: unknown};
-  // A missing transitive dependency of an installed peer is that peer's bug, not an absent peer.
-  return code === 'MODULE_NOT_FOUND' && typeof message === 'string' && message.includes(specifier);
+  if (code !== 'MODULE_NOT_FOUND' || typeof message !== 'string') return false;
+
+  const [firstLine] = message.split('\n');
+
+  // Only the first line names what was absent; the Require stack under it holds the peer's own files.
+  return firstLine.startsWith(`Cannot find module '${specifier}'`);
 }

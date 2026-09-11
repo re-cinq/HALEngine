@@ -139,7 +139,7 @@ Three, and only three. Everything else is a config field.
 | Variable | Read at | Overridden by | Default |
 |---|---|---|---|
 | `CORS_ORIGIN` | `src/transport/createApp.ts:23` | `transport.corsOrigin` | `http://localhost:3000` |
-| `PORT` | `src/transport/createServer.ts:94` | `transport.port`, or the argument to `engine.start(port)` | `8086` |
+| `PORT` | `src/transport/createServer.ts:93` | `transport.port`, or the argument to `engine.start(port)` | `8086` |
 | `LOG_LEVEL` | `src/shared/logger.ts:12` | nothing — there is no config field | `info` |
 
 `CORS_ORIGIN` carries **one origin**. The value reaches `cors({origin})` unsplit, so a comma-separated list is a single literal string that matches no browser origin. Pass an array to `transport.corsOrigin` for several.

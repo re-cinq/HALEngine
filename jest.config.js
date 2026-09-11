@@ -23,6 +23,6 @@ export default {
   // the percentage while the uncovered count is unchanged. Compare covered/total
   // absolutes before re-baselining, and say so in the commit.
   coverageThreshold: {
-    global: {statements: 77.72, branches: 66.86, functions: 78.34, lines: 78.26},
+    global: {statements: 77.96, branches: 66.95, functions: 78.53, lines: 78.47},
   },
 };

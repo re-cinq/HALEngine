@@ -38,6 +38,15 @@ published before it, so there is no upgrade path from `0.1.0` on the registry �
   any other — the option now reaches the package's own log calls, which it did not before this release. The
   swap is process-wide rather than per engine; `docs/logging.md` says why.
 
+- `engine.start()` rejects when the port is unavailable, instead of ending the process. There was no `error`
+  listener on the HTTP server, so an `EADDRINUSE` surfaced as an unhandled event while the promise `start()`
+  returned never settled — uncatchable, unretryable. The "HAL Engine started" line now logs the port that was
+  actually bound rather than the one requested, which is what `transport.port: 0` makes visible.
+
+- An optional provider SDK that is installed but has a missing dependency of its own now surfaces the loader's
+  real error. It was reported as the peer being absent, so the message told you to install a package you
+  already had and discarded the actual cause.
+
 - A log call can no longer throw. `data` that cannot be serialised — a circular reference, a `BigInt` — is
   written as `"[unserialisable]"` with the rest of the line intact, instead of raising a `TypeError` out of
   whatever was being logged. A `WsAuthenticator` returning an identity with a back-reference used to take down

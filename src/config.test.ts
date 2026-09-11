@@ -1,3 +1,4 @@
+import net from 'node:net';
 import {createHalEngine} from './config.js';
 import {setLogger} from './shared/logger.js';
 import type {Logger} from './shared/logger.js';
@@ -83,5 +84,19 @@ describe('createHalEngine logger forwarding', () => {
     createHalEngine({...base});
 
     expect(lines).toEqual([]);
+  });
+});
+
+// An unavailable port is a condition a consumer can handle, but only if start() lets them see it.
+describe('createHalEngine on a port it cannot bind', () => {
+  it('rejects instead of taking the process down with an unhandled error event', async () => {
+    const blocker = net.createServer();
+    await new Promise<void>(resolve => blocker.listen(0, resolve));
+    const taken = (blocker.address() as net.AddressInfo).port;
+    const engine = createHalEngine({...base, transport: {port: taken}});
+
+    await expect(engine.start()).rejects.toMatchObject({code: 'EADDRINUSE'});
+
+    await new Promise<void>(resolve => blocker.close(() => resolve()));
   });
 });
