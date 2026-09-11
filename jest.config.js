@@ -12,4 +12,14 @@ export default {
   transform: {
     '^.+\\.tsx?$': ['ts-jest', {useESM: true}],
   },
+  // src/ only: the scripts/ suites drive their subjects through spawnSync, so an
+  // instrumented .mjs would report zero regardless of how well it is tested.
+  collectCoverageFrom: ['src/**/*.ts', '!src/**/*.test.ts', '!src/providers/providerTestSupport.ts'],
+  // A ratchet, not a target: these are exactly what the suite measured when the
+  // gate landed, so any drop fails and any rise should move them up with it. A
+  // red run is fixed by adding the missing test, never by lowering the number
+  // (specs/hal-engine-npm-release/spec.md).
+  coverageThreshold: {
+    global: {statements: 67.96, branches: 57.54, functions: 68, lines: 68.34},
+  },
 };

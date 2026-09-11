@@ -67,10 +67,12 @@ The `@aws-sdk/client-bedrock-runtime` reference in the emitted types is not the 
 
 `.github/workflows/ci.yml` runs typecheck, lint, the traceability backlog report, format, test, build, and three spec-consistency checks. It does not measure coverage.
 
-- `jest.config.js` gains `collectCoverageFrom` and `coverageThreshold`, and `package.json` gains a `test:coverage` script the CI job calls.
-- The floor is set at the measured baseline, not an aspiration. Measured at `db5a939`: 61.32% lines, 58.54% statements, 55.62% branches, 52.98% functions, across 197 tests in 15 suites.
-- The floor is a ratchet: it may rise, and a change that lowers it fails the job.
-- `coverage/` is gitignored.
+- `jest.config.js` gains `collectCoverageFrom` and `coverageThreshold`, and `package.json` gains a `test:coverage` script. CI's existing `Test` step calls it instead of `npm test`, so the floor gates the suite rather than adding a second full run.
+- Coverage is collected from `src/` only. The `scripts/` suites drive their subjects through `spawnSync`, so an instrumented `.mjs` would report zero however well it is tested. `providerTestSupport.ts` is excluded as test scaffolding rather than shipped source.
+- The floor is set at the measured baseline, not an aspiration, and exactly at it rather than rounded down: an integer floor leaves roughly a percent of slack, which was measured to let four untested lines through without failing.
+- Measured at `3186f07` with those exclusions: 67.96% statements, 57.54% branches, 68% functions, 68.34% lines, across 206 tests in 17 suites. The earlier figure of 61.32% lines predates the exclusions and three of this branch's commits.
+- The floor is a ratchet: a change that lowers coverage fails the job and is fixed by adding the missing test, never by lowering the number; a change that raises coverage should raise the floor with it.
+- `coverage/` is gitignored already, so nothing is added for it.
 
 ### Build-chain audit
 

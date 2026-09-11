@@ -61,8 +61,10 @@ jobs:
       - name: Format check
         run: npm run prettier:check
 
-      - name: Test
-        run: npm test
+      # Runs the whole suite and fails it on the committed coverage floor in
+      # jest.config.js, so this is the test gate rather than an extra pass.
+      - name: Test (with coverage floor)
+        run: npm run test:coverage
 
       - name: Build
         run: npm run build
