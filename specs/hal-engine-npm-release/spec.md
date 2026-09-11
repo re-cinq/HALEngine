@@ -3,7 +3,7 @@
 | Field  | Value           |
 | ------ | --------------- |
 | Issue  | n/a             |
-| Status | Draft           |
+| Status | In Progress     |
 
 This package has never been published. It is `hal-engine@0.1.0`, CommonJS, unlicensed, and reachable only through a git specifier that clones the repository and builds from source. This spec describes what has to become true for `npm install @re-cinq/hal-engine` to resolve from the public registry: the module format it ships, the manifest that describes it, the pipeline that releases it from a `v*` tag without a stored token, and the handful of defects a first public release must not carry — an authentication fallback that opens a chat API, a hook that is declared and never called, a factory arm that drops its configuration, and an optional peer that is not optional. It also covers the documentation, because npm renders `README.md` and nothing else.
 
@@ -17,7 +17,7 @@ The package is ESM-only. `package.json` carries `"type": "module"`, and `tsconfi
 
 - The five `require()` calls in `src/providers/providerFactory.ts` do not survive, because `require` does not exist under ESM.
 - The lazy-load they implement must survive in some form: `createProvider` MUST NOT load a provider SDK for an arm the caller did not select.
-- `jest.config.js` uses `module.exports`, which is illegal under `"type": "module"`, and moves to `jest.config.cjs`.
+- `jest.config.js` uses `module.exports`, which is illegal under `"type": "module"`, and becomes an ESM config with a default export. The suite runs as real ESM under `--experimental-vm-modules` rather than being compiled to CommonJS: an ESM-only package whose tests exercise CJS output would hide the failure class this conversion exists to prevent, and `import.meta` in the provider layer cannot compile to CommonJS at all. Every spawn of jest needs the flag, not only the `test` script.
 - The `dev` and `test` scripts both run TypeScript through a CommonJS loader today and need an ESM-compatible answer.
 
 This is a breaking change under AGENTS.md § Breaking Changes and inherits that section's obligations: a migration guide in the pull request and a MINOR bump. The version that carries it is `0.2.0`.
@@ -26,9 +26,14 @@ This is a breaking change under AGENTS.md § Breaking Changes and inherits that 
 
 `@aws-sdk/client-bedrock-runtime` and `@google-cloud/vertexai` are declared optional peers, and exactly one of them behaves like one. `src/index.ts:21` re-exports `createVertexProvider` as a value from a module whose first line statically imports `@google-cloud/vertexai`, so importing the package root loads the Vertex SDK whether or not the caller ever names Vertex.
 
-- Importing the package root MUST NOT require either optional peer to be installed.
-- An absent peer MUST fail at provider construction, not at import — the contract `src/providers/bedrock/bedrockProvider.ts` already keeps.
-- Both providers route their absent-peer failure through one helper in `src/shared/`, so the message names the package and its install command rather than surfacing a raw `MODULE_NOT_FOUND` from inside `dist/`.
+- Importing the package root MUST NOT require either optional peer to be installed. Measured on the built `dist/`: a bare root import loaded 38 `@google-cloud/vertexai` modules before this change and 0 after, with Bedrock at 0 throughout. The automated form of this check is the tarball smoke test.
+- An absent peer MUST fail at provider construction, not at import — the contract `src/providers/bedrock/bedrockProvider.ts` already kept and `createVertexProvider` now matches.
+- Both providers route their absent-peer failure through one helper, so the message names the package and its install command rather than surfacing a raw `MODULE_NOT_FOUND` from inside `dist/` ([validated by](../../src/providers/requireOptionalPeer.test.ts#L12)).
+- That failure is an `AIError` carrying the code `OPTIONAL_PEER_MISSING`, not a bare module-resolution error ([validated by](../../src/providers/requireOptionalPeer.test.ts#L19)).
+- It is not retryable, because installing a package is not a retry ([validated by](../../src/providers/requireOptionalPeer.test.ts#L23)).
+- An installed peer is returned unchanged ([validated by](../../src/providers/requireOptionalPeer.test.ts#L8)).
+- The helper decides "absent" structurally rather than with `instanceof Error`, because a module loader running in another realm throws an `Error` this one disowns — measured under jest, where `instanceof Error` is `false` for exactly that failure.
+- The helper lives at the providers-layer root, not in `src/shared/`. `layers.yaml` declares `shared: []` — it may import nothing, `types` included — so `AIError` is unreachable from there, and a helper that could not build the error would defeat its own purpose.
 - Subpath exports are explicitly not the answer here; the `exports` map stays a single root entry.
 
 ### Manifest
@@ -58,7 +63,7 @@ This is a breaking change under AGENTS.md § Breaking Changes and inherits that 
 
 `.github/workflows/ci.yml` runs typecheck, lint, the traceability backlog report, format, test, build, and three spec-consistency checks. It does not measure coverage.
 
-- `jest.config.cjs` gains `collectCoverageFrom` and `coverageThreshold`, and `package.json` gains a `test:coverage` script the CI job calls.
+- `jest.config.js` gains `collectCoverageFrom` and `coverageThreshold`, and `package.json` gains a `test:coverage` script the CI job calls.
 - The floor is set at the measured baseline, not an aspiration. Measured at `db5a939`: 61.32% lines, 58.54% statements, 55.62% branches, 52.98% functions, across 197 tests in 15 suites.
 - The floor is a ratchet: it may rise, and a change that lowers it fails the job.
 - `coverage/` is gitignored.
@@ -226,7 +231,7 @@ These are gates, not preferences. Each one is `error` in the committed lint conf
 - A spec's `Status` row must match its test-citation coverage. This spec opens at `Draft` and moves to `In Progress` on its first citation and `Shipped` when every testable statement carries one.
 - Every markdown link to a repository file must resolve. The renames in this spec — moving a document under `docs/spikes/`, deleting a row — break links elsewhere, and a rename sweep that rewrites a dead link faithfully is exactly the failure mode the rule exists to catch.
 - Comments in `src/` are at most one line, JSDoc included. The file-head comments this spec calls for must fit, or the prose belongs here instead.
-- The five declared layers admit no cross-layer import. The absent-peer helper belongs in `src/shared/`, which every layer may use.
+- The declared layers admit no cross-layer import, and `shared` is stricter than the prose suggests: it may import nothing at all, so a cross-cutting helper that needs `AIError` belongs at the providers-layer root instead.
 
 ## Carried elsewhere
 

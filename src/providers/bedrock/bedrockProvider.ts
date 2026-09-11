@@ -1,6 +1,6 @@
 import type {ConverseStreamOutput} from '@aws-sdk/client-bedrock-runtime';
-import {createRequire} from 'node:module';
 import {AIError} from '../../types/ai.js';
+import {requireOptionalPeer} from '../requireOptionalPeer.js';
 import type {AIProvider, MessageChunk, SendMessageParams, StructuredOutputParams} from '../../types/ai.js';
 import {
   emptyToolAccumulator,
@@ -22,9 +22,9 @@ export interface BedrockConfig {
 }
 
 export function createBedrockProvider(config: BedrockConfig): AIProvider {
-  const {BedrockRuntimeClient, ConverseStreamCommand} = createRequire(import.meta.url)(
-    '@aws-sdk/client-bedrock-runtime'
-  ) as typeof import('@aws-sdk/client-bedrock-runtime');
+  const {BedrockRuntimeClient, ConverseStreamCommand} = requireOptionalPeer<
+    typeof import('@aws-sdk/client-bedrock-runtime')
+  >('@aws-sdk/client-bedrock-runtime');
   const client = new BedrockRuntimeClient({region: config.region});
 
   return {

@@ -16,18 +16,13 @@ const mockGetGenerativeModel = jest.fn<(config: VertexModelConfig) => unknown>()
 
 const callMock = () => jest.fn<(request: VertexRequest) => Promise<unknown>>();
 
-// ESM has no hoisted jest.mock: register the mock, then import the subject.
-jest.unstable_mockModule('@google-cloud/vertexai', () => ({
-  VertexAI: jest.fn().mockImplementation(() => ({
-    getGenerativeModel: mockGetGenerativeModel,
-  })),
-  SchemaType: {
-    STRING: 'STRING',
-    NUMBER: 'NUMBER',
-    BOOLEAN: 'BOOLEAN',
-    OBJECT: 'OBJECT',
-    ARRAY: 'ARRAY',
-  },
+// createRequire never reaches jest's ESM registry, so the helper is the seam, not the package.
+jest.unstable_mockModule('../requireOptionalPeer.js', () => ({
+  requireOptionalPeer: () => ({
+    VertexAI: jest.fn().mockImplementation(() => ({
+      getGenerativeModel: mockGetGenerativeModel,
+    })),
+  }),
 }));
 
 const {createVertexProvider} = await import('./vertexProvider.js');

@@ -1,5 +1,5 @@
-import {VertexAI, SchemaType} from '@google-cloud/vertexai';
 import type {
+  SchemaType,
   Content,
   GenerateContentRequest,
   GenerateContentResponse,
@@ -18,6 +18,7 @@ import type {
   UsageMetadata,
 } from '../../types/ai.js';
 import {log} from '../../shared/logger.js';
+import {requireOptionalPeer} from '../requireOptionalPeer.js';
 
 export interface VertexConfig {
   type: 'vertex';
@@ -28,6 +29,7 @@ export interface VertexConfig {
   googleAuthOptions?: Record<string, unknown>;
 }
 export function createVertexProvider(config: VertexConfig): AIProvider {
+  const {VertexAI} = requireOptionalPeer<typeof import('@google-cloud/vertexai')>('@google-cloud/vertexai');
   const vertexAI = new VertexAI({
     project: config.projectId,
     location: config.location,
