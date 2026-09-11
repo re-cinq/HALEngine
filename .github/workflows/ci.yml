@@ -93,6 +93,15 @@ jobs:
       - name: Spec status
         run: npm run check:spec-status
 
+      # A release note and a commit subject have different readers, so this is a
+      # file the author writes rather than something derived from the log. The
+      # label is the escape hatch for a src/ change nothing installable observes.
+      - name: Changelog entry
+        if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'no-changelog')
+        run: |
+          git fetch --quiet origin "${{ github.base_ref }}"
+          bash scripts/check-changelog.sh "origin/${{ github.base_ref }}"
+
   # Separate job, not a step on `verify`: these two check what the build chain
   # pulls in rather than what the code does, and a red audit should not read as
   # a failing test suite. It needs the tree installed but nothing built, so it

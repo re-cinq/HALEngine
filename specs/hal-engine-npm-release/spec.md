@@ -110,12 +110,15 @@ The repository has zero git tags. `0.1.0` was never tagged and never published, 
 
 ### Release notes
 
-AGENTS.md line 330 claims "CHANGELOG implied by conventional commits". Nothing implements it, and the history could not carry it: of 20 commits on `main` at the time that claim was measured, 5 carried a conventional type.
+AGENTS.md claimed "CHANGELOG implied by conventional commits". Nothing implemented it, and no generator was ever added.
+
+A conventional-commit ratio is sometimes offered as the reason a generator cannot work here. The decision does not rest on it: even with every commit conventionally typed, a generator would still emit the wrong thing for this audience.
 
 - A hand-written `CHANGELOG.md` on Keep a Changelog 1.1.0 replaces the claim, `## [Unreleased]` first.
-- Its audience is a consumer reading npm and GitHub Releases, not this repository's commit log. The ESM conversion and the scope rename each need to reach that reader in a sentence.
-- AGENTS.md line 330 is replaced by the real rule rather than supplemented by a new contributing document.
-- A CI step fails when a diff touching `src/` does not touch `CHANGELOG.md`, with a label as the deliberate escape hatch for changes that are not user-visible.
+- The argument is audience. A generator emits commit subjects, and this repository's read like `feat(build): require a test citation to land on the declaration` — accurate for a reviewer and meaningless to somebody installing the package. The two breaking changes in this release, the ESM conversion and the scope rename, each need a sentence telling a consumer what to do, which no commit subject contains.
+- AGENTS.md's line is replaced by the real rule rather than supplemented by a new contributing document.
+- A CI step fails a pull request that touches non-test files under `src/` without touching `CHANGELOG.md`. Test-only changes under `src/` do not trigger it, because tests live beside their source here and a consumer cannot observe them. The `no-changelog` label is the escape hatch, and applying it is a visible act rather than a silent omission.
+- The `## [Unreleased]` heading is renamed to the version being released as part of the release procedure T011 documents.
 
 ### First publish
 

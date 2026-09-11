@@ -337,7 +337,14 @@ For new provider support:
   tooling and served as authority, so a claim left stale there reaches every
   agent that assembles context for this repo. Keep it true when the manifest
   changes
-- CHANGELOG implied by conventional commits
+- `CHANGELOG.md` at the repo root, Keep a Changelog 1.1.0, newest first under
+  `## [Unreleased]`. Anything a consumer of the published package can observe
+  gets an entry, written for somebody installing it rather than for somebody
+  reading this repo's commit log. Enforced in CI: a pull request touching
+  non-test files under `src/` fails unless it also touches `CHANGELOG.md`, and
+  the `no-changelog` label is the deliberate escape hatch for a change nothing
+  installable observes. Not derived from commit messages - a release note and a
+  commit subject have different readers
 
 ### Breaking Changes
 - MUST be discussed in issue before implementation

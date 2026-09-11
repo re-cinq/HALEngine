@@ -37,6 +37,7 @@
 - [ ] **Documentation**: Updated relevant docs or added inline comments for complex logic
 - [ ] **Layer Adherence**: Changes respect the 5-layer architecture (types → providers → infrastructure → orchestration → transport)
 - [ ] **No console.log**: Uses `log` from `shared/logger.js` instead
+- [ ] **Changelog**: User-visible changes have a `CHANGELOG.md` entry under `## [Unreleased]`, or the PR carries the `no-changelog` label
 
 ---
 
