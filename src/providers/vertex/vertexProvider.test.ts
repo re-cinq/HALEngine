@@ -32,7 +32,7 @@ const defaultConfig: VertexConfig = {
   type: 'vertex',
   projectId: 'test-project',
   location: 'europe-west4',
-  modelId: 'gemini-1.5-flash',
+  modelId: 'gemini-2.5-flash',
   maxTokens: 1024,
 };
 

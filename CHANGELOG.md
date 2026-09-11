@@ -64,6 +64,13 @@ published before it, so there is no upgrade path from `0.1.0` on the registry �
 
 ### Fixed
 
+- Every documented model id is one the vendor still serves. Six of the seven in the docs and fixtures were
+  dead or dying as of 2026-09-11 — two Claude 3 models past or at end-of-life on Bedrock, Claude Sonnet 4
+  legacy on Bedrock and retired on Anthropic's own API, and both Gemini 1.5 ids gone from Vertex. `modelId`
+  is an unvalidated string, so a retired id reaches you as an error that looks like your credentials are
+  wrong. Bedrock examples now carry the `eu.` geo inference profile prefix, which Claude Sonnet 4.5 requires
+  because it supports no in-region inference.
+
 - The README provider table scores each provider per method. `AIProvider` has two methods and Bedrock
   implements only one — its `generateStructured` throws while Vertex's works — so two rows previously read
   `Full` while one provider did half of what the other did. Each cell now names `Implemented` or the message

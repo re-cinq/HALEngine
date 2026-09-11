@@ -76,7 +76,7 @@ const engine = createHalEngine({
   provider: {
     type: 'bedrock',
     region: 'eu-west-1',
-    modelId: 'anthropic.claude-3-sonnet-20240229-v1:0',
+    modelId: 'eu.anthropic.claude-sonnet-4-5-20250929-v1:0',
   },
   prompt: {
     identity: 'You are a helpful weather assistant.',
@@ -103,7 +103,7 @@ const engine = createHalEngine({
   provider: {
     type: 'bedrock',             // 'bedrock' | 'vertex' | 'openai' | 'anthropic' | 'mock'
     region: 'eu-west-1',
-    modelId: 'anthropic.claude-3-sonnet-20240229-v1:0',
+    modelId: 'eu.anthropic.claude-sonnet-4-5-20250929-v1:0',
   },
 
   // REQUIRED: System prompt configuration. Every field but `identity` is optional.

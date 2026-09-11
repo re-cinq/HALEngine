@@ -9,6 +9,9 @@ hal-engine ships with built-in support for multiple AI providers. All providers 
 
 ## Supported Providers
 
+Model ids below were checked against vendor sources on 2026-09-11, by documentation and by a live publisher-model listing for Vertex. Ids are vendor-controlled and retire on the vendor's schedule, not this package's: `modelId` is a bare unvalidated string on both working providers, so a retired id reaches a consumer as an error that looks like their credentials are wrong. Re-check before trusting a snippet that is older than a few months.
+
+
 Implementation status is scored per method in `README.md`, which carries the only such matrix.
 
 | Provider | Type string | Package |
@@ -31,7 +34,7 @@ const engine = createHalEngine({
   provider: {
     type: 'bedrock',
     region: 'eu-west-1',
-    modelId: 'anthropic.claude-3-sonnet-20240229-v1:0',
+    modelId: 'eu.anthropic.claude-sonnet-4-5-20250929-v1:0',
     maxTokens: 4096,
   },
   // ... rest of config
@@ -56,12 +59,14 @@ const engine = createHalEngine({
   provider: {
     type: 'bedrock',
     region: 'eu-west-1',
-    modelId: 'anthropic.claude-3-sonnet-20240229-v1:0',
+    modelId: 'eu.anthropic.claude-sonnet-4-5-20250929-v1:0',
     maxTokens: 4096,
   },
   // ...
 });
 ```
+
+The `eu.` prefix is not decoration. Claude Sonnet 4.5 supports no in-region inference in any region, so the bare `anthropic.claude-sonnet-4-5-20250929-v1:0` fails and a geo inference profile is required: `eu.` from an EU region, `us.` from a US one. The profile keeps requests inside that geography, which is why the EU form pairs with `region: 'eu-west-1'` here. `modelId` is an unvalidated string, so getting this wrong surfaces as a vendor error on the first message, not at startup.
 
 **Credentials:**
 ```bash
@@ -87,7 +92,7 @@ const engine = createHalEngine({
     type: 'vertex',
     projectId: 'my-gcp-project',
     location: 'europe-west4',
-    modelId: 'gemini-1.5-pro',
+    modelId: 'gemini-2.5-pro',
     maxTokens: 4096,
     googleAuthOptions: {
       keyFilename: '/path/to/service-account.json',
@@ -114,7 +119,7 @@ const provider = createVertexProvider({
   type: 'vertex',
   projectId: 'my-project',
   location: 'europe-west4',
-  modelId: 'gemini-1.5-flash',
+  modelId: 'gemini-2.5-flash',
 });
 
 const result = await provider.generateStructured<{score: number; feedback: string}>({
@@ -180,7 +185,7 @@ const engine = createHalEngine({
   provider: {
     type: 'anthropic',
     apiKey: process.env.ANTHROPIC_API_KEY,
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     maxTokens: 4096,
   },
   // ...
@@ -373,15 +378,15 @@ const devEngine = createHalEngine({
   // ...
 });
 
-// Staging: use Bedrock with a cheaper model
+// Staging: use Vertex
 const stagingEngine = createHalEngine({
-  provider: {type: 'bedrock', region: 'eu-west-1', modelId: 'anthropic.claude-3-haiku-20240307-v1:0'},
+  provider: {type: 'vertex', projectId: 'my-project', location: 'europe-west4', modelId: 'gemini-2.5-flash'},
   // ...
 });
 
-// Production: use Bedrock with the best model
+// Production: use Bedrock
 const prodEngine = createHalEngine({
-  provider: {type: 'bedrock', region: 'eu-west-1', modelId: 'anthropic.claude-sonnet-4-20250514-v1:0'},
+  provider: {type: 'bedrock', region: 'eu-west-1', modelId: 'eu.anthropic.claude-sonnet-4-5-20250929-v1:0'},
   // ...
 });
 ```
