@@ -19,8 +19,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-          # Full history, not for this job but for the spec anchor check that
-          # joins it in tooling parity phase 03: it resolves cited content from
+          # Full history, not for this job but for the spec anchor check below:
+          # it resolves cited content from
           # origin/main, which a shallow clone cannot serve.
           fetch-depth: 0
 
