@@ -216,13 +216,14 @@ The alias is removed. `user_message` is the only wire name, which is what the ex
 
 ### A reporter can reach someone
 
-Neither this package nor its sibling has anywhere for a vulnerability report to arrive. The package is public from the first release whether or not the repository is, so a finder cannot be assumed to have repository access.
+This package had nowhere for a vulnerability report to arrive. The package is public from the first release whether or not the repository is, so a finder cannot be assumed to have repository access.
 
 - A `SECURITY.md` states the intake channel, the acknowledgement target, the supported versions, a coordinated-disclosure statement, and an explicit in-scope list naming at minimum the transport layer, the tool registry and the provider adapters.
 - `README.md` gains a Security section repeating the intake address verbatim, because npm renders `README.md` and nothing else.
 - `package.json` carries the address in `bugs`, so it survives into registry metadata.
 - The issue-template config carries a security contact link, so a reporter's default path stops being a public issue report.
-- The supported-versions table is written for a pre-1.0 package with no maintenance branch.
+- The supported-versions table is written for a pre-1.0 package with no maintenance branch, and says that taking a security fix can mean taking a breaking change.
+- The intake is `security@re-cinq.com` with a 48-hour acknowledgement target. Two facts belong with it rather than in the policy: the acknowledgement target is a commitment somebody honours at a weekend, and nothing here verifies the mailbox is monitored. Confirm both before the first publish - a policy naming an unread address converts a reporter who would have found you into one who thinks they told you.
 
 ## What the published docs say
 

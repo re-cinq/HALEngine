@@ -75,6 +75,10 @@ published before it, so there is no upgrade path from `0.1.0` on the registry â€
 
 ### Security
 
+- **There is somewhere to report a vulnerability.** `SECURITY.md` states the intake address, a 48-hour
+  acknowledgement target, supported versions, coordinated disclosure, and what is in and out of scope. The
+  address is in `package.json`'s `bugs`, so `npm view @re-cinq/hal-engine bugs` finds it without repository
+  access.
 - **Breaking: the HTTP chat routes deny by default.** With no `auth.http` middleware configured,
   `POST /chats`, `GET /chats/:id` and `POST /chats/:id/messages` now answer `401 Unauthorized`. They
   previously served every caller as one shared `anonymous` user, so anyone holding a chat id could read

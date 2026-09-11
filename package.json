@@ -8,6 +8,10 @@
     "type": "git",
     "url": "git+https://github.com/re-cinq/HALEngine.git"
   },
+  "bugs": {
+    "url": "https://github.com/re-cinq/HALEngine/issues",
+    "email": "security@re-cinq.com"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

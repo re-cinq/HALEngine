@@ -119,6 +119,12 @@ src/
 - [Logging](docs/logging.md)
 - [Coding Practices](docs/coding-practices.md)
 
+## Security
+
+Do not open a public issue for a vulnerability. Report it privately to **security@re-cinq.com**; we aim to acknowledge within 48 hours.
+
+This package terminates WebSocket connections, runs registered tools against caller-supplied input, and forwards conversation state to third-party model APIs, so the reports that matter are the ones that cross a session boundary, escape the tool contract, or move credentials. Full intake, supported versions and scope are in [SECURITY.md](./SECURITY.md).
+
 ## Development
 
 ```bash
