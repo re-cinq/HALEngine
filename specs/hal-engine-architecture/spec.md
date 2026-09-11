@@ -252,21 +252,36 @@ sequenceDiagram
 
 ## Entry Streaming Protocol
 
-Every piece of content in the conversation is a **SessionEntry**. The server manages entries through a three-step protocol:
+Every piece of content in the conversation is a **SessionEntry**. The protocol has two halves that mirror each other: the server mutates its session array and sends a frame describing the change, and the client applies that frame to its own copy.
 
-1. **Upsert** -- creates a new entry (or replaces one at a given index)
-2. **Delta** -- appends text to an existing entry's content (used during streaming)
-3. **Commit** -- marks the entry as finalized (sets `isStreaming: false`)
+### On the server
 
-On the frontend, these map directly to pure functions:
+`src/orchestration/entryMutations.ts` holds three functions, and all three mutate `session.entries` in place.
 
-| Server message | Frontend function | What it does |
-|----------------|-------------------|--------------|
-| `entry_upsert` | `applyUpsert()` | Adds or replaces an entry in the array |
-| `entry_delta` | `applyDelta()` | Concatenates delta text to `entry.content` |
-| `entry_commit` | `applyCommit()` | Sets `isStreaming = false` on the entry |
+| Function | Signature | Effect |
+|---|---|---|
+| `appendEntry` | `(session, entry) => number` | Pushes the entry and returns the index it landed at |
+| `appendDelta` | `(session, index, delta) => void` | Concatenates onto `entry.content` |
+| `commitEntry` | `(session, index) => void` | Sets `isStreaming = false` |
 
-All three functions return new arrays -- they never mutate state.
+`appendEntry` returns a number because its caller needs that index for the frame it sends next. The other two return nothing, because the mutation is the result.
+
+`appendDelta` and `commitEntry` act only on `assistant` and `thinking` entries. Called against a `user` or `tool` entry they do nothing and report nothing -- neither role carries streaming content, so there is no failure to report.
+
+### On the wire
+
+Four frame types, not three.
+
+| Server message | Sent when | Client function |
+|---|---|---|
+| `entry_upsert` | an entry is created, or replaced at an index | `applyUpsert()` |
+| `entry_delta` | text is appended to a streaming entry | `applyDelta()` |
+| `entry_commit` | an entry is finalised | `applyCommit()` |
+| `entry_skip` | an entry exists server-side but is not forwarded | none -- the client advances its index |
+
+`entry_skip` is what a suppressed assistant response produces. The entry stays in the session so the model's next turn sees it, and the client is told to move past that index without rendering anything. The WebSocket protocol spec covers the index arithmetic in its § 8.2.
+
+The client's `applyUpsert`/`applyDelta`/`applyCommit` return new arrays and never mutate. The server's three do the opposite. That asymmetry is deliberate: the server owns one session object for the life of a connection, while the client re-renders from a fresh array.
 
 ## Tool Execution Loop
 
