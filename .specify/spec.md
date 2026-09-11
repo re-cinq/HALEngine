@@ -39,7 +39,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 
 ### 4. Pluggable Authentication
 - Custom WebSocket authentication via `WsAuthenticator` function
-- Optional Express middleware-based HTTP authentication via `HttpAuthMiddleware`
+- Express middleware-based HTTP authentication via `HttpAuthMiddleware`, which must attach a `user` to the `AuthenticatedRequest`
 - Session binding to authenticated users
 - User context propagated throughout request lifecycle
 
@@ -178,7 +178,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 - Invalid tokens result in connection rejection
 - Each session is bound to exactly one authenticated user
 - User context is available to tools and infrastructure components
-- HTTP endpoints optionally require `HttpAuthMiddleware` validation
+- The chat routes require an identified user: with no middleware configured, or middleware that attaches no usable `user.id`, they answer `401`
 
 ### 4. Session Lifecycle
 - Sessions are created on first successful WebSocket connection

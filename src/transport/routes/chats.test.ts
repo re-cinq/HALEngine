@@ -1,15 +1,15 @@
 import {jest} from '@jest/globals';
 import express from 'express';
-import type {Request} from 'express';
 import request from 'supertest';
 import {createChatRoutes} from './chats.js';
+import type {AuthenticatedRequest} from '../../types/auth.js';
+import type {AuthenticatedUser} from '../../types/session.js';
 import type {ChatOrchestrator} from '../../orchestration/chatOrchestrator.js';
 import type {SessionStore} from '../../types/sessionStore.js';
 
 // Pins the ownership guard, including that a rejected request stops before the route's work.
 
-interface TestUser {
-  id: string | number;
+interface TestUser extends AuthenticatedUser {
   workspaceId?: string | number;
 }
 
@@ -26,7 +26,7 @@ const harness = () => {
   app.use(
     '/chats',
     createChatRoutes(orchestrator, {} as SessionStore, (req, _res, next) => {
-      if (user) (req as Request & {user?: TestUser}).user = user;
+      if (user) (req as AuthenticatedRequest).user = user;
       next();
     })
   );
@@ -82,13 +82,13 @@ describe('chat routes ownership guard', () => {
       expect({status: response.status, body: response.body}).toEqual({status: 404, body: {error: 'Chat not found'}});
     });
 
-    it('does not apply the guard when the request carries no user', async () => {
+    it('refuses a request whose middleware attached no user, without revealing the chat', async () => {
       const {as, chatOwnedBy} = harness();
       const id = await chatOwnedBy(ALICE);
 
       const response = await as(undefined).get(`/chats/${id}`);
 
-      expect(response.status).toBe(200);
+      expect({status: response.status, body: response.body}).toEqual({status: 401, body: {error: 'Unauthorized'}});
     });
 
     it('compares owner ids strictly, so numeric 1 and string "1" are different users', async () => {
@@ -198,5 +198,53 @@ describe('chat routes with no auth middleware', () => {
     const response = await request(app).get('/chats/definitely-not-a-chat');
 
     expect(response.status).toBe(401);
+  });
+});
+
+// Pins which `user.id` values count as authenticated. Middleware is consumer-supplied, so this is a trust boundary.
+describe('chat routes user identity', () => {
+  // The casts are the point: a consumer's middleware is not type-checked against AuthenticatedUser.
+  const malformed = (id: unknown) => ({id}) as unknown as TestUser;
+
+  it('accepts the numeric id 0, which is falsy but legal', async () => {
+    const {as, chatOwnedBy} = harness();
+    const id = await chatOwnedBy({id: 0});
+
+    const response = await as({id: 0}).get(`/chats/${id}`);
+
+    expect(response.status).toBe(200);
+  });
+
+  it('refuses an empty-string id', async () => {
+    const {as} = harness();
+
+    const response = await as({id: ''}).post('/chats');
+
+    expect({status: response.status, body: response.body}).toEqual({status: 401, body: {error: 'Unauthorized'}});
+  });
+
+  it('refuses a user carrying no id', async () => {
+    const {as} = harness();
+
+    const response = await as(malformed(undefined)).post('/chats');
+
+    expect(response.status).toBe(401);
+  });
+
+  it('refuses a null id', async () => {
+    const {as} = harness();
+
+    const response = await as(malformed(null)).post('/chats');
+
+    expect(response.status).toBe(401);
+  });
+
+  it('never records a chat for a caller it refused', async () => {
+    const {as} = harness();
+    await as({id: ''}).post('/chats');
+
+    const response = await as({id: 'alice'}).get('/chats/any-id');
+
+    expect(response.status).toBe(404);
   });
 });

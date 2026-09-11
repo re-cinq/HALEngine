@@ -29,6 +29,9 @@ published before it, so there is no upgrade path from `0.1.0` on the registry â€
 
 - `LICENSE` (Apache-2.0), declared in `package.json`.
 - `exports`, `repository`, `engines` and `publishConfig` entries in the manifest.
+- `AuthenticatedRequest` is exported from the package root: `Request` plus an optional `user`, for typing
+  the `auth.http` middleware you supply. `HttpAuthMiddleware` is stated in its terms rather than as a bare
+  Express `RequestHandler`.
 - Every published version carries an npm provenance attestation, so you can verify with
   `npm audit signatures` that the tarball was built by this repository's release workflow from the
   commit the version was tagged at, rather than uploaded by whoever held a token.
@@ -39,6 +42,10 @@ published before it, so there is no upgrade path from `0.1.0` on the registry â€
   `POST /chats`, `GET /chats/:id` and `POST /chats/:id/messages` now answer `401 Unauthorized`. They
   previously served every caller as one shared `anonymous` user, so anyone holding a chat id could read
   and post to it. Configure `auth.http` to keep them reachable.
+- **Breaking: the chat routes require an identified user.** Middleware that runs but attaches no `user`,
+  or a `user` whose `id` is missing, `null` or `''`, is now refused `401` as well. Ownership is enforced
+  rather than skipped: chats are no longer recorded against a shared `anonymous` owner. The numeric id
+  `0` is accepted â€” it is falsy, but `id` is `string | number` and `0` is a legal id.
 
 ### Fixed
 

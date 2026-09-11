@@ -5,7 +5,7 @@
 | Issue  | n/a         |
 | Status | In Progress |
 
-The HTTP chat routes are the non-streaming counterpart to the WebSocket protocol: `POST /chats` opens a chat, `GET /chats/:id` reads it back, and `POST /chats/:id/messages` adds a turn. Every chat records the id of the user who created it, and one router owns one store, so the only thing standing between two callers is the ownership guard in `authorizedChat`. This spec is about that guard — what it refuses, in what order, and the one configuration in which it does nothing at all.
+The HTTP chat routes are the non-streaming counterpart to the WebSocket protocol: `POST /chats` opens a chat, `GET /chats/:id` reads it back, and `POST /chats/:id/messages` adds a turn. Every chat records the id of the user who created it, and one router owns one store, so the only thing standing between two callers is the ownership guard in `authorizedChat`. This spec is about that guard — what it refuses, in what order, and which callers it treats as identified in the first place.
 
 ## The guard
 
@@ -13,8 +13,9 @@ The HTTP chat routes are the non-streaming counterpart to the WebSocket protocol
 
 ### Resolution order
 
-- The chat is looked up first. An id with no chat is `404 Chat not found` ([validated by](../../src/transport/routes/chats.test.ts#L68)).
-- Ownership is checked second. A caller who is not the recorded owner gets `403 Forbidden` and no part of the chat ([validated by](../../src/transport/routes/chats.test.ts#L59)).
+- The caller is identified first: `requireUser` answers `401` before any lookup, so an unauthenticated request never learns whether a chat exists.
+- The chat is looked up second. An id with no chat is `404 Chat not found` ([validated by](../../src/transport/routes/chats.test.ts#L68)).
+- Ownership is checked third. A caller who is not the recorded owner gets `403 Forbidden` and no part of the chat ([validated by](../../src/transport/routes/chats.test.ts#L59)).
 - A caller who is not the owner still sees `404` for an id that does not exist, so ownership never becomes an oracle for which ids are real ([validated by](../../src/transport/routes/chats.test.ts#L76)).
 - Owner ids are compared strictly, so numeric `1` and string `"1"` are different users rather than the same one ([validated by](../../src/transport/routes/chats.test.ts#L94)).
 
@@ -27,11 +28,18 @@ The HTTP chat routes are the non-streaming counterpart to the WebSocket protocol
 - A message is refused and the orchestrator is never invoked, so an unauthenticated request costs no model call ([validated by](../../src/transport/routes/chats.test.ts#L183)).
 - The `401` precedes the chat lookup, so an unauthenticated caller cannot probe which ids exist ([validated by](../../src/transport/routes/chats.test.ts#L195)).
 
-### When the guard does nothing
+### Who counts as authenticated
 
-Middleware that runs but attaches no `user` is the separate case, and the one configuration in which the ownership guard does nothing: the guard only refuses a caller it can identify, so the request reaches the chat unchecked ([validated by](../../src/transport/routes/chats.test.ts#L85)).
+Configuring middleware is not the same as being identified by it. `requireUser` decides that, on all three routes, before the chat lookup.
 
-A deployment that serves more than one user MUST configure `authMiddleware` that attaches a `user`. Middleware attaching nothing leaves any caller holding a chat id able to read and post to that chat, and the absent-middleware denial above does not cover it.
+- Middleware that runs but attaches no `user` is refused `401`, and the chat it asked for is not revealed ([validated by](../../src/transport/routes/chats.test.ts#L85)).
+- A `user` carrying no `id` is refused ([validated by](../../src/transport/routes/chats.test.ts#L226)).
+- A `null` id is refused ([validated by](../../src/transport/routes/chats.test.ts#L234)).
+- An empty-string id is refused ([validated by](../../src/transport/routes/chats.test.ts#L218)).
+- The numeric id `0` is accepted: `id` is `string | number`, so `0` is a legal id even though it is falsy, and the check is by type and emptiness rather than by truthiness ([validated by](../../src/transport/routes/chats.test.ts#L209)).
+- A refused caller leaves nothing behind - no chat is recorded for it ([validated by](../../src/transport/routes/chats.test.ts#L242)).
+
+A deployment MUST configure `auth.http` middleware that attaches a `user` with a usable `id`. `AuthenticatedRequest` is exported for writing one, and `HttpAuthMiddleware` is stated in its terms rather than as a bare `RequestHandler`, so the contract is in the type.
 
 ## GET /chats/:id
 

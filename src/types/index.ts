@@ -44,7 +44,7 @@ export type {
 
 export {AIError} from './ai.js';
 
-export type {WsAuthenticator, HttpAuthMiddleware} from './auth.js';
+export type {WsAuthenticator, HttpAuthMiddleware, AuthenticatedRequest} from './auth.js';
 
 export type {SessionStore, SessionCreateOptions, BaseSession} from './sessionStore.js';
 
