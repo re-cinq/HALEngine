@@ -22,8 +22,11 @@ jobs:
         id: baseline
         env:
           LORE_INGEST_TOKEN: ${{ secrets.LORE_INGEST_TOKEN }}
-          LORE_INGEST_URL: ${{ vars.LORE_INGEST_URL || vars.LORE_API_URL }}
+          LORE_INGEST_URL: ${{ secrets.LORE_INGEST_URL || vars.LORE_INGEST_URL || vars.LORE_API_URL }}
         run: |
+          # Actions masks secrets automatically but not repository variables, and this
+          # value may arrive as either - mask it so the endpoint cannot reach the log.
+          if [ -n "${LORE_INGEST_URL}" ]; then echo "::add-mask::${LORE_INGEST_URL}"; fi
           # Which commit the graph's line ranges belong to. Needed BEFORE the
           # diff, because it decides which files can be compared line-for-line.
           GRAPH_COMMIT=$(curl -s -H "Authorization: Bearer ${LORE_INGEST_TOKEN}" \
@@ -138,10 +141,13 @@ jobs:
         id: query
         env:
           LORE_INGEST_TOKEN: ${{ secrets.LORE_INGEST_TOKEN }}
-          LORE_INGEST_URL: ${{ vars.LORE_INGEST_URL || vars.LORE_API_URL }}
+          LORE_INGEST_URL: ${{ secrets.LORE_INGEST_URL || vars.LORE_INGEST_URL || vars.LORE_API_URL }}
           COMMIT: ${{ github.event.pull_request.head.sha }}
           GRAPH_COMMIT: ${{ steps.baseline.outputs.graph_commit }}
         run: |
+          # Actions masks secrets automatically but not repository variables, and this
+          # value may arrive as either - mask it so the endpoint cannot reach the log.
+          if [ -n "${LORE_INGEST_URL}" ]; then echo "::add-mask::${LORE_INGEST_URL}"; fi
           # protocol 2 declares that this diff is merge-base-relative and carries
           # baseRanges + per-file alignment. Without it the server suppresses the
           # findings, because a protocol-1 diff cannot be trusted.
