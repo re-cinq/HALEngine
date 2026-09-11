@@ -33,7 +33,42 @@ for (const [config, peer] of [
   );
 }
 
-assert.equal(typeof createHalEngine, 'function', 'createHalEngine is not callable');
 assert.ok(new ToolRegistry(), 'ToolRegistry is not constructible');
 
-console.log(`smoke: runtime OK — ${Object.keys(exported).length} exports, mock streamed ${chunks.length} chunks`);
+// Everything above exercises the package without starting it. The engine is where a consumer's
+// install is really tested: express, ws, cors, cookie-parser and uuid all have to resolve from the
+// tarball's own dependencies, and nothing before this line would notice if one of them did not.
+const engine = createHalEngine({
+  provider: {type: 'mock'},
+  prompt: {identity: 'You are a smoke test.'},
+  auth: {ws: async () => ({id: 'smoke-user'})},
+  transport: {port: 0},
+});
+
+// Port 0: the OS picks a free one, so CI cannot collide with whatever else is listening.
+await engine.start();
+const {port} = engine.server.address();
+assert.ok(port > 0, `engine did not bind a port: ${port}`);
+
+const response = await fetch(`http://127.0.0.1:${port}/hal/health`);
+const health = await response.json();
+assert.equal(response.status, 200, `health check answered ${response.status}`);
+assert.equal(health.status, 'ok', `health check said ${JSON.stringify(health)}`);
+assert.ok(health.timestamp, 'health check carried no timestamp');
+
+// One full turn, provider through orchestrator, asserting the text the mock actually produces.
+const said = 'what is the weather';
+const reply = await engine.orchestrator.processMessage({
+  sessionId: 'smoke-session',
+  userId: 'smoke-user',
+  entries: [{role: 'user', content: said, timestamp: new Date().toISOString()}],
+});
+// Trimmed: the mock yields each word with a trailing space, so the last chunk leaves one behind.
+// That is the fixture's own chunking artefact rather than anything the orchestrator promises.
+assert.equal(reply.trim(), `Mock response to: "${said}"`, `unexpected assistant text: ${reply}`);
+
+await engine.stop();
+
+// No process.exit(): the runner fails this if the process does not end on its own, because a smoke
+// test that needs --forceExit is hiding a leaked handle from every consumer.
+console.log(`smoke: runtime OK — ${Object.keys(exported).length} exports, health 200 on port ${port}, one full turn`);

@@ -139,6 +139,21 @@ Nothing in this repository has ever installed the package from a tarball. A git 
 - It runs as its own CI job, and T011 calls it in the publish workflow before `npm publish`.
 - The check is load-bearing rather than decorative: reverting the T004 dependency move reproduces 8 `tsc` errors, and restoring the top-level Vertex import from before T002 reproduces `ERR_MODULE_NOT_FOUND` — both caught by this script alone.
 
+Importing a package is not installing it. The fixture originally stopped at the package root - imports, a mock stream, and the absent-peer errors - which exercises none of `express`, `ws`, `cors`, `cookie-parser` or `uuid`, so a dependency missing from the manifest would have passed. It now builds an engine and drives it.
+
+- The fixture calls `createHalEngine` and `start()` on port `0`, so the OS picks a free port and CI cannot collide with whatever else is listening.
+- `GET {basePath}/health` answers `200` with `status: ok` and a timestamp. This is what proves the runtime dependencies resolve from the tarball's own `dependencies` rather than from a lucky hoist.
+- One full turn runs through the orchestrator and the mock provider, and the assistant text is asserted. It is compared trimmed: the mock yields each word with a trailing space, so the last chunk leaves one behind — a fixture artefact rather than anything the orchestrator promises.
+- `stop()` is called, and the runner fails the variant if the process does not then exit on its own within 15 seconds. A smoke test that needs killing is hiding a leaked handle from every consumer, which the engine's unreferenced heartbeat timer once was. Proved by leaking a handle deliberately and watching the runner refuse it.
+- The consumer directory is asserted to be outside the repository rather than assumed to be: `mktemp` honours `TMPDIR`, and a `TMPDIR` inside the tree would quietly restore the resolution the whole script exists to prevent.
+
+Two variants, because a consumer is in one of two states and they fail differently.
+
+- `bare` installs neither optional peer — a mock-provider consumer. It asserts both peers are absent, runs the engine, and type-checks.
+- `full` installs both at the versions `peerDependencies` names, and asserts both providers construct with their SDK loaded. Nothing here holds cloud credentials, so construction is the whole assertion; a call would fail for reasons that say nothing about this package.
+- Neither variant is advisory. `bare` proves an absent peer fails well, `full` proves a present one is reached, and a provider that is dead on arrival passes the first and fails the second.
+- The type check runs under `moduleResolution: "nodenext"` and again under `"bundler"`. NodeNext reads `exports.types` through the node condition; `bundler` is what a Next.js consumer uses and resolves differently, and a package can satisfy one and not the other.
+
 ### Release workflow
 
 The repository has zero git tags. `0.1.0` was never tagged and never published, so there is no existing convention to fit around.

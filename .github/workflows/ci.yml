@@ -191,10 +191,19 @@ jobs:
           node-version: '22'
           cache: npm
 
-      # npm pack runs `prepare`, which builds dist/, so the tarball is built from
-      # this commit rather than from whatever a previous step left behind.
       - name: Install (no build)
         run: npm ci --ignore-scripts
 
-      - name: Smoke
-        run: npm run smoke
+      # Explicit, rather than relying on `npm pack` to trigger `prepare`: a build failure should be
+      # reported by a step named Build, not as a confusing pack error inside the smoke script.
+      - name: Build
+        run: npm run build
+
+      # Two variants, two jobs' worth of signal in one: `bare` is a mock-provider consumer with no
+      # optional peer, `full` is a Bedrock or Vertex consumer with both. They fail differently and
+      # separate steps name which consumer is broken.
+      - name: Smoke (no optional peer)
+        run: npm run smoke -- bare
+
+      - name: Smoke (both optional peers)
+        run: npm run smoke -- full

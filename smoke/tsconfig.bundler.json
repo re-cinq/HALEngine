@@ -1,0 +1,13 @@
+{
+  "//": "The resolution mode a Next.js consumer uses. NodeNext reads exports.types through the node condition; bundler resolves differently, and a package can satisfy one and not the other.",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": false
+  },
+  "files": ["types.ts"]
+}
