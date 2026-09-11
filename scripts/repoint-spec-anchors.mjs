@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Re-points specs' [validated by](../../src/X.test.ts#Lnn) anchors after
-// edits to the cited file (the drift class of issue 36) - any cited
+// edits to the cited file - any cited
 // repository file, whatever its kind: each anchor's line number is
 // resolved to the content it cited in the base ref's copy of that file,
 // that content is found in the working copy, and the anchor is rewritten to
@@ -30,7 +30,7 @@
 // Independent of any baseline, every anchor must land on a line that exists
 // and carries content: an anchor whose target file is missing, whose line is
 // beyond the end of the file, or whose line is blank or closing punctuation
-// is reported as rotten and fails the run in both modes (issue 46). An anchor
+// is reported as rotten and fails the run in both modes. An anchor
 // into a test file must additionally land on the it/test/describe declaration
 // itself, because a line inside a test body names no case a reader can check.
 // Non-test targets - a workflow, a config, package.json - are exempt from that
@@ -39,7 +39,7 @@
 // Also independent of any baseline, a short-form [Lnnn](...#Lmmm) label must
 // name the line its own href points at. Labels are re-synced to their href
 // after the anchor rewrite, so a repointed href carries its label with it;
-// --check reports label/href disagreement as mislabelled and fails (issue 18).
+// --check reports label/href disagreement as mislabelled and fails.
 // --check rewrites nothing, so it judges each label against its current
 // (un-repointed) href: a stale href is reported as stale, and once a plain run
 // repoints it the label follows, so the two runs still converge in one pass.

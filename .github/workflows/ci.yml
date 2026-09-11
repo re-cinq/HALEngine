@@ -87,7 +87,7 @@ jobs:
         run: node scripts/repoint-spec-anchors.mjs --check origin/main
 
       # A citation counts as coverage only in its statement's trailing
-      # parenthetical; one written mid-statement is dropped upstream in silence,
+      # parenthetical; one written mid-statement is dropped by the Lore job in silence,
       # so the spec reads as cited while its coverage is zero. A red check is
       # fixed by moving the link to the end of its statement, never by deleting
       # it (AGENTS.md § Spec Test Links).

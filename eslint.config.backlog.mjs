@@ -6,8 +6,7 @@ import {ignores} from './eslint.config.mjs';
 // `re-lint/require-statement-links` at `warn`, which is the severity
 // The intended severity for it: a testable statement with no test link is a
 // deterministic, always-on signal that never wedges the pipeline, raised to
-// `error` per repo once the corpus is backfilled (upstream
-// specs/spec-test-coverage/spec.md, "Enforcement").
+// `error` per repo once the corpus is backfilled.
 //
 // It cannot live in eslint.config.mjs, because `npm run eslint` runs
 // --max-warnings 0 and a warning there is red. So the rule runs from this

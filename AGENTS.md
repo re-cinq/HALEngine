@@ -119,7 +119,7 @@ statement it makes is the wrong ask of a decision record.
 spec, it predates the convention, and its content is deliberately frozen -
 giving it a header table and a lead paragraph would mean writing new prose into
 a file that is meant to stay unchanged. The exemption covers the header table
-and the lead paragraph only: upstream's `check:spec-links` does scan
+and the lead paragraph only: the Lore coverage job does scan
 `.specify/spec.md`, so link placement still applies to it.
 
 ## Spec Test Links
