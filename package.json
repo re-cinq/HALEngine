@@ -37,6 +37,9 @@
     "lint:backlog": "eslint -c eslint.config.backlog.mjs .",
     "check:spec-links": "node scripts/check-spec-links.mjs",
     "check:spec-status": "node scripts/check-spec-status.mjs",
+    "check:audit": "node scripts/check-audit.mjs",
+    "check:action-pins": "bash scripts/check-action-pins.sh",
+    "check:build-chain": "npm run check:audit && npm run check:action-pins",
     "prettier": "prettier --write \"src/**/*.ts\"",
     "prettier:check": "prettier --check \"src/**/*.ts\""
   },

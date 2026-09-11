@@ -76,13 +76,14 @@ The `@aws-sdk/client-bedrock-runtime` reference in the emitted types is not the 
 
 ### Build-chain audit
 
-AGENTS.md § Quality Gates already commits this repository to "npm audit must show no vulnerabilities", and nothing enforces it. Measured at `db5a939`: 18 advisories — 1 critical, 6 high, 8 moderate, 3 low.
+AGENTS.md § Quality Gates already commits this repository to "npm audit must show no vulnerabilities", and nothing enforced it. Measured before this work: 18 advisories — 1 critical, 6 high, 8 moderate, 3 low — and `ws`, a direct production dependency, was one of the six high.
 
 - A check fails on any unacknowledged advisory at `high` or above, over the full installed tree rather than production dependencies only. The dev tree is what a runner installs before building `dist/`, and after the release workflow exists that runner holds `id-token: write`.
-- Acceptances are committed, one entry per advisory, each naming the advisory, the package, the reason, an ISO expiry and who accepted it. An expired entry fails the check.
-- A second check fails when any `uses:` reference in `.github/workflows/*.yml` is not a 40-character commit SHA. The three workflows present today do not satisfy this.
-- `supertest` and `@types/supertest` are devDependencies with zero occurrences under `src/`. Removing them removes advisories the repository is carrying for no code.
-- Both checks run in CI and again before `npm publish`.
+- Acceptances live in `.github/audit-acknowledgements.json`, one entry per advisory, each naming the advisory, the package, the reason, an ISO expiry and who accepted it. An entry that is expired, malformed, or matches no current advisory fails the check too — a stale acceptance is a claim nobody has rechecked.
+- A second check fails when any `uses:` reference in `.github/workflows/` is not a 40-character commit SHA, skipping `./` and `docker://` references, which cannot be pinned that way. All five references across the three workflows were tag-pinned and are now SHA-pinned with the tag kept in a trailing comment.
+- Both checks run as their own CI job rather than as steps on the existing one, because they report on what the build chain pulls in rather than on what the code does, and again before `npm publish`.
+- `npm audit fix` clears the backlog to 3 advisories — 2 moderate, 1 low, none at high or above — touching only `package-lock.json`. No dependency range in `package.json` changes, and the suite passes unchanged, so no acceptance entry is needed to go green.
+- `supertest` and `@types/supertest` stay. An earlier measurement found zero occurrences under `src/`, but `src/transport/routes/chats.test.ts` has imported `supertest` since the chat-ownership tests landed, and removing it would take 11 tests with it. Its `form-data` advisory is resolved by the lockfile update instead.
 
 ### Tarball smoke test
 

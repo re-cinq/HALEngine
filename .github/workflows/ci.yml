@@ -16,7 +16,7 @@ jobs:
     name: Verify
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
           # Full history, not for this job but for the spec anchor check below:
@@ -24,7 +24,7 @@ jobs:
           # origin/main, which a shallow clone cannot serve.
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: npm
@@ -92,3 +92,33 @@ jobs:
       # and never gates.
       - name: Spec status
         run: npm run check:spec-status
+
+  # Separate job, not a step on `verify`: these two check what the build chain
+  # pulls in rather than what the code does, and a red audit should not read as
+  # a failing test suite. It needs the tree installed but nothing built, so it
+  # skips `prepare` with --ignore-scripts.
+  build-chain:
+    name: Build chain
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install (no build)
+        run: npm ci --ignore-scripts
+
+      # Full tree, dev included: those packages are what a runner installs
+      # before building dist/, and the release workflow signs what it produces.
+      - name: Audit (high and above)
+        run: npm run check:audit
+
+      # A tag is a mutable pointer its owner can repoint under a job that holds
+      # repository credentials.
+      - name: Action pins
+        run: npm run check:action-pins
