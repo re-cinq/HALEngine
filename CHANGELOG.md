@@ -52,6 +52,15 @@ published before it, so there is no upgrade path from `0.1.0` on the registry â€
 
 ### Fixed
 
+- The README quick start and `docs/getting-started.md` now match the API. Both showed `PromptBuilderConfig`
+  fields that do not exist (`guidelines`, `context`, `customInstructions` for `responseGuidelines`,
+  `domainContext`, `toolPreamble`), a `ws` authenticator taking a token rather than the upgrade request and
+  returning `userId` rather than `id`, and an `engine.listen()` that was never an API. `example/server.ts` is
+  type-checked in CI now, and both documents are written against it.
+- `docs/getting-started.md` no longer documents `orchestrator.hooks` on `HalEngineConfig`. `createHalEngine`
+  forwards only `maxToolRounds` and `contextConfig`, so the hooks were unreachable that way; the guide now
+  shows `createChatOrchestrator`, which is where they work.
+
 - `onConnect` is now called. It was declared on the config, forwarded through `createHalEngine`, and then
   dropped before the connection handler ever saw it, so it never fired â€” while its sibling `onDisconnect`
   worked, which is what made the gap hard to notice. It runs once per accepted connection, after the

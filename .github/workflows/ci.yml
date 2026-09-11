@@ -44,6 +44,11 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
+      # example/ is outside tsconfig.json's rootDir, so nothing checked the one
+      # file the README and the guide are written against.
+      - name: Type check the example
+        run: npm run typecheck:example
+
       - name: Lint (--max-warnings 0)
         run: npm run eslint
 

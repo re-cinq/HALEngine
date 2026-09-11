@@ -38,6 +38,7 @@
     "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
     "smoke": "bash scripts/smoke.sh",
     "typecheck": "tsc --noEmit",
+    "typecheck:example": "tsc -p tsconfig.example.json",
     "eslint": "eslint --max-warnings 0 .",
     "lint:backlog": "eslint -c eslint.config.backlog.mjs .",
     "check:spec-links": "node scripts/check-spec-links.mjs",

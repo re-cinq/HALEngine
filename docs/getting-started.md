@@ -16,31 +16,32 @@ The simplest possible setup requires two things: an AI provider configuration an
 import {createHalEngine} from '@re-cinq/hal-engine';
 
 const engine = createHalEngine({
-  provider: {
-    type: 'bedrock',
-    region: 'eu-west-1',
-    modelId: 'anthropic.claude-3-sonnet-20240229-v1:0',
-  },
-  prompt: {
-    identity: 'You are a helpful assistant.',
-  },
+  provider: {type: 'mock'},
+  prompt: {identity: 'You are a helpful assistant.'},
   auth: {
-    ws: async (token) => {
-      const user = await verifyToken(token);
-      return {userId: user.id, workspaceId: user.workspaceId};
+    ws: async req => {
+      const token = req.headers.authorization;
+      if (!token) return null;
+      return {id: 'user-1'};
     },
   },
+  transport: {port: 8086, basePath: '/api'},
 });
 
-engine.listen(3000);
-console.log('hal-engine running on port 3000');
+await engine.start();
 ```
 
+`ws` receives the WebSocket upgrade request, not a token, so pull whatever you authenticate with off `req.headers` yourself. Return an `AuthenticatedUser` — `id` is the only required field, and anything else you put on it reaches tools through `ToolContext`. Returning `null` rejects the upgrade with `401`.
+
 This starts a server with:
-- WebSocket endpoint at `ws://localhost:3000/hal/ws/{chatId}`
-- HTTP endpoint at `POST http://localhost:3000/hal/chats`
+- WebSocket endpoint at `ws://localhost:8086/api/ws`
+- Health check at `GET http://localhost:8086/api/health`
+- Demo chat routes at `POST http://localhost:8086/api/chats`, which answer `401` until `auth.http` is configured
 - In-memory session storage
+- The mock provider, which needs no credentials — see [Providers](../specs/hal-engine-providers/spec.md) for a real one
 - No tools registered (the AI responds from its training data only)
+
+`transport.basePath` defaults to `/hal` and `transport.port` to `8086`, or `PORT` from the environment. The example above sets both explicitly to match [`example/server.ts`](../example/server.ts), which CI type-checks.
 
 ## Adding Tools
 
@@ -79,16 +80,14 @@ const engine = createHalEngine({
   },
   prompt: {
     identity: 'You are a helpful weather assistant.',
-    guidelines: [
-      'Always use the get_weather tool when asked about weather.',
-      'Present temperatures in the units the user prefers.',
-    ],
+    responseGuidelines:
+      'Always use the get_weather tool when asked about weather. Present temperatures in the units the user prefers.',
   },
   tools: toolRegistry,
   auth: {
-    ws: async (token) => {
-      const user = await verifyToken(token);
-      return {userId: user.id};
+    ws: async req => {
+      const user = await verifyToken(req.headers.authorization);
+      return user && {id: user.id};
     },
   },
 });
@@ -107,18 +106,18 @@ const engine = createHalEngine({
     modelId: 'anthropic.claude-3-sonnet-20240229-v1:0',
   },
 
-  // REQUIRED: System prompt configuration
+  // REQUIRED: System prompt configuration. Every field but `identity` is optional.
   prompt: {
     identity: 'You are a helpful assistant.',
-    context: 'You help users with weather and general questions.',
-    guidelines: ['Be concise.', 'Use tools when available.'],
-    customInstructions: 'Additional free-form instructions for the AI.',
+    domainContext: 'You help users with weather and general questions.',
+    responseGuidelines: 'Be concise. Use tools when available.',
+    toolPreamble: 'Replaces the built-in instructions telling the model when to call a tool.',
   },
 
   // REQUIRED: Authentication
   auth: {
-    ws: async (token) => ({userId: 'user-1'}),   // WebSocket auth (required)
-    http: authMiddleware,                          // Express middleware for REST (optional)
+    ws: async req => ({id: 'user-1'}),   // Receives the upgrade request; return null to reject
+    http: authMiddleware,                // Express middleware for the chat routes (401 without it)
   },
 
   // OPTIONAL: Tool registry
@@ -141,23 +140,33 @@ const engine = createHalEngine({
     contextConfig: {
       maxTokens: 100000,             // Context window limit
     },
-    hooks: {
-      beforeSession: async (session) => { /* setup */ },
-      beforeUserInput: async (session, message) => message,
-      afterUserInput: async (session, message) => { /* validate */ },
-      beforeModelResponse: async (session, prompt) => prompt,
-      afterModelResponse: async (session, text, usage) => { /* track usage */ },
-      afterSession: async (session) => { /* cleanup */ },
-      onError: async (session, error) => { /* log errors */ },
-    },
   },
 
   // OPTIONAL: Logger
   logger: myLogger,
 
-  // OPTIONAL: Lifecycle hooks
+  // OPTIONAL: Lifecycle hooks. Fire-and-forget: never awaited, and a throw or
+  // rejection is logged and swallowed rather than dropping the connection.
   onConnect: (session) => console.log(`Connected: ${session.sessionId}`),
   onDisconnect: (sessionId) => console.log(`Disconnected: ${sessionId}`),
+});
+```
+
+### Message lifecycle hooks
+
+`OrchestratorHooks` — `beforeSession`, `beforeUserInput`, `afterUserInput`, `beforeModelResponse`, `afterModelResponse`, `afterSession` and `onError` — are **not** reachable through `createHalEngine`. It forwards only `maxToolRounds` and `contextConfig` to the orchestrator it builds.
+
+To use them, assemble the parts yourself. `createChatOrchestrator`, `createApp`, `createServer` and the `OrchestratorHooks` type are all exported for that purpose:
+
+```typescript
+import {createChatOrchestrator, createApp, createServer} from '@re-cinq/hal-engine';
+
+const orchestrator = createChatOrchestrator(provider, promptBuilder, toolRegistry, {
+  maxToolRounds: 5,
+  hooks: {
+    beforeUserInput: async (session, message) => message.trim(),
+    onError: async (session, error) => report(error),
+  },
 });
 ```
 

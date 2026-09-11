@@ -159,6 +159,14 @@ Trusted publishing cannot be registered against a package name that has never be
 - The `_sessionStore` parameter stays. Dropping it is a breaking change for no gain.
 - The file states, at its head, that the store is unused by design, that the `Map` is process-local, and that a REST-created chat id is not a WebSocket session id.
 
+### The example is the only correct file, and nothing checked it
+
+`tsconfig.json` sets `rootDir` to `src/` and excludes `example/`, so the one file the README and the guide are written against was never compiled. Both drifted from it: three `PromptBuilderConfig` fields under names the type does not have, a `ws` authenticator taking a token rather than the upgrade request and returning `userId` rather than `id`, an `engine.listen()` that does not exist, and a documented `orchestrator.hooks` that `createHalEngine` never forwards.
+
+- `tsconfig.example.json` compiles `example/` against `src/` with `noEmit`, run as `typecheck:example` and called from CI.
+- The README quick start and the guide's minimal setup are `example/server.ts` apart from the import specifier.
+- `OrchestratorHooks` is documented where it actually lives, on `createChatOrchestrator`, not on `HalEngineConfig`.
+
 ### `onConnect` is called
 
 `HalEngineConfig.onConnect` is declared at `src/config.ts:37`, forwarded at `:75`, and declared again on `HalServerOptions` at `src/transport/createServer.ts:20` — and then omitted from the `deps` object at `:50` that the connection handler receives. Its sibling `onDisconnect` is forwarded on the adjacent line and is invoked on every close, so a consumer sees half the pair work. Four committed documents say both work.

@@ -24,22 +24,33 @@ npm install @re-cinq/hal-engine
 import {createHalEngine, ToolRegistry} from '@re-cinq/hal-engine';
 
 const tools = new ToolRegistry();
+
 tools.register(
   {
     name: 'get_weather',
-    description: 'Get weather for a city',
+    description: 'Get current weather for a city',
     inputSchema: {
       type: 'object',
-      properties: {city: {type: 'string'}},
+      properties: {
+        city: {type: 'string', description: 'City name'},
+      },
       required: ['city'],
     },
+    promptInstructions: 'Use this tool when the user asks about weather in a specific city.',
+    examplePrompts: ['What is the weather in Berlin?', 'Is it raining in Tokyo?'],
   },
-  async input => `Weather in ${input.city}: 22C, sunny`
+  async input => {
+    const city = input.city as string;
+    return `Weather in ${city}: 22C, partly cloudy, wind 12 km/h NW`;
+  }
 );
 
 const engine = createHalEngine({
-  provider: {type: 'bedrock', modelId: 'eu.amazon.nova-pro-v1:0', region: 'eu-central-1', maxTokens: 4096},
-  prompt: {identity: 'You are a helpful assistant.'},
+  provider: {type: 'mock'},
+  prompt: {
+    identity: 'You are a helpful AI assistant.',
+    responseGuidelines: 'Be concise and informative.',
+  },
   tools,
   auth: {
     ws: async req => {
@@ -48,10 +59,18 @@ const engine = createHalEngine({
       return {id: 'user-1'};
     },
   },
+  transport: {
+    port: 8086,
+    basePath: '/api',
+  },
 });
 
-engine.start(8086);
+await engine.start();
 ```
+
+This is [`example/server.ts`](example/server.ts) apart from the import specifier, and CI type-checks that file on every pull request, so it cannot drift from the API it demonstrates.
+
+`provider: {type: 'mock'}` needs no credentials and no SDK — swap it for one from the [Providers](#providers) table when you have them. The server listens on `ws://localhost:8086/api/ws`, answers `GET /api/health`, and mounts the demo chat routes at `/api/chats`, which reply `401` until you configure `auth.http`.
 
 ## Providers
 
