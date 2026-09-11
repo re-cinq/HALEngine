@@ -13,6 +13,12 @@ published before it, so there is no upgrade path from `0.1.0` on the registry �
 
 ### Changed
 
+- The README documents the three environment variables this package actually reads — `CORS_ORIGIN`, `PORT`
+  and `LOG_LEVEL` — each with its reading site, what overrides it, and its default. `AWS_REGION` and
+  `GOOGLE_CLOUD_PROJECT` are gone from the provider docs: both are config fields, and setting the variable
+  while passing a different `region` or `projectId` silently gives you the config value. Vendor credential
+  variables are still listed, now stating that this package reads none of them — the vendor SDK does.
+
 - The README now states which install path is supported. The registry specifier is the product; a git
   specifier builds from a checkout, carries no provenance, and pins a commit rather than a version. If you
   install from git under the key `hal-engine`, note that the rename is silent — `import 'hal-engine'` keeps

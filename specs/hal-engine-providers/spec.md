@@ -63,12 +63,13 @@ const engine = createHalEngine({
 });
 ```
 
-**Environment variables:**
+**Credentials:**
 ```bash
-AWS_REGION=eu-west-1
 AWS_ACCESS_KEY_ID=<from-environment>
 AWS_SECRET_ACCESS_KEY=<from-environment>
 ```
+
+This package reads neither. `src/providers/bedrock/bedrockProvider.ts:28` constructs `new BedrockRuntimeClient({region: config.region})` and the AWS SDK resolves credentials itself, from the environment, a shared profile, or an instance role. `region` is the config field above, not `AWS_REGION`: setting the variable and passing a different `region` gives you the config value with no warning.
 
 **IAM permissions required:**
 - `bedrock:InvokeModel`
@@ -96,11 +97,12 @@ const engine = createHalEngine({
 });
 ```
 
-**Environment variables:**
+**Credentials:**
 ```bash
-GOOGLE_CLOUD_PROJECT=my-gcp-project
 GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 ```
+
+This package reads neither. `src/providers/vertex/vertexProvider.ts:33` constructs `new VertexAI({project, location, googleAuthOptions})` and Google's auth library resolves credentials itself, from `googleAuthOptions`, that variable, or the metadata server. `projectId` is the config field above, not `GOOGLE_CLOUD_PROJECT`: setting the variable and passing a different `projectId` gives you the config value with no warning.
 
 **Structured output example:**
 ```typescript
@@ -160,10 +162,12 @@ const engine = createHalEngine({
 });
 ```
 
-**Environment variables:**
+**Credentials:**
 ```bash
 OPENAI_API_KEY=sk-...
 ```
+
+This package reads it nowhere. The configuration example above passes it, so it is your code that reads the variable and this package that receives the value as `apiKey`.
 
 ## Anthropic (Direct API)
 
@@ -181,10 +185,12 @@ const engine = createHalEngine({
 });
 ```
 
-**Environment variables:**
+**Credentials:**
 ```bash
 ANTHROPIC_API_KEY=sk-ant-...
 ```
+
+This package reads it nowhere, for the same reason: the example above passes it as `apiKey`.
 
 ## Mock Provider
 
