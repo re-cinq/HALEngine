@@ -49,8 +49,16 @@ npm run prettier:check  # Check formatting without writing
 
 ### All Checks (Recommended Pre-Commit)
 ```bash
-npm run typecheck && npm run eslint && npm run prettier:check && npm test && npm run build
+npm run typecheck && npm run typecheck:example && npm run eslint && npm run prettier:check && \
+  npm run docs:check && npm test && npm run build
 ```
+
+That is the blocking set CI runs on every pull request, in the same order. Three
+further gates run there and are worth running locally before a release or a
+change that touches packaging: `npm run check:build-chain` (audit and action
+pins), `npm run smoke` (packs the tarball and installs it outside this tree), and
+`npm run check:spec-links` with `npm run check:spec-status` for a change that
+touches `specs/`.
 
 ## Spec Header Table
 

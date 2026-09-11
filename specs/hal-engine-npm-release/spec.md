@@ -222,6 +222,13 @@ The alias is removed. `user_message` is the only wire name, which is what the ex
 - `user_message` is accepted and returns exactly the frame `UserMessagePayload` describes ([validated by](../../src/transport/ws/validation.test.ts#L6)).
 - No deprecation window was needed. This package has never been published, so there were no registry consumers to deprecate for, and the window would only ever have been cheap before the first release.
 
+### A contributor knows which checks are theirs
+
+`CONTRIBUTING.md` states the blocking sequence, the commit format, the layering rule, what the spec header table's `Status` actually tracks, and the changelog gate - each by linking `AGENTS.md` rather than restating it.
+
+- It states that a pull request from a fork runs a reduced set of checks and that this is expected. A fork gets a read-only token and no repository secrets whatever a workflow requests, so CI runs in full while the advisory spec-impact check does not run at all. Without that sentence a contributor reads a missing check as something they broke.
+- Writing it found `AGENTS.md`'s pre-commit sequence two gates out of date: it predated `typecheck:example` and `docs:check`, both of which now fail a pull request. The sequence is corrected there and the file links to it, so the two cannot disagree.
+
 ### A reporter can reach someone
 
 This package had nowhere for a vulnerability report to arrive. The package is public from the first release whether or not the repository is, so a finder cannot be assumed to have repository access.

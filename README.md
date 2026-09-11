@@ -173,6 +173,7 @@ src/
 - [Tool Responses](specs/hal-engine-tool-responses/spec.md)
 - [Providers](specs/hal-engine-providers/spec.md)
 - [Logging](docs/logging.md)
+- [Contributing](CONTRIBUTING.md)
 - [Coding Practices](docs/coding-practices.md)
 
 ## Security
