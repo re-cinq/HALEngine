@@ -26,6 +26,7 @@ Implementation status is scored per method in `README.md`, which carries the onl
 
 Pass the provider config to `createHalEngine()` or use `createProvider()` directly:
 
+<!-- doc-block: none -- a composed provider configuration; its fields are checked through src/config.ts by typecheck -->
 ```typescript
 import {createHalEngine} from '@re-cinq/hal-engine';
 
@@ -54,6 +55,7 @@ const provider = createProvider({
 
 Uses the Converse API for a unified interface across all Bedrock-hosted models.
 
+<!-- doc-block: none -- a composed provider configuration; its fields are checked through src/config.ts by typecheck -->
 ```typescript
 const engine = createHalEngine({
   provider: {
@@ -86,6 +88,7 @@ See [spike-bedrock-integration.md](../../docs/spikes/spike-bedrock-integration.m
 
 Supports streaming through `sendMessage` and structured JSON output through `generateStructured` ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L55), [structured](../../src/providers/vertex/vertexProvider.test.ts#L208)).
 
+<!-- doc-block: none -- a composed provider configuration; its fields are checked through src/config.ts by typecheck -->
 ```typescript
 const engine = createHalEngine({
   provider: {
@@ -112,6 +115,7 @@ GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 This package reads neither. `src/providers/vertex/vertexProvider.ts:33` constructs `new VertexAI({project, location, googleAuthOptions})` and Google's auth library resolves credentials itself, from `googleAuthOptions`, that variable, or the metadata server. `projectId` is the config field above, not `GOOGLE_CLOUD_PROJECT`: setting the variable and passing a different `projectId` gives you the config value with no warning.
 
 **Structured output example:**
+<!-- doc-block: none -- a structured-output call against a live model, which CI cannot make -->
 ```typescript
 import {createVertexProvider} from '@re-cinq/hal-engine';
 
@@ -157,6 +161,7 @@ const result = await provider.generateStructured<{score: number; feedback: strin
 
 ## OpenAI
 
+<!-- doc-block: none -- a composed provider configuration; its fields are checked through src/config.ts by typecheck -->
 ```typescript
 const engine = createHalEngine({
   provider: {
@@ -180,6 +185,7 @@ This package reads it nowhere. The configuration example above passes it, so it 
 
 Connects to Anthropic's API directly, bypassing Bedrock.
 
+<!-- doc-block: none -- a composed provider configuration; its fields are checked through src/config.ts by typecheck -->
 ```typescript
 const engine = createHalEngine({
   provider: {
@@ -203,6 +209,7 @@ This package reads it nowhere, for the same reason: the example above passes it 
 
 Echoes the user back instead of calling a model. Use for testing, development, and CI -- it needs no credentials, which is why `example/server.ts` runs on it.
 
+<!-- doc-block: none -- a composed provider configuration; its fields are checked through src/config.ts by typecheck -->
 ```typescript
 const engine = createHalEngine({
   provider: {type: 'mock'},
@@ -216,6 +223,7 @@ const engine = createHalEngine({
 
 `generateStructured` is the configurable half. `structuredResponses` maps a user message to the exact object to return for it; anything unmatched gets a value built from the response schema's shape.
 
+<!-- doc-block: none -- a standalone createProvider call, shown beside the createHalEngine form above it -->
 ```typescript
 const provider = createProvider({
   type: 'mock',
@@ -243,10 +251,11 @@ To add a new provider, implement the `AIProvider` interface and wire it into the
 
 Create a new file under `src/providers/<name>/`:
 
+<!-- doc-block: none -- a custom provider a reader writes, deliberately outside this package -->
 ```typescript
 // src/providers/custom/customProvider.ts
 
-import type {AIProvider, SendMessageParams, StructuredOutputParams, MessageChunk} from '../../types/ai';
+import type {AIProvider, SendMessageParams, StructuredOutputParams, MessageChunk} from '../../types/ai.js';
 
 export interface CustomConfig {
   type: 'custom';
@@ -313,6 +322,7 @@ export function createCustomProvider(config: CustomConfig): AIProvider {
 
 ### Step 2: Export from an index file
 
+<!-- doc-block: none -- the barrel file for the custom provider a reader writes -->
 ```typescript
 // src/providers/custom/index.ts
 export {createCustomProvider} from './customProvider.js';
@@ -323,6 +333,7 @@ export type {CustomConfig} from './customProvider.js';
 
 Open `src/providers/providerFactory.ts` and add your provider:
 
+<!-- doc-block: none -- a factory arm a reader adds for their own provider -->
 ```typescript
 import {createCustomProvider} from './custom/index.js';
 import type {CustomConfig} from './custom/index.js';
@@ -350,6 +361,7 @@ export function createProvider(config: ProviderConfig): AIProvider {
 
 Open `src/index.ts` and add:
 
+<!-- doc-block: none -- a re-export a reader adds for their own provider -->
 ```typescript
 export {createCustomProvider} from './providers/custom/index.js';
 export type {CustomConfig} from './providers/custom/index.js';
@@ -371,6 +383,7 @@ The orchestrator handles `tool_use` stop reasons by executing tools and re-calli
 
 Because all providers implement the same interface, switching is a config-only change - for `sendMessage`. It is not, for `generateStructured`: Bedrock's throws and Vertex's does not, so an application calling it can move Bedrock to Vertex but not the reverse. Nothing catches that at compile time, because a provider satisfies `AIProvider` by throwing. `README.md` scores each provider per method.
 
+<!-- doc-block: none -- three configurations contrasted to show what switching provider costs -->
 ```typescript
 // Development: use mock
 const devEngine = createHalEngine({

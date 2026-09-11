@@ -13,11 +13,12 @@ Create a new file in `src/orchestration/tools/`. Each tool exports two things:
 
 Here is a complete example:
 
+<!-- doc-block: none -- a complete worked tool for a fictional weather API, written to be copied and edited -->
 ```typescript
 // src/orchestration/tools/weatherTool.ts
 
-import type {ToolDefinition} from '../types/ai';
-import type {ToolExecutor} from './registry';
+import type {ToolDefinition} from '../../types/ai.js';
+import type {ToolExecutor} from './registry.js';
 
 export const weatherTool: ToolDefinition = {
   name: 'get_weather',
@@ -84,6 +85,7 @@ The more precise the description, the better the model's judgment about when to 
 
 The optional `promptInstructions` field provides guidance that gets included in the AI's system prompt. Unlike `description` (which is part of the tool schema sent to the AI provider), `promptInstructions` appears in the system prompt text itself, giving higher-level behavioral rules about when and how to use the tool.
 
+<!-- doc-block: none -- one field of a ToolDefinition, quoted to discuss how to word it -->
 ```typescript
 promptInstructions:
   'Use this when users ask about weather at a specific location. ' +
@@ -103,6 +105,7 @@ Don't duplicate what's already in `description` -- keep `promptInstructions` foc
 
 The optional `examplePrompts` field provides example queries that are shown to users in the chat interface as clickable suggestions. These are sent to the client in the WebSocket `connected` message and persist throughout the conversation.
 
+<!-- doc-block: none -- one field of a ToolDefinition, quoted to discuss how to word it -->
 ```typescript
 examplePrompts: ['What is the weather in Berlin?', 'Is it raining in Tokyo?'],
 ```
@@ -127,6 +130,7 @@ The `inputSchema` follows [JSON Schema](https://json-schema.org/) format. The mo
 
 A `ToolExecutor` is an async function that takes the tool input and returns either a string or a `ToolResponse`:
 
+<!-- doc-block: src/orchestration/tools/registry.ts#ToolExecutor -->
 ```typescript
 type ToolExecutor = (input: Record<string, unknown>, context?: ToolContext) => Promise<string | ToolResponse>;
 ```
@@ -143,8 +147,9 @@ For tools that need to send messages directly to the client or suppress the AI's
 
 Open `src/orchestration/tools/index.ts` and add two lines:
 
+<!-- doc-block: none -- the registration call for the fictional tool defined earlier in this document -->
 ```typescript
-import {weatherTool, executeWeather} from './weatherTool';
+import {weatherTool, executeWeather} from './weatherTool.js';
 
 // ... existing registrations ...
 

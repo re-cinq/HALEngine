@@ -15,6 +15,7 @@ This is the more common case. The backend needs to push something new to the cli
 
 Open `src/types/messages.ts` and add a new interface, then include it in the `OutgoingMessage` union:
 
+<!-- doc-block: none -- a StatusUpdateMessage this document invents to demonstrate the steps; it is not a type this package declares -->
 ```typescript
 export interface StatusUpdateMessage {
   type: 'status_update';
@@ -37,6 +38,7 @@ export type OutgoingMessage =
 
 Open `src/transport/ws/sender.ts` and add a function that sends the message:
 
+<!-- doc-block: none -- a sender for the invented message type -->
 ```typescript
 export function sendStatusUpdate(ws: WebSocket, status: string): void {
   ws.send(JSON.stringify({type: 'status_update', status}));
@@ -47,6 +49,7 @@ export function sendStatusUpdate(ws: WebSocket, status: string): void {
 
 In `src/transport/ws/messageHandler.ts` (or wherever the event originates), call the sender:
 
+<!-- doc-block: none -- a call site for the invented message type -->
 ```typescript
 sendStatusUpdate(ws, 'processing');
 ```
@@ -55,6 +58,7 @@ sendStatusUpdate(ws, 'processing');
 
 On the client side, add the type to your message union and handle it in your message dispatch:
 
+<!-- doc-block: none -- the client-side half of the invented message type -->
 ```typescript
 interface StatusUpdateMessage {
   type: 'status_update';
@@ -77,6 +81,7 @@ Less common, but sometimes the client needs to send new kinds of messages to the
 
 Open `src/types/messages.ts` and add to the `IncomingMessage` union:
 
+<!-- doc-block: none -- a StopGenerationPayload this document invents to demonstrate the steps -->
 ```typescript
 export interface StopGenerationPayload {
   type: 'stop_generation';
@@ -89,6 +94,7 @@ export type IncomingMessage = UserMessagePayload | PingMessage | StopGenerationP
 
 Open `src/transport/ws/validation.ts` and add a case to the switch:
 
+<!-- doc-block: none -- the validation switch with an invented case added, shown as a diff against the real one -->
 ```typescript
 switch (message.type) {
   case 'user_message':
@@ -106,6 +112,7 @@ switch (message.type) {
 
 Open `src/transport/ws/messageHandler.ts` and add handling logic:
 
+<!-- doc-block: none -- a handler branch for the invented message type -->
 ```typescript
 if (message.type === 'stop_generation') {
   handleStopGeneration(ws, session);
@@ -116,6 +123,7 @@ if (message.type === 'stop_generation') {
 
 Add a helper on the client side that creates and sends the message:
 
+<!-- doc-block: none -- a client helper for the invented message type -->
 ```typescript
 function createStopMessage(): {type: 'stop_generation'} {
   return {type: 'stop_generation'};
@@ -132,6 +140,7 @@ If your feature introduces a new kind of conversation entry (a new `role`), you 
 
 Open `src/types/session.ts`:
 
+<!-- doc-block: none -- a SystemNoticeEntry this document invents to demonstrate the steps -->
 ```typescript
 export interface SystemNoticeEntry {
   role: 'system_notice';
@@ -146,6 +155,7 @@ export type SessionEntry = UserEntry | AssistantEntry | ThinkingEntry | ToolEntr
 
 Open `src/orchestration/entryFactories.ts`:
 
+<!-- doc-block: none -- a factory for the invented entry type -->
 ```typescript
 export function createSystemNoticeEntry(content: string): SessionEntry {
   return {role: 'system_notice', content, timestamp: new Date().toISOString()};

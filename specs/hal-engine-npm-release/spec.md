@@ -255,6 +255,11 @@ Hand transcription produced a wrong frame order, a `PromptBuilderConfig` field n
 - It found drift on its first run: the architecture spec's `OrchestratorHooks` block had `afterSession` in a different position from the declaration, and its `WsAuthenticator` block silently bundled a second interface that the marker could not name. The quick start had lost a comment line the example carries.
 - Nine of the fifteen blocks are generated. Six carry a reasoned opt-out: annotated references, a fictional weather API, a Redis store a reader writes. T030 extends the mechanism to the remaining documents.
 
+- The mechanism covers ten documents and 62 blocks: fifteen from the first pass and 47 more across `CLAUDE.md`, `.specify/spec.md`, the three how-tos, and the providers and tool-responses specs. Fifteen are generated from a declaration or an example region; the rest carry a reasoned opt-out naming what the block actually is - an invented type a how-to uses to demonstrate its steps, a before-and-after pair, a provider a reader writes.
+- `docs/spikes/**` is excluded by design and the exclusion is written into the script. A spike records what was believed when it was written; regenerating its code would falsify the record that its status block exists to preserve.
+- Two defects were predicted to fall out. One did: a complete worked tool imported `../types/ai` from a file the comment places at `src/orchestration/tools/`, which resolves to a directory that has never existed. Two more extensionless relative imports were found in the same sweep, neither of which resolves under NodeNext.
+- The other had already been fixed. The documented `ToolExecutor` carries `context?: ToolContext` at both sites, and `ToolContext` carries `userId`, `sessionId`, `workspaceId` and `authHeaders`.
+
 ### The guides
 
 - `docs/getting-started.md` documents `PromptBuilderConfig` as `{identity, context?, guidelines?: string[], customInstructions?}` at lines 82, 114 and 115. The shipped interface has three different field names and the fourth is a different type. Under `strict: true` the documented shape does not compile, and a reader who widens past that loses more: the builder reads only the real names, so the rest is silently dropped from the assembled prompt. `specs/hal-engine-architecture/spec.md` was already corrected; this file was not.

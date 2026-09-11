@@ -80,6 +80,7 @@ Avoid nesting `if` statements inside each other. Use early returns, guard clause
 
 **Benefits:** Code scans from top to bottom without indentation pyramids. Each condition is visible at the same level, making it easy to verify that all cases are handled. And when a new condition needs to be added, it slots in as another early return rather than wrapping everything in another layer of nesting.
 
+<!-- doc-block: none -- a before-and-after pair illustrating a practice, not code that ships -->
 ```typescript
 // Good: flat with early return
 function streamSegment(ws: WebSocket, session: ChatSession, state: StreamState, ...): void {
@@ -154,6 +155,7 @@ Frontend state is never mutated. The entry operations (`applyUpsert`, `applyDelt
 
 **Benefits:** React re-renders correctly every time, without surprises. State changes are traceable because previous state is never overwritten. And time-travel debugging becomes possible, letting you step through state transitions to understand exactly how the UI arrived at its current shape.
 
+<!-- doc-block: none -- a before-and-after pair illustrating a practice, not code that ships -->
 ```typescript
 // Good: returns new array
 function applyUpsert(entries: SessionEntry[], index: number, entry: SessionEntry): SessionEntry[] {
@@ -186,6 +188,7 @@ The AI provider streams chunks via `AsyncGenerator<MessageChunk>`. This is compo
 
 **Benefits:** Code reads like a simple loop despite being fully asynchronous. Streaming pipelines compose naturally as generators yield to generators, forming a clean chain from AI provider to browser. And back-pressure is handled automatically because the consumer controls the pace -- no buffer overflow surprises.
 
+<!-- doc-block: none -- a method signature quoted out of its class to discuss its shape -->
 ```typescript
 async *processMessageStream(session: ChatSession): AsyncGenerator<MessageChunk> {
   for await (const chunk of provider.sendMessage({messages, systemPrompt, tools})) {
@@ -202,6 +205,7 @@ When multiple independent operations need to happen, run them in parallel. Tool 
 
 **Benefits:** Total latency equals the slowest operation rather than the sum of all of them. Server resources are utilized more efficiently because work happens concurrently. And the pattern scales beautifully -- whether you have 2 operations or 20, the wall-clock time stays bounded by the single slowest one.
 
+<!-- doc-block: none -- a parallel-execution pattern, not a declaration this package exports -->
 ```typescript
 const results = await Promise.all(
   pendingToolCalls.map(async (tc) => ({
@@ -230,6 +234,7 @@ Test names describe what happens, not what should happen.
 
 **Benefits:** Test names are shorter and scan faster in the test runner output. Reading the test suite feels like reading a specification of system behavior. And the naming convention stays consistent across the codebase, making it easy to follow the pattern when writing new tests.
 
+<!-- doc-block: none -- a before-and-after pair illustrating a practice, not code that ships -->
 ```typescript
 // Good
 it('returns empty state when no entries', () => { ... });
@@ -248,6 +253,7 @@ The name should read naturally as a sentence when combined with the `it()` call.
 
 **Benefits:** Failed tests are immediately understandable from the test runner output alone. The test suite doubles as living documentation of edge cases and expected behavior. And writing new tests is easy because the naming pattern is clear -- describe the input, describe the output.
 
+<!-- doc-block: none -- an illustrative test name, not a test this repository runs -->
 ```typescript
 it('formats timestamp 2024-01-15T14:30:00 as "14:30"', () => { ... });
 it('caps delay at max value', () => { ... });
@@ -262,6 +268,7 @@ Instead of checking individual fields one by one, assert the whole shape.
 
 **Benefits:** The expected shape is visible at a glance as a single object literal. Test code is shorter and more focused. And `toEqual` catches unexpected field changes that a series of individual `.toBe()` checks would happily overlook.
 
+<!-- doc-block: none -- a before-and-after pair illustrating a practice, not code that ships -->
 ```typescript
 // Good
 expect(result[0]).toMatchObject({role: 'assistant', content: 'Hello world', isStreaming: false});
@@ -290,6 +297,7 @@ If the code needs a comment to explain what it does, rename things until it does
 
 **Benefits:** Readers encounter less noise and can focus on the code itself. Stale comments never mislead future developers because there are no unnecessary comments to go stale. And the constraint forces better naming, which benefits everyone who reads the code long after the comment would have been forgotten.
 
+<!-- doc-block: none -- a before-and-after pair illustrating a practice, not code that ships -->
 ```typescript
 // Unnecessary comment:
 // Create a user entry

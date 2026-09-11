@@ -11,7 +11,22 @@ import {root} from './lib/repo-root.mjs';
 
 const USAGE = 'usage: check-doc-blocks.mjs [--fix]\n\nmarkers, on the line before the fence:\n  <!-- doc-block: src/types/ai.ts#AIProvider -->   an exported declaration\n  <!-- doc-block: example/server.ts#quick-start --> a #region span in a checked example\n  <!-- doc-block: none -- reason -->                opt out, reason required';
 
-const DOCS = ['README.md', 'docs/getting-started.md', 'specs/hal-engine-architecture/spec.md'];
+const DOCS = [
+  'README.md',
+  'CLAUDE.md',
+  '.specify/spec.md',
+  'docs/getting-started.md',
+  'docs/adding-a-tool.md',
+  'docs/adding-a-message-type.md',
+  'docs/coding-practices.md',
+  'specs/hal-engine-architecture/spec.md',
+  'specs/hal-engine-providers/spec.md',
+  'specs/hal-engine-tool-responses/spec.md',
+];
+
+// docs/spikes/** is deliberately absent. A spike records what was believed when it
+// was written, and its status block says which claims no longer hold; regenerating
+// its code would falsify the record rather than repair it.
 
 // example/ imports the source tree; a reader installs the package.
 const IMPORT_REWRITES = [[/from '\.\.\/src\/index\.js'/g, "from '@re-cinq/hal-engine'"]];
