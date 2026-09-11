@@ -15,10 +15,19 @@ const resolvedLevel = (() => {
 
 function emit(level: LevelName, category: string, message: string, fields?: Record<string, unknown>): void {
   if (LOG_LEVELS[level] < resolvedLevel) return;
-  const timestamp = new Date().toISOString();
-  const payload = fields ? ` ${JSON.stringify(fields)}` : '';
-  // eslint-disable-next-line no-console
-  console.log(`[${timestamp}] [${level}] [${category}] ${message}${payload}`);
+
+  // Caller fields are nested under `data`, so one named `severity` cannot overwrite the line's own.
+  const line = {
+    severity: level,
+    message,
+    timestamp: new Date().toISOString(),
+    category,
+    ...(fields ? {data: fields} : {}),
+  };
+
+  // ERROR to stderr: a stream that cannot be split by severity cannot be alerted on.
+  // eslint-disable-next-line no-console -- the one place this package writes to a stream
+  (level === 'ERROR' ? console.error : console.log)(JSON.stringify(line));
 }
 
 export const log: Logger = {

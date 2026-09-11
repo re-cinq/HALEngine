@@ -179,10 +179,15 @@ Trusted publishing cannot be registered against a package name that has never be
 
 `src/shared/logger.ts:21` is the only `console.*` call under `src/`, and it is `console.log` for all four levels. Every line is unstructured text, so `log.error` is indistinguishable from `log.info` to anything reading the stream: a deployment filtering on severity matches nothing and stays green through an outage. This is public surface — `src/index.ts` exports both `log` and the `Logger` type.
 
-- `emit` writes one JSON object per line.
-- The key set is `severity` as the uppercase level name, `message`, an ISO-8601 `timestamp`, plus this package's own `category` and `data`.
-- `ERROR` goes to `console.error`; the other three levels go to `console.log`.
-- No call site changes. All 28 `log.*` calls under `src/` keep their category, message, level and data.
+- `emit` writes one JSON object per line, parseable and carrying no embedded newline ([validated by](../../src/shared/logger.test.ts#L41)).
+- The key set is `severity`, `message`, `timestamp` and `category`, in that order ([validated by](../../src/shared/logger.test.ts#L48)).
+- `severity` is the uppercase level name ([validated by](../../src/shared/logger.test.ts#L71)).
+- `timestamp` is ISO-8601 UTC ([validated by](../../src/shared/logger.test.ts#L88)).
+- A call's fields arrive as `data` rather than spread across the top level, and `data` is absent when the call passed none ([validated by](../../src/shared/logger.test.ts#L54)).
+- Nesting them is what makes the key set stable: a field named `severity` cannot overwrite the line's own ([validated by](../../src/shared/logger.test.ts#L64)).
+- `ERROR` goes to `console.error`; the other three levels go to `console.log` ([validated by](../../src/shared/logger.test.ts#L80)).
+- A level below the `LOG_LEVEL` threshold is dropped before the line is built ([validated by](../../src/shared/logger.test.ts#L98)).
+- No call site changes. All 29 `log.*` calls under `src/` keep their category, message, level and data - 28 at the time this was written, plus the hook-failure line T015 added.
 - A new `docs/logging.md` covers the key set, the level mapping, the stream split, and which fields can identify a person.
 
 ### The mock factory forwards its configuration

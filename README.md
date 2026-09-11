@@ -116,6 +116,7 @@ src/
 - [Adding a Tool](docs/adding-a-tool.md)
 - [Tool Responses](specs/hal-engine-tool-responses/spec.md)
 - [Providers](specs/hal-engine-providers/spec.md)
+- [Logging](docs/logging.md)
 - [Coding Practices](docs/coding-practices.md)
 
 ## Development

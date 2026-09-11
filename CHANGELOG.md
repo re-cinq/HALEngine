@@ -13,6 +13,12 @@ published before it, so there is no upgrade path from `0.1.0` on the registry â€
 
 ### Changed
 
+- **Log output is JSON, one object per line.** Lines were unstructured text (`[time] [LEVEL] [category] msg`),
+  so `log.error` was indistinguishable from `log.info` to anything reading the stream. Each line now carries
+  `severity`, `message`, `timestamp` and `category`, with the call site's fields under `data`. `ERROR` goes to
+  stderr; every other level goes to stdout. If you parse this output, it has changed shape â€” see
+  [docs/logging.md](docs/logging.md). Supply your own `logger` to keep the old format.
+
 - **Breaking: the package is ESM-only.** `require('@re-cinq/hal-engine')` no longer works. Use
   `import` from an ESM module, or stay on the git specifier until you can. The package declares
   `"type": "module"` and resolves through an `exports` map.
