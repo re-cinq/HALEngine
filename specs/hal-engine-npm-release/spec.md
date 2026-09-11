@@ -61,6 +61,8 @@ The `@aws-sdk/client-bedrock-runtime` reference in the emitted types is not the 
 
 `tsconfig.build.json` already excludes `**/*.test.ts` from emit while `tsconfig.json` keeps type-checking them, so compiled test files no longer reach the package. What is missing is a check: the publish workflow MUST fail when the pack list contains any `*.test.*` entry, so this cannot silently regress.
 
+`tsconfig.build.json` also turns `declarationMap` and `sourceMap` off, which the root config leaves on for local work. `files` is `["dist"]`, so a published map named a `../src/*.ts` that the tarball did not carry and held no `sourcesContent` — 98 dead maps, half the file list, resolving to nothing in any consumer's debugger. Turning them off rather than adding `src` to `files` keeps the published artifact to what the package runs: measured at the change, 199 files and a 55.6 kB tarball became 101 files and 33.8 kB. A consumer wanting to step through the source has the repository. The publish workflow's pack-list check MUST fail on a `*.map` entry for the same reason it fails on a `*.test.*` one.
+
 ## The release pipeline
 
 ### Coverage floor

@@ -72,18 +72,21 @@ jobs:
       # reach the tarball - but the pack list is the only place that is a fact
       # rather than an intention. npm pack runs `prepare`, so this lists what
       # this commit would actually ship.
-      - name: No test files in the pack list
+      #
+      # Maps are rejected on the same grounds: with only dist/ published, a map
+      # names a ../src/*.ts nobody receives.
+      - name: No test files or source maps in the pack list
         run: |
           npm pack --dry-run --json > pack.json
           node --input-type=module -e '
             import { readFileSync } from "node:fs";
             const files = JSON.parse(readFileSync("pack.json", "utf8"))[0].files.map((f) => f.path);
-            const tests = files.filter((p) => /(^|\/)[^/]*\.test\.[^/]*$/.test(p));
-            if (tests.length > 0) {
-              console.error("pack list carries test files:\n  " + tests.join("\n  "));
+            const unwanted = files.filter((p) => /(^|\/)[^/]*\.test\.[^/]*$/.test(p) || p.endsWith(".map"));
+            if (unwanted.length > 0) {
+              console.error("pack list carries test files or source maps:\n  " + unwanted.join("\n  "));
               process.exit(1);
             }
-            console.log(`pack list clean: ${files.length} files, no *.test.* entry`);
+            console.log(`pack list clean: ${files.length} files, no *.test.* or *.map entry`);
           '
 
   publish:

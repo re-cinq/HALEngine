@@ -13,6 +13,11 @@ published before it, so there is no upgrade path from `0.1.0` on the registry �
 
 ### Changed
 
+- The published package carries no source maps. `files` is `["dist"]`, so every `.js.map` and `.d.ts.map`
+  named a `../src/*.ts` the tarball did not contain and carried no inlined sources — 98 files that resolved
+  to nothing in a debugger. Dropping them halves the file count. Step through the source from a checkout
+  of the repository instead.
+
 - The README documents the three environment variables this package actually reads — `CORS_ORIGIN`, `PORT`
   and `LOG_LEVEL` — each with its reading site, what overrides it, and its default. `AWS_REGION` and
   `GOOGLE_CLOUD_PROJECT` are gone from the provider docs: both are config fields, and setting the variable

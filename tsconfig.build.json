@@ -1,5 +1,10 @@
 {
   "extends": "./tsconfig.json",
   "//": "Build-only. tsconfig.json stays the whole-repo view so `npm run typecheck` and ts-jest keep checking tests; this one drops them from the emitted package. `exclude` REPLACES the parent's rather than merging, so the base entries are repeated here.",
+  "//maps": "No maps in the published build: `files` is [\"dist\"], so every map would name a ../src/*.ts the tarball does not carry. Ship src/ instead of turning these back on.",
+  "compilerOptions": {
+    "declarationMap": false,
+    "sourceMap": false
+  },
   "exclude": ["node_modules", "dist", "example", "smoke", "**/*.test.ts", "src/providers/providerTestSupport.ts"]
 }
