@@ -216,6 +216,10 @@ const provider = createProvider({
 
 There is no `responses` array and no cycling: the only knob is `structuredResponses`.
 
+Both entry points honour it: the example above goes through `createProvider`, which once called `createMockProvider()` with no arguments and dropped the map ([validated by](../../src/providers/providerFactory.test.ts#L17)).
+
+It configures `generateStructured` only, and nothing inside `createHalEngine` calls that method - the orchestrator drives `sendMessage`. A consumer who sets `structuredResponses` and drives the engine over HTTP or a WebSocket will see mock chat responses and never a configured object; the map is for code calling the provider directly.
+
 ## Implementing a Custom Provider
 
 To add a new provider, implement the `AIProvider` interface and wire it into the provider factory.

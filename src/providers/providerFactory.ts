@@ -26,6 +26,6 @@ export function createProvider(config: ProviderConfig): AIProvider {
     case 'anthropic':
       return createAnthropicProvider(config);
     case 'mock':
-      return createMockProvider();
+      return createMockProvider(config);
   }
 }

@@ -167,9 +167,15 @@ Trusted publishing cannot be registered against a package name that has never be
 
 `createProvider` is a five-arm switch. Four arms forward `config`; the `mock` arm at `src/providers/providerFactory.ts:34` calls `createMockProvider()` with no arguments, dropping the only field `MockConfig` has. The same config object therefore behaves differently through `createProvider` than through `createMockProvider` — two public exports, one of which honours the caller.
 
-- The `mock` arm forwards `config` like the other four.
-- `createMockProvider`'s parameter stays optional. Making it required would break the existing no-argument call sites to guard against a typo the new test catches.
+Measured before the fix, one config object produced `{"status":"","count":0}` through `createProvider` and `{"status":"configured","count":42}` through `createMockProvider`.
+
+- The `mock` arm forwards `config` like the other four, so a configured structured response survives the factory ([validated by](../../src/providers/providerFactory.test.ts#L17)).
+- A message the map does not name still falls back to schema-shaped defaults ([validated by](../../src/providers/providerFactory.test.ts#L24)).
+- `createMockProvider`'s parameter stays optional - making it required would break the existing no-argument call sites to guard against a typo the new test catches - so a `mock` config carrying no map is accepted ([validated by](../../src/providers/providerFactory.test.ts#L31)).
+- Every arm returns a provider implementing both `AIProvider` methods ([validated by](../../src/providers/providerFactory.test.ts#L37)).
+- The `mock` arm reaches the mock rather than a neighbouring arm ([validated by](../../src/providers/providerFactory.test.ts#L52)).
 - The mock is the only provider the tarball smoke test can exercise without a cloud account, which is why this lands before the smoke fixture is written.
+- `structuredResponses` is honoured by both entry points, but it configures `generateStructured`, and nothing inside `createHalEngine` ever calls that method — the orchestrator only calls `sendMessage`. A consumer configuring the map through `createHalEngine` should learn that from the documentation rather than from a debugger.
 
 ### One wire name for the client frame
 
