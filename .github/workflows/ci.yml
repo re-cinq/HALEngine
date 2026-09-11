@@ -4,6 +4,13 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Manual runs: re-checking a branch against a moved main, or confirming a gate after
+  # changing one, without pushing an empty commit.
+  workflow_dispatch:
+  # An advisory published after a merge is invisible until someone opens a pull request, and this
+  # repository can go days without one. Monday 07:00 UTC; only `build-chain` answers it.
+  schedule:
+    - cron: '0 7 * * 1'
 
 # Every job here only reads the checkout; the repo default is write.
 permissions:
@@ -18,6 +25,9 @@ concurrency:
 jobs:
   verify:
     name: Verify
+    # The scheduled run exists for the dependency audit; re-running the suite on an unchanged
+    # tree every Monday would report nothing new.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -33,10 +43,11 @@ jobs:
           node-version: '22'
           cache: npm
 
-      # The `prepare` script builds on install, so a broken compile fails here
-      # before any named gate runs.
+      # --ignore-scripts so `prepare` does not build on install: what a lifecycle script
+      # runs is out of this workflow's control, and the Build step below is where a broken
+      # compile should be reported. Type check catches it earlier still.
       - name: Install
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       # These five are the pre-commit sequence AGENTS.md documents, run in the
       # same order and kept as separate steps so a red run names the gate that
@@ -96,6 +107,17 @@ jobs:
       - name: Documented code blocks
         run: npm run docs:check
 
+      # Three rules that held only because somebody remembered them: a path in prose that resolves,
+      # a spike that says it is a spike, and an example region inside the EU.
+      - name: Documented paths resolve
+        run: npm run docs:check-paths
+
+      - name: Spike documents carry a status block
+        run: npm run docs:check-spikes
+
+      - name: Documented regions
+        run: npm run check:regions
+
       - name: Spec link placement
         run: npm run check:spec-links
 
@@ -152,6 +174,7 @@ jobs:
   # dependency is already installed and every one of these failures is invisible.
   smoke:
     name: Smoke (packed tarball)
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
