@@ -7,7 +7,7 @@
 
 This package has never been published. It is `hal-engine@0.1.0`, CommonJS, unlicensed, and reachable only through a git specifier that clones the repository and builds from source. This spec describes what has to become true for `npm install @re-cinq/hal-engine` to resolve from the public registry: the module format it ships, the manifest that describes it, the pipeline that releases it from a `v*` tag without a stored token, and the handful of defects a first public release must not carry — an authentication fallback that opens a chat API, a hook that is declared and never called, a factory arm that drops its configuration, and an optional peer that is not optional. It also covers the documentation, because npm renders `README.md` and nothing else.
 
-The scope is this repository. One decision it depends on — whether the source repository is publicly resolvable, which is what npm provenance requires — is recorded as an ADR here and is a hard blocker on the release workflow.
+The scope is this repository. One decision it depends on — whether the source repository is publicly resolvable, which is what npm provenance requires — is recorded in [ADR-007](../../adrs/ADR-007-repository-visibility.md): the repository becomes public, so the release carries provenance.
 
 ## The package that ships
 
@@ -105,7 +105,7 @@ The repository has zero git tags. `0.1.0` was never tagged and never published, 
 - A `v*` tag triggers one publish job.
 - The job authenticates with npm Trusted Publishing over OIDC. No `NPM_TOKEN` secret exists in the repository after bootstrap.
 - A guard fails the job when the tag and the committed `package.json` version disagree. It is a committed script rather than an inline step, so a developer can run it before pushing a tag they cannot un-push.
-- Whether the publish carries `--provenance` is decided by the repository-visibility ADR. npm generates provenance only from a public source repository, and refuses it for any repository an unauthenticated client cannot read.
+- Whether the publish carries `--provenance` is decided by [ADR-007](../../adrs/ADR-007-repository-visibility.md), which makes the repository public, so it does. npm generates provenance only from a public source repository, and refuses it for any repository an unauthenticated client cannot read.
 - AGENTS.md gains a § Releasing section covering the four human steps: bump in the pull request, merge, tag `vX.Y.Z` on `main`, push the tag.
 
 ### Release notes
@@ -255,6 +255,6 @@ These are gates, not preferences. Each one is `error` in the committed lint conf
 
 ## Carried elsewhere
 
-- Whether the repository becomes public is an ADR here, stated generally enough that the next package reads it rather than re-deriving it. The release workflow cannot be finished until it lands, because it decides whether the publish carries `--provenance`. The trade-off is narrower than it first appears: the built package is public either way, so what visibility decides is the history, the test suite, the examples, and the issue and pull-request record — and exposure covers every commit, not the tip, so it requires a full-history secret scan first.
+- Whether the repository becomes public is [ADR-007](../../adrs/ADR-007-repository-visibility.md), stated generally enough that the next package reads it rather than re-deriving it. It decided the `--provenance` question the release workflow could not be finished without. The trade-off is narrower than it first appears: the built package is public either way, so what visibility decides is the history, the test suite, the examples, and the issue and pull-request record — and exposure covers every commit, not the tip, so it requires a full-history secret scan first.
 - Renaming the package breaks any consumer importing the bare specifier `hal-engine`, whether as a value or as a type: a module specifier resolves at compile time either way. Those repairs happen in the consuming project and are not scoped here.
 - A session id carried on the WebSocket upgrade request — the change that would let a REST-created chat id reach a socket — is not in this release.
