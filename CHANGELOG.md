@@ -47,10 +47,20 @@ published before it, so there is no upgrade path from `0.1.0` on the registry �
   real error. It was reported as the peer being absent, so the message told you to install a package you
   already had and discarded the actual cause.
 
-- A log call can no longer throw. `data` that cannot be serialised — a circular reference, a `BigInt` — is
-  written as `"[unserialisable]"` with the rest of the line intact, instead of raising a `TypeError` out of
-  whatever was being logged. A `WsAuthenticator` returning an identity with a back-reference used to take down
-  the connection that carried it and leave its session in the store.
+- A log call can no longer throw, whichever logger is installed. `data` that cannot be serialised — a circular
+  reference, a `BigInt` — is written as `"[unserialisable]: <reason>"` with the rest of the line intact,
+  instead of raising a `TypeError` out of whatever was being logged. A `WsAuthenticator` returning an identity
+  with a back-reference used to take down the connection that carried it and leave its session in the store.
+  A supplied `logger` that throws is caught the same way, and its line goes to the console rather than being
+  lost.
+
+- `LOG_LEVEL` gates a supplied `logger` exactly as it gates the built-in one. The threshold is tested once
+  before dispatch, so a level below it never reaches your implementation.
+
+- `setLogger` is exported, so a logger installed through `HalEngineConfig` can be replaced or put back.
+  Calling it with no argument restores the built-in console logger. Note that the swap is process-wide:
+  `createHalEngine` installs a logger only when the config names one, so a second engine that names none keeps
+  using whatever was last set. [docs/logging.md](docs/logging.md) says why.
 
 - **Breaking: the package is ESM-only.** `require('@re-cinq/hal-engine')` no longer works. Use
   `import` from an ESM module, or stay on the git specifier until you can. The package declares

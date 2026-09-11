@@ -185,3 +185,84 @@ describe('swapping the logger', () => {
     expect(sink.out.length).toBe(1);
   });
 });
+
+// A supplied logger is reached through the same gate as the built-in one; the earlier delegation bypassed both.
+describe('a supplied logger', () => {
+  const collect = (into: string[]) => {
+    const push = (level: string) => (category: string, message: string) => void into.push(`${level} ${message}`);
+    return {debug: push('DEBUG'), info: push('INFO'), warn: push('WARN'), error: push('ERROR')};
+  };
+
+  afterEach(() => {
+    setLogger();
+  });
+
+  it('is gated by LOG_LEVEL exactly as the built-in logger is', () => {
+    const seen: string[] = [];
+    setLogger(collect(seen));
+
+    log.debug('ws', 'below the threshold');
+    log.info('ws', 'above it');
+
+    expect(seen).toEqual(['INFO above it']);
+  });
+
+  it('does not let its own throw escape into the call site being logged', () => {
+    setLogger({
+      debug: () => undefined,
+      info: () => {
+        throw new Error('sink is down');
+      },
+      warn: () => undefined,
+      error: () => undefined,
+    });
+
+    expect(() => log.info('ws', 'connected')).not.toThrow();
+  });
+
+  it('falls back to the console when it throws, so the line is not lost', () => {
+    const sink = capture();
+    setLogger({
+      debug: () => undefined,
+      info: () => {
+        throw new Error('sink is down');
+      },
+      warn: () => undefined,
+      error: () => undefined,
+    });
+
+    log.info('ws', 'connected');
+    sink.restore();
+
+    expect((JSON.parse(sink.out[0]) as Line).message).toBe('connected');
+  });
+
+  it('survives a partially implemented logger rather than failing at an arbitrary later call', () => {
+    setLogger({info: () => undefined} as unknown as Parameters<typeof setLogger>[0]);
+
+    expect(() => log.debug('ws', 'no debug method exists')).not.toThrow();
+  });
+});
+
+// The degraded line is built from the caller's values, which can be hostile in a JS consumer.
+describe('the logger on a value whose toString throws', () => {
+  afterEach(() => {
+    setLogger();
+  });
+
+  it('still writes a line rather than throwing out of the emitter', () => {
+    const sink = capture();
+    const hostile = {
+      toString: () => {
+        throw new Error('toString is hostile');
+      },
+    };
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+
+    log.info('ws', hostile as unknown as string, cyclic);
+    sink.restore();
+
+    expect((JSON.parse(sink.out[0]) as Line).severity).toBe('INFO');
+  });
+});

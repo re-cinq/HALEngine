@@ -2,7 +2,7 @@
 
 HAL Engine writes one JSON object per line to the process streams. Nothing in the package reads those lines back, so the format exists entirely for whatever collects them -- a log shipper, a container runtime, or a person running `jq`.
 
-The logger is public surface: `src/index.ts` exports both the `log` object and the `Logger` type, and a consumer can pass their own implementation as `logger` in `HalEngineConfig`. This document describes the built-in one.
+The logger is public surface: `src/index.ts` exports the `log` object, the `setLogger` function and the `Logger` type, and a consumer can pass their own implementation as `logger` in `HalEngineConfig`. This document describes the built-in one.
 
 ## The line
 
@@ -49,9 +49,13 @@ The split matters where the collector has no JSON parser in front of it: a conta
 
 ## Supplying your own
 
-Pass `logger` in `HalEngineConfig` and every line above goes to your implementation instead of the console, with the same four arguments the `Logger` interface declares -- `category`, `message` and the optional fields object. Nothing else changes: `LOG_LEVEL` still gates which calls reach you, because the threshold is applied before the line is built.
+Pass `logger` in `HalEngineConfig` and every line above goes to your implementation instead of the console, called with the three arguments the `Logger` interface declares -- `category`, `message`, and the optional fields object. `setLogger` is exported too, for an engine you assemble by hand or to put the built-in logger back: calling it with no argument restores the console one.
 
-One caveat, and it is the reason this is documented rather than assumed. The swap is **process-wide, not per engine**. Seven modules import the `log` object at module scope, so there is one logger per process; two engines in the same process share whichever was constructed last. If you run more than one engine in a process and need their lines apart, put the distinguishing field in your own implementation rather than expecting the package to carry it.
+`LOG_LEVEL` gates your logger exactly as it gates the built-in one. The threshold is tested once, before dispatch, so a level below it never reaches you at all.
+
+If your logger throws -- a transport that is not ready, a full disk -- the throw does not propagate into the call site being logged, and the line is written to the console instead rather than being lost. The same holds for a logger missing one of the four methods.
+
+One caveat, and it is the reason this is documented rather than assumed. The swap is **process-wide, not per engine**, and it persists: `createHalEngine` sets your logger when the config names one and otherwise leaves whatever was last set in place, so a second engine that names none keeps using the first one's logger until `setLogger()` puts the console back. Seven modules import the `log` object at module scope, so there is one logger per process; two engines in the same process share whichever was constructed last. If you run more than one engine in a process and need their lines apart, put the distinguishing field in your own implementation rather than expecting the package to carry it.
 
 ## Fields that can identify a person
 

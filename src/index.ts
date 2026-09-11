@@ -41,7 +41,7 @@ export {InMemoryPromptStore} from './infrastructure/stores/inMemoryPromptStore.j
 export {InMemoryUsageStore} from './infrastructure/stores/inMemoryUsageStore.js';
 export {ThinkingTagParser} from './infrastructure/parsers/thinkingTagParser.js';
 export type {ParsedSegment} from './infrastructure/parsers/thinkingTagParser.js';
-export {log} from './shared/logger.js';
+export {log, setLogger} from './shared/logger.js';
 export type {Logger} from './shared/logger.js';
 
 export type {

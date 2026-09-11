@@ -8,6 +8,8 @@ export interface Logger {
 const LOG_LEVELS = {DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3} as const;
 type LevelName = keyof typeof LOG_LEVELS;
 
+const METHODS = {DEBUG: 'debug', INFO: 'info', WARN: 'warn', ERROR: 'error'} as const;
+
 const resolvedLevel = (() => {
   const env = (process.env.LOG_LEVEL || 'info').toUpperCase();
   return LOG_LEVELS[env as LevelName] ?? LOG_LEVELS.INFO;
@@ -16,8 +18,6 @@ const resolvedLevel = (() => {
 export const UNSERIALISABLE = '[unserialisable]';
 
 function emit(level: LevelName, category: string, message: string, fields?: Record<string, unknown>): void {
-  if (LOG_LEVELS[level] < resolvedLevel) return;
-
   // Caller fields are nested under `data`, so one named `severity` cannot overwrite the line's own.
   const line = {
     severity: level,
@@ -34,23 +34,35 @@ function emit(level: LevelName, category: string, message: string, fields?: Reco
 
 // A throw here would take down the call site being observed, so an unserialisable field costs that field alone.
 function serialise(line: Record<string, unknown>): string {
-  const attempt = stringify(line);
-  if (attempt.ok) return attempt.text;
+  const whole = probe(() => JSON.stringify(line));
+  if (whole.ok) return whole.value;
 
-  // Primitives only, so this one cannot fail in turn.
+  // String() runs the caller's toString, so it is attempted inside the probe rather than before it.
+  const degraded = probe(() =>
+    JSON.stringify({
+      severity: line.severity,
+      message: String(line.message),
+      timestamp: line.timestamp,
+      category: String(line.category),
+      data: `${UNSERIALISABLE}: ${whole.reason}`,
+    })
+  );
+  if (degraded.ok) return degraded.value;
+
+  // Nothing the caller supplied survives into this one, so it cannot fail in turn.
   return JSON.stringify({
     severity: line.severity,
-    message: String(line.message),
+    message: UNSERIALISABLE,
     timestamp: line.timestamp,
-    category: String(line.category),
-    data: `${UNSERIALISABLE}: ${attempt.reason}`,
+    category: UNSERIALISABLE,
+    data: `${UNSERIALISABLE}: ${degraded.reason}`,
   });
 }
 
-// A probe, not control flow: JSON.stringify throws on cycles and BigInt, and the reason is worth keeping.
-function stringify(value: unknown): {ok: true; text: string} | {ok: false; reason: string} {
+// A probe, not control flow: it reports what happened rather than branching on a swallowed error.
+function probe(run: () => string): {ok: true; value: string} | {ok: false; reason: string} {
   try {
-    return {ok: true, text: JSON.stringify(value)};
+    return {ok: true, value: run()};
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     return {ok: false, reason: reason.split('\n')[0]};
@@ -75,12 +87,31 @@ export function setLogger(logger?: Logger): void {
   active = logger ?? consoleLogger;
 }
 
+// The one place a level is tested, so LOG_LEVEL gates a supplied logger exactly as it gates the built-in one.
+function dispatch(level: LevelName, category: string, message: string, fields?: Record<string, unknown>): void {
+  if (LOG_LEVELS[level] < resolvedLevel) return;
+
+  const delivered = probe(() => {
+    active[METHODS[level]](category, message, fields);
+    return '';
+  });
+  if (delivered.ok) return;
+
+  // A supplied logger that throws must not take down the call site it observes, and the line is not dropped.
+  probe(() => {
+    emit(level, category, message, fields);
+    return '';
+  });
+}
+
 // Delegating rather than reassigned, so a module that imported `log` before the swap still sees it.
 export const log: Logger = {
   debug: (category: string, message: string, fields?: Record<string, unknown>) =>
-    active.debug(category, message, fields),
-  info: (category: string, message: string, fields?: Record<string, unknown>) => active.info(category, message, fields),
-  warn: (category: string, message: string, fields?: Record<string, unknown>) => active.warn(category, message, fields),
+    dispatch('DEBUG', category, message, fields),
+  info: (category: string, message: string, fields?: Record<string, unknown>) =>
+    dispatch('INFO', category, message, fields),
+  warn: (category: string, message: string, fields?: Record<string, unknown>) =>
+    dispatch('WARN', category, message, fields),
   error: (category: string, message: string, fields?: Record<string, unknown>) =>
-    active.error(category, message, fields),
+    dispatch('ERROR', category, message, fields),
 };

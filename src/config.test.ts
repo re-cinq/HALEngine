@@ -1,6 +1,6 @@
 import net from 'node:net';
 import {createHalEngine} from './config.js';
-import {setLogger} from './shared/logger.js';
+import {log, setLogger} from './shared/logger.js';
 import type {Logger} from './shared/logger.js';
 import type {ChatSession} from './types/session.js';
 import type {WsAuthenticator} from './types/auth.js';
@@ -72,7 +72,8 @@ describe('createHalEngine logger forwarding', () => {
     expect(lines).toContainEqual({category: 'server', message: 'HAL Engine started'});
   });
 
-  it('leaves the built-in logger in place when none is supplied', async () => {
+  // Asserts on a line logged AFTER construction: nothing logs during it, so an emptiness check cannot fail.
+  it('leaves an already-supplied logger in place when the config names none', async () => {
     const lines: string[] = [];
     setLogger({
       debug: (_c: string, m: string) => void lines.push(m),
@@ -82,8 +83,9 @@ describe('createHalEngine logger forwarding', () => {
     });
 
     createHalEngine({...base});
+    log.info('test', 'after construction');
 
-    expect(lines).toEqual([]);
+    expect(lines).toEqual(['after construction']);
   });
 });
 
