@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A newer push to the same branch supersedes an in-flight run. main is exempt:
+# every commit there should have its own recorded result.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          # Full history, not for this job but for the spec anchor check that
+          # joins it in tooling parity phase 03: it resolves cited content from
+          # origin/main, which a shallow clone cannot serve.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      # The `prepare` script builds on install, so a broken compile fails here
+      # before any named gate runs.
+      - name: Install
+        run: npm ci
+
+      # These five are the pre-commit sequence AGENTS.md documents, run in the
+      # same order and kept as separate steps so a red run names the gate that
+      # failed rather than a single opaque command.
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Lint (--max-warnings 0)
+        run: npm run eslint
+
+      # Reports, never blocks. The one rule it runs is `warn`, so the step exits
+      # 0 on its own and carries no continue-on-error: a non-zero exit here now
+      # means the config itself broke, and that should fail. Its findings render
+      # as warning annotations rather than failures, which is what a report on a
+      # passing check should look like.
+      #
+      # require-statement-links counts spec statements with no test behind them.
+      # Most of what it reports needs a test written rather than a line changed,
+      # so the count is meant to be visible on every run and to fall over time.
+      # Its test-side mirror, require-spec-link, is satisfied and gates in the
+      # Lint step above. Never add a rule here to escape a red gate -
+      # eslint.config.backlog.mjs says what belongs.
+      - name: Spec traceability backlog (report)
+        run: npm run lint:backlog
+
+      - name: Format check
+        run: npm run prettier:check
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      # Anchors drift silently: a cited file gaining or losing lines above the
+      # cited one leaves the link pointing at different content, and the spec
+      # still reads as cited. Resolves content at origin/main, which the
+      # fetch-depth: 0 above exists to provide. A red check is fixed by running
+      # `node scripts/repoint-spec-anchors.mjs` and committing the result.
+      - name: Spec anchor check
+        run: node scripts/repoint-spec-anchors.mjs --check origin/main
+
+      # A citation counts as coverage only in its statement's trailing
+      # parenthetical; one written mid-statement is dropped upstream in silence,
+      # so the spec reads as cited while its coverage is zero. A red check is
+      # fixed by moving the link to the end of its statement, never by deleting
+      # it (AGENTS.md § Spec Test Links).
+      - name: Spec link placement
+        run: npm run check:spec-links
+
+      # Lead paragraphs and a spec's status-vs-coverage are ESLint's job; the
+      # one verdict a `files` glob cannot express - that an ADR's frontmatter
+      # status parses, without holding the ADR to the coverage tier - is this
+      # script's. `check:spec-status -- --coverage` lists unlinked statements
+      # and never gates.
+      - name: Spec status
+        run: npm run check:spec-status

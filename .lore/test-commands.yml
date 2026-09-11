@@ -1,0 +1,21 @@
+# Lore test-command interface (lore_list_tests / lore_run_test).
+# Written for this repo's Jest suite rather than adapted from the Vitest
+# equivalent for a Vitest suite: the report shapes happen to match, but the
+# invocations do not.
+- id: hal-engine-jest
+  name: HAL Engine Jest suite
+  cwd: .
+  description: >-
+    The ts-jest unit suite over src/ and scripts/ (jest.config.js roots), run
+    on every pull request in .github/workflows/ci.yml as the "Test" step.
+    Selectors are "<repo-relative-file>::<full test name>" as emitted by the
+    list command. Jest has no dry-run, so the list command executes the suite
+    once with --json and derives every name from the report; it deliberately
+    tolerates a red suite, since listing must not depend on the tests passing.
+    The run command selects one test with --runTestsByPath plus an anchored,
+    regex-escaped -t, and treats a selector that matches nothing as a failure
+    rather than a green run of an empty suite. Neither command builds first:
+    no test here reads dist/.
+  list: node scripts/lore-list-tests.mjs
+  run: node scripts/lore-run-test.mjs "{selector}"
+  coverage_format: lcov

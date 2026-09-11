@@ -1,0 +1,30 @@
+# The layering CLAUDE.md declares, in a form a linter can check.
+#
+# A key names a layer - that folder and everything under it. The list is what
+# may LEAVE the layer; movement inside one is free. A folder with no entry here
+# may import nothing, which is what keeps this file honest as src/ grows.
+# npm and node: specifiers are never governed - package.json owns those.
+#
+# The documented order is types -> providers -> infrastructure -> orchestration
+# -> transport. The real graph is a DAG rather than a chain, and this file
+# declares the DAG:
+#
+#   - `providers` is a sibling of `infrastructure`, not a link in the chain.
+#   - `orchestration` may NOT import `providers`. It depends on the AIProvider
+#     interface in `types` and never on a concrete provider, which is the
+#     property that lets a provider be swapped by configuration alone
+#     (specs/hal-engine-architecture/spec.md, "Pluggable Interfaces").
+#   - `shared` is cross-cutting: every layer above `types` may reach the logger
+#     it holds, and it imports nothing itself. `types` is not among them - it
+#     may import nothing at all, the logger included.
+#   - `.` is src/config.ts and src/index.ts - the composition root, the one
+#     place allowed to see every layer, because assembling them is its job.
+layers:
+  src:
+    '.': [types, shared, providers, infrastructure, orchestration, transport]
+    types: []
+    shared: []
+    providers: [types, shared]
+    infrastructure: [types, shared]
+    orchestration: [types, shared, infrastructure]
+    transport: [types, shared, infrastructure, orchestration]
