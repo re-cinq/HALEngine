@@ -203,8 +203,7 @@ ws.onmessage = (event) => {
 
 // 3. Send a message
 ws.send(JSON.stringify({
-  type: 'send_message',
-  chatId,
+  type: 'user_message',
   content: 'What is the weather in Berlin?',
 }));
 ```

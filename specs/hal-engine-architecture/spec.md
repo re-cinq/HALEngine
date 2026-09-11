@@ -222,7 +222,7 @@ sequenceDiagram
     U->>CC: types message, hits send
     CC->>WS: sendMessage(content)
     Note over WS: Creates optimistic entry<br/>(shown immediately)
-    WS->>S: {type: "send_message", content}
+    WS->>S: {type: "user_message", content}
 
     S->>S: validateMessage()
     S->>S: createUserEntry(), appendEntry()

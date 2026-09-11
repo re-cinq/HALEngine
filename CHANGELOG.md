@@ -42,16 +42,13 @@ published before it, so there is no upgrade path from `0.1.0` on the registry â€
   `npm audit signatures` that the tarball was built by this repository's release workflow from the
   commit the version was tagged at, rather than uploaded by whoever held a token.
 
-### Security
+### Removed
 
-- **Breaking: the HTTP chat routes deny by default.** With no `auth.http` middleware configured,
-  `POST /chats`, `GET /chats/:id` and `POST /chats/:id/messages` now answer `401 Unauthorized`. They
-  previously served every caller as one shared `anonymous` user, so anyone holding a chat id could read
-  and post to it. Configure `auth.http` to keep them reachable.
-- **Breaking: the chat routes require an identified user.** Middleware that runs but attaches no `user`,
-  or a `user` whose `id` is missing, `null` or `''`, is now refused `401` as well. Ownership is enforced
-  rather than skipped: chats are no longer recorded against a shared `anonymous` owner. The numeric id
-  `0` is accepted â€” it is falsy, but `id` is `string | number` and `0` is a legal id.
+- **Breaking: the `send_message` frame type is gone.** The WebSocket server accepted it as an alias for
+  `user_message` and normalised it away. Send `user_message` instead; an alias frame now comes back as an
+  `error` with code `INVALID_MESSAGE`. The exported `IncomingMessage` union never contained the alias, so
+  TypeScript clients were already writing `user_message` â€” this affects hand-written JSON frames, including
+  the one the old quick start showed.
 
 ### Fixed
 
@@ -78,6 +75,14 @@ published before it, so there is no upgrade path from `0.1.0` on the registry â€
 
 ### Security
 
+- **Breaking: the HTTP chat routes deny by default.** With no `auth.http` middleware configured,
+  `POST /chats`, `GET /chats/:id` and `POST /chats/:id/messages` now answer `401 Unauthorized`. They
+  previously served every caller as one shared `anonymous` user, so anyone holding a chat id could read
+  and post to it. Configure `auth.http` to keep them reachable.
+- **Breaking: the chat routes require an identified user.** Middleware that runs but attaches no `user`,
+  or a `user` whose `id` is missing, `null` or `''`, is now refused `401` as well. Ownership is enforced
+  rather than skipped: chats are no longer recorded against a shared `anonymous` owner. The numeric id
+  `0` is accepted â€” it is falsy, but `id` is `string | number` and `0` is a legal id.
 - Resolved a high-severity advisory in `ws`, a direct runtime dependency. The full dependency audit went
   from 18 advisories (1 critical, 6 high) to 3 (2 moderate, 1 low), none at high or above.
 

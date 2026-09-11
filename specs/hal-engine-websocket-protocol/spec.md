@@ -95,7 +95,7 @@ A client receiving a message with an unrecognized `type` SHOULD ignore it, so th
 
 ### 4.1 user_message
 
-Sends a user chat message. `user_message` is the canonical type; the server also accepts `send_message` and normalises it to `user_message`.
+Sends a user chat message. `user_message` is the only accepted type: the server previously also took `send_message`, which was removed before the first published release.
 
 ```json
 {
@@ -106,10 +106,10 @@ Sends a user chat message. `user_message` is the canonical type; the server also
 
 | Field     | Type   | Required | Description                            |
 | --------- | ------ | -------- | -------------------------------------- |
-| `type`    | string | Yes      | `"user_message"` or `"send_message"`   |
+| `type`    | string | Yes      | `"user_message"`                       |
 | `content` | string | Yes      | Message text                           |
 
-Any other field is ignored. In particular the server does not read a `chatId` from this message: the connection already determines the session.
+Any other field is ignored, and the validator forwards only the fields the frame defines. In particular the server does not read a `chatId` from this message: the connection already determines the session ([validated by](../../src/transport/ws/validation.test.ts#L18)).
 
 Constraints:
 
@@ -576,7 +576,7 @@ If the connection drops unexpectedly, the client SHOULD reconnect using exponent
 - Base delay: 1,000 ms
 - Formula: `min(1000 * 2^retryCount + jitter, 31000)` where jitter is 0-1000 ms random
 - Maximum retries: 5
-- On reconnection success, any queued `send_message` messages MUST be flushed immediately.
+- On reconnection success, any queued `user_message` messages MUST be flushed immediately.
 - On reconnection, the client MUST clear its local entries array. The server will re-send the conversation state for the new session.
 
 After 5 failed attempts, the client MUST stop reconnecting and report a disconnected state.

@@ -92,7 +92,6 @@ Open `src/transport/ws/validation.ts` and add a case to the switch:
 ```typescript
 switch (message.type) {
   case 'user_message':
-  case 'send_message':
     return validateUserMessage(message);
   case 'ping':
     return validatePingMessage(message);

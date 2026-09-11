@@ -206,9 +206,13 @@ Measured before the fix, one config object produced `{"status":"","count":0}` th
 
 ### One wire name for the client frame
 
-`src/transport/ws/validation.ts:31` accepts both `user_message` and `send_message` and normalises both to `user_message`, so the exported `IncomingMessage` union can never contain the second name. `specs/hal-engine-websocket-protocol/spec.md` currently documents the alias as supported, which resolves the inconsistency in the opposite direction from the earlier decision.
+`src/transport/ws/validation.ts` accepted both `user_message` and `send_message` and normalised both to `user_message`, so the exported `IncomingMessage` union could never contain the second name. Five documents disagreed with the types and with each other: the protocol spec listed the alias as accepted and then used it as the name in its own reconnection rule, the quick start sent it, and the add-a-message-type how-to reproduced the two-case switch so anyone following it copied the alias forward.
 
-This is the one item in this spec where the resolution is genuinely open, and it is recorded here as a decision to take rather than a change to make. Whichever way it goes, the code, the exported types and the protocol spec MUST agree, and the alias MUST NOT be removed from the wire without a deprecation window if any client is sending it.
+The alias is removed. `user_message` is the only wire name, which is what the exported types have always said.
+
+- `send_message` is rejected like any other unknown type, so a client still sending it gets an `error` frame carrying `INVALID_MESSAGE` rather than a silent acceptance ([validated by](../../src/transport/ws/validation.test.ts#L12)).
+- `user_message` is accepted and returns exactly the frame `UserMessagePayload` describes ([validated by](../../src/transport/ws/validation.test.ts#L6)).
+- No deprecation window was needed. This package has never been published, so there were no registry consumers to deprecate for, and the window would only ever have been cheap before the first release.
 
 ### A reporter can reach someone
 
