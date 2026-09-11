@@ -64,6 +64,15 @@ published before it, so there is no upgrade path from `0.1.0` on the registry �
 
 ### Fixed
 
+- `orchestrator.hooks` is reachable through `createHalEngine`. `OrchestratorHooks` was documented but the
+  factory forwarded only `maxToolRounds` and `contextConfig`, so every hook was silently dropped. Assembling
+  the parts by hand is no longer the only way to use them.
+- `transport.port` is honoured. It was declared on the config and never forwarded, so the server always fell
+  through to `PORT` or `8086`. Resolution order is now the `start(port)` argument, then `transport.port`,
+  then `PORT`, then `8086` — and `transport.port: 0` means "let the OS choose", not `8086`.
+- An engine that is constructed but never started no longer keeps the process alive. The WebSocket heartbeat
+  timer is `unref`ed, so the listening socket is what holds Node open, as it should be.
+
 - Every documented model id is one the vendor still serves. Six of the seven in the docs and fixtures were
   dead or dying as of 2026-09-11 — two Claude 3 models past or at end-of-life on Bedrock, Claude Sonnet 4
   legacy on Bedrock and retired on Anthropic's own API, and both Gemini 1.5 ids gone from Vertex. `modelId`

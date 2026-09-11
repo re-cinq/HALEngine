@@ -222,6 +222,16 @@ The alias is removed. `user_message` is the only wire name, which is what the ex
 - `user_message` is accepted and returns exactly the frame `UserMessagePayload` describes ([validated by](../../src/transport/ws/validation.test.ts#L6)).
 - No deprecation window was needed. This package has never been published, so there were no registry consumers to deprecate for, and the window would only ever have been cheap before the first release.
 
+### Two config options that were declared and dropped
+
+`createHalEngine` forwarded `maxToolRounds` and `contextConfig` to the orchestrator it builds and stopped there, and passed no port to the server at all. Both options are declared on `HalEngineConfig`, both are documented, and neither did anything - the third and fourth instances of the same seam after `onConnect` and the `send_message` alias.
+
+- `orchestrator.hooks` is declared and forwarded, so a hook passed through the factory fires ([validated by](../../src/config.test.ts#L14)).
+- `transport.port` reaches the server, and the resolution order is the `start(port)` argument, then `transport.port`, then `PORT`, then `8086` ([validated by](../../src/config.test.ts#L31)).
+- An explicit `start(port)` still wins over the configured one ([validated by](../../src/config.test.ts#L42)).
+- `transport.port` resolves with `??` rather than `||`, so a configured `0` means "let the OS choose a free port" instead of collapsing to the default. `PORT` keeps its `||`, because an environment variable that fails to parse should not silently bind port 0.
+- Writing the tests exposed a third defect: `createServer` opened its heartbeat interval at construction, so an engine that was built and never started held the Node event loop open forever. The timer is now `unref`ed - the listening socket is what should keep a process alive.
+
 ### A contributor knows which checks are theirs
 
 `CONTRIBUTING.md` states the blocking sequence, the commit format, the layering rule, what the spec header table's `Status` actually tracks, and the changelog gate - each by linking `AGENTS.md` rather than restating it.

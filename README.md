@@ -139,12 +139,12 @@ Three, and only three. Everything else is a config field.
 | Variable | Read at | Overridden by | Default |
 |---|---|---|---|
 | `CORS_ORIGIN` | `src/transport/createApp.ts:23` | `transport.corsOrigin` | `http://localhost:3000` |
-| `PORT` | `src/transport/createServer.ts:88` | the argument to `engine.start(port)` | `8086` |
+| `PORT` | `src/transport/createServer.ts:94` | `transport.port`, or the argument to `engine.start(port)` | `8086` |
 | `LOG_LEVEL` | `src/shared/logger.ts:12` | nothing — there is no config field | `info` |
 
 `CORS_ORIGIN` carries **one origin**. The value reaches `cors({origin})` unsplit, so a comma-separated list is a single literal string that matches no browser origin. Pass an array to `transport.corsOrigin` for several.
 
-`PORT` is read only when `engine.start()` is called with no argument, and a value that is not a positive number falls through to `8086` — `Number(process.env.PORT) || 8086`, so `PORT=0` and `PORT=http` both yield `8086`. Note that `transport.port` does **not** override it: that field is not forwarded to the server, so it is currently inert. Pass the port to `start()`.
+`PORT` is read only when neither `engine.start(port)` nor `transport.port` supplied one. A value that is not a positive number falls through to `8086` — `Number(process.env.PORT) || 8086`, so `PORT=0` and `PORT=http` both yield `8086`. `transport.port` is resolved with `??` rather than `||`, so a configured `0` means "let the OS choose a free port" and is not replaced by the default.
 
 `LOG_LEVEL` is resolved once at module load, so changing `process.env.LOG_LEVEL` afterwards has no effect. See [Logging](docs/logging.md).
 

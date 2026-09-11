@@ -8,6 +8,7 @@ import type {ChatSession} from './types/session.js';
 import type {HalServer} from './transport/createServer.js';
 import {PromptBuilder} from './infrastructure/builders/promptBuilder.js';
 import {createChatOrchestrator} from './orchestration/chatOrchestrator.js';
+import type {OrchestratorHooks} from './orchestration/chatOrchestrator.js';
 import {createProvider} from './providers/providerFactory.js';
 import {ToolRegistry} from './orchestration/tools/registry.js';
 import {InMemorySessionStore} from './infrastructure/stores/inMemorySessionStore.js';
@@ -32,6 +33,7 @@ export interface HalEngineConfig {
   orchestrator?: {
     maxToolRounds?: number;
     contextConfig?: Partial<ContextConfig>;
+    hooks?: OrchestratorHooks;
   };
   logger?: Logger;
   onConnect?: (session: ChatSession) => void | Promise<void>;
@@ -54,6 +56,7 @@ export function createHalEngine(config: HalEngineConfig): HalEngine {
   const orchestrator = createChatOrchestrator(provider, promptBuilder, toolRegistry, {
     maxToolRounds: config.orchestrator?.maxToolRounds,
     contextConfig: config.orchestrator?.contextConfig,
+    hooks: config.orchestrator?.hooks,
   });
 
   const app = createApp({
@@ -71,6 +74,7 @@ export function createHalEngine(config: HalEngineConfig): HalEngine {
     orchestrator,
     toolRegistry,
     basePath,
+    port: config.transport?.port,
     heartbeatIntervalMs: config.transport?.heartbeatIntervalMs,
     onConnect: config.onConnect,
     onDisconnect: config.onDisconnect,

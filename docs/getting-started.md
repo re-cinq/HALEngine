@@ -143,6 +143,10 @@ const engine = createHalEngine({
     contextConfig: {
       maxTokens: 100000,             // Context window limit
     },
+    hooks: {                         // Message lifecycle hooks; see below
+      beforeUserInput: async (session, message) => message.trim(),
+      onError: async (session, error) => report(error),
+    },
   },
 
   // OPTIONAL: Logger
@@ -157,21 +161,14 @@ const engine = createHalEngine({
 
 ### Message lifecycle hooks
 
-`OrchestratorHooks` — `beforeSession`, `beforeUserInput`, `afterUserInput`, `beforeModelResponse`, `afterModelResponse`, `afterSession` and `onError` — are **not** reachable through `createHalEngine`. It forwards only `maxToolRounds` and `contextConfig` to the orchestrator it builds.
+`orchestrator.hooks` takes an `OrchestratorHooks`: `beforeSession`, `beforeUserInput`, `afterUserInput`, `beforeModelResponse`, `afterModelResponse`, `afterSession` and `onError`. Every one is optional.
 
-To use them, assemble the parts yourself. `createChatOrchestrator`, `createApp`, `createServer` and the `OrchestratorHooks` type are all exported for that purpose:
+Two of them use their return value — `beforeUserInput` rewrites the user message, and `beforeModelResponse` replaces the system prompt. `afterSession` always fires, including on error.
 
-<!-- doc-block: none -- the annotated configuration reference; every field is checked by typecheck through src/config.ts -->
-```typescript
-import {createChatOrchestrator, createApp, createServer} from '@re-cinq/hal-engine';
+They fire in this order:
 
-const orchestrator = createChatOrchestrator(provider, promptBuilder, toolRegistry, {
-  maxToolRounds: 5,
-  hooks: {
-    beforeUserInput: async (session, message) => message.trim(),
-    onError: async (session, error) => report(error),
-  },
-});
+```
+beforeSession → beforeUserInput → afterUserInput → beforeModelResponse → ...streaming... → afterModelResponse → afterSession
 ```
 
 ## Connecting a Client

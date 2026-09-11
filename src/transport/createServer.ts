@@ -16,6 +16,7 @@ export interface HalServerOptions {
   orchestrator: ChatOrchestrator;
   toolRegistry?: ToolRegistry;
   basePath?: string;
+  port?: number;
   heartbeatIntervalMs?: number;
   onConnect?: (session: import('../types/session.js').ChatSession) => void | Promise<void>;
   onDisconnect?: (sessionId: string) => void | Promise<void>;
@@ -78,6 +79,9 @@ export function createServer(options: HalServerOptions): HalServer {
     });
   }, heartbeatMs);
 
+  // The listening socket should hold the process open, not the heartbeat: an engine never started must not.
+  heartbeatInterval.unref();
+
   wss.on('close', () => clearInterval(heartbeatInterval));
 
   return {
@@ -85,7 +89,8 @@ export function createServer(options: HalServerOptions): HalServer {
     wss,
     start: (port?: number) =>
       new Promise<void>(resolve => {
-        const p = port ?? (Number(process.env.PORT) || 8086);
+        // ?? not ||, so a configured port 0 means "let the OS choose" rather than 8086.
+        const p = port ?? options.port ?? (Number(process.env.PORT) || 8086);
         server.listen(p, () => {
           log.info('server', 'HAL Engine started', {port: p});
           resolve();
