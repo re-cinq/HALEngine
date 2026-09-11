@@ -53,15 +53,15 @@ graph LR
 
 ### The declared graph
 
-- `providers` is a sibling of `infrastructure`, not a link in the chain: neither may import the other, and both may reach `types` and `shared` and nothing further ([validated by](../../scripts/eslint-layers.test.ts#L61)).
-- `orchestration` may not import `providers`: it depends on the `AIProvider` interface in `types` and never on a concrete provider, which is the property that lets a provider be swapped by configuration alone ([validated by](../../scripts/eslint-layers.test.ts#L38)).
-- `types` is the bottom layer and may import nothing, so every import out of it is upward and is reported ([validated by](../../scripts/eslint-layers.test.ts#L46)).
-- An import the layering does declare passes untouched, and movement inside a layer is free ([validated by](../../scripts/eslint-layers.test.ts#L52)).
-- The gate governs files under `src/`, and that scope is checked rather than assumed: a matcher which silently matches nothing fails the suite ([validated by](../../scripts/eslint-layers.test.ts#L110)).
-- `shared` is cross-cutting: every layer above `types` may reach the logger it holds, and `types` is not among them — it may import nothing at all, the logger included ([validated by](../../scripts/eslint-layers.test.ts#L83)).
-- `shared` itself imports nothing, which keeps it a leaf rather than a second composition root ([validated by](../../scripts/eslint-layers.test.ts#L77)).
-- `.` — `src/config.ts` and `src/index.ts` — is the composition root, the one place allowed to see every layer, because assembling them is its job ([validated by](../../scripts/eslint-layers.test.ts#L93)).
-- A folder with no entry in `layers.yaml` may import nothing, which is what keeps that file honest as `src/` grows ([validated by](../../scripts/eslint-layers.test.ts#L102)).
+- `providers` is a sibling of `infrastructure`, not a link in the chain: neither may import the other, and both may reach `types` and `shared` and nothing further ([validated by: reports a sibling import both ways, because providers and infrastructure are not a chain](../../scripts/eslint-layers.test.ts#L61)).
+- `orchestration` may not import `providers`: it depends on the `AIProvider` interface in `types` and never on a concrete provider, which is the property that lets a provider be swapped by configuration alone ([validated by: reports orchestration importing a concrete provider, the coupling the architecture forbids](../../scripts/eslint-layers.test.ts#L38)).
+- `types` is the bottom layer and may import nothing, so every import out of it is upward and is reported ([validated by: reports an upward import from the bottom layer, which may import nothing](../../scripts/eslint-layers.test.ts#L46)).
+- An import the layering does declare passes untouched, and movement inside a layer is free ([validated by: allows a downward import the layering declares](../../scripts/eslint-layers.test.ts#L52)).
+- The gate governs files under `src/`, and that scope is checked rather than assumed: a matcher which silently matches nothing fails the suite ([validated by: governs files under src, so a matcher that silently matches nothing fails here](../../scripts/eslint-layers.test.ts#L110)).
+- `shared` is cross-cutting: every layer above `types` may reach the logger it holds, and `types` is not among them — it may import nothing at all, the logger included ([validated by: lets every layer above types reach shared, but not types itself](../../scripts/eslint-layers.test.ts#L83)).
+- `shared` itself imports nothing, which keeps it a leaf rather than a second composition root ([validated by: reports shared importing anything at all, so the cross-cutting layer stays a leaf](../../scripts/eslint-layers.test.ts#L77)).
+- `.` — `src/config.ts` and `src/index.ts` — is the composition root, the one place allowed to see every layer, because assembling them is its job ([validated by: lets the composition root at src/ see every layer, because assembling them is its job](../../scripts/eslint-layers.test.ts#L93)).
+- A folder with no entry in `layers.yaml` may import nothing, which is what keeps that file honest as `src/` grows ([validated by: gives a folder with no layers.yaml entry no imports at all](../../scripts/eslint-layers.test.ts#L102)).
 
 ### Rationale
 
@@ -75,7 +75,7 @@ hal-engine is designed around pluggable interfaces that let consumers customize 
 
 ### SessionStore
 
-Controls where session data is stored: the default `InMemorySessionStore` keeps sessions in a `Map` ([validated by](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L10)). Implement this interface to persist sessions in Redis, a database, or any other backing store. The store is generic -- pass your own session type extending `BaseSession`.
+Controls where session data is stored: the default `InMemorySessionStore` keeps sessions in a `Map` ([validated by: creates and retrieves a session](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L10)). Implement this interface to persist sessions in Redis, a database, or any other backing store. The store is generic -- pass your own session type extending `BaseSession`.
 
 <!-- doc-block: src/types/sessionStore.ts#SessionStore -->
 ```typescript
@@ -88,12 +88,12 @@ interface SessionStore<T extends BaseSession = ChatSession> {
 }
 ```
 
-- `create` records the optional `authHeaders` and `workspaceId` on the session it returns, so a tool can later reach upstream services as the caller ([validated by](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L19)).
-- `get` returns `undefined` for a session id the store does not hold, rather than throwing ([validated by](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L31)).
-- `delete` removes the session and reports `true` ([validated by](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L35)).
-- `delete` reports `false` for an id the store was not holding ([validated by](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L42)).
-- `count` reflects creates and deletes as they happen ([validated by](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L46)).
-- `clear` empties the store, leaving `count` at zero and every previous id unresolvable ([validated by](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L60)).
+- `create` records the optional `authHeaders` and `workspaceId` on the session it returns, so a tool can later reach upstream services as the caller ([validated by: creates session with options](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L19)).
+- `get` returns `undefined` for a session id the store does not hold, rather than throwing ([validated by: returns undefined for unknown session](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L31)).
+- `delete` removes the session and reports `true` ([validated by: deletes a session](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L35)).
+- `delete` reports `false` for an id the store was not holding ([validated by: returns false when deleting nonexistent session](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L42)).
+- `count` reflects creates and deletes as they happen ([validated by: tracks count correctly](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L46)).
+- `clear` empties the store, leaving `count` at zero and every previous id unresolvable ([validated by: clears all sessions](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L60)).
 
 ### WsAuthenticator
 
@@ -126,12 +126,12 @@ interface AIProvider {
 }
 ```
 
-- `sendMessage` streams responses for user-facing output ([validated by](../../src/providers/mock/mockProvider.test.ts#L7)).
-- `generateStructured` returns typed JSON for internal AI decisions, such as evaluation, classification and structured extraction ([validated by](../../src/providers/mock/mockProvider.test.ts#L62)).
+- `sendMessage` streams responses for user-facing output ([validated by: streams word-by-word response echoing user input](../../src/providers/mock/mockProvider.test.ts#L7)).
+- `generateStructured` returns typed JSON for internal AI decisions, such as evaluation, classification and structured extraction ([validated by: returns default values matching schema shape](../../src/providers/mock/mockProvider.test.ts#L62)).
 
 ### PromptStore
 
-Loads prompt templates by name with variable substitution ([validated by](../../src/infrastructure/stores/inMemoryPromptStore.test.ts#L11), [resolve](../../src/infrastructure/stores/inMemoryPromptStore.test.ts#L28)). Use this for database-driven prompts instead of static `PromptBuilder` configuration.
+Loads prompt templates by name with variable substitution ([validated by: returns prompt template when found](../../src/infrastructure/stores/inMemoryPromptStore.test.ts#L11), [resolve](../../src/infrastructure/stores/inMemoryPromptStore.test.ts#L28)). Use this for database-driven prompts instead of static `PromptBuilder` configuration.
 
 <!-- doc-block: src/types/promptStore.ts#PromptStore -->
 ```typescript
@@ -141,16 +141,16 @@ interface PromptStore {
 }
 ```
 
-- `findByName` returns `undefined` for a name the store does not hold ([validated by](../../src/infrastructure/stores/inMemoryPromptStore.test.ts#L17)).
-- `resolve` returns a template with no placeholders unchanged ([validated by](../../src/infrastructure/stores/inMemoryPromptStore.test.ts#L23)).
-- `resolve` substitutes every variable it is given ([validated by](../../src/infrastructure/stores/inMemoryPromptStore.test.ts#L33)).
-- A placeholder appearing more than once is substituted at every occurrence, not only the first ([validated by](../../src/infrastructure/stores/inMemoryPromptStore.test.ts#L42)).
-- A placeholder with no matching variable is left in the output verbatim, so a missing value shows up as `{role}` rather than as a blank the reader cannot spot ([validated by](../../src/infrastructure/stores/inMemoryPromptStore.test.ts#L47)).
-- `resolve` rejects when the prompt name is unknown, because a caller asking for a template by name has no sensible fallback ([validated by](../../src/infrastructure/stores/inMemoryPromptStore.test.ts#L52)).
+- `findByName` returns `undefined` for a name the store does not hold ([validated by: returns undefined when not found](../../src/infrastructure/stores/inMemoryPromptStore.test.ts#L17)).
+- `resolve` returns a template with no placeholders unchanged ([validated by: returns template without substitution when no variables](../../src/infrastructure/stores/inMemoryPromptStore.test.ts#L23)).
+- `resolve` substitutes every variable it is given ([validated by: substitutes multiple variables](../../src/infrastructure/stores/inMemoryPromptStore.test.ts#L33)).
+- A placeholder appearing more than once is substituted at every occurrence, not only the first ([validated by: substitutes all occurrences of same variable](../../src/infrastructure/stores/inMemoryPromptStore.test.ts#L42)).
+- A placeholder with no matching variable is left in the output verbatim, so a missing value shows up as `{role}` rather than as a blank the reader cannot spot ([validated by: leaves unmatched placeholders intact](../../src/infrastructure/stores/inMemoryPromptStore.test.ts#L47)).
+- `resolve` rejects when the prompt name is unknown, because a caller asking for a template by name has no sensible fallback ([validated by: throws when prompt not found](../../src/infrastructure/stores/inMemoryPromptStore.test.ts#L52)).
 
 ### UsageStore
 
-Tracks AI call metadata such as token counts and model version, for cost monitoring ([validated by](../../src/infrastructure/stores/inMemoryUsageStore.test.ts#L24)).
+Tracks AI call metadata such as token counts and model version, for cost monitoring ([validated by: records and retrieves usage by session](../../src/infrastructure/stores/inMemoryUsageStore.test.ts#L24)).
 
 <!-- doc-block: src/types/usageStore.ts#UsageStore -->
 ```typescript
@@ -160,8 +160,8 @@ interface UsageStore {
 }
 ```
 
-- `getBySession` returns an empty array for a session with no records, never `undefined`, so a caller can total the results without a null check ([validated by](../../src/infrastructure/stores/inMemoryUsageStore.test.ts#L31)).
-- `getBySession` returns only the records of the session asked for, in the order they were recorded ([validated by](../../src/infrastructure/stores/inMemoryUsageStore.test.ts#L35)).
+- `getBySession` returns an empty array for a session with no records, never `undefined`, so a caller can total the results without a null check ([validated by: returns empty array for unknown session](../../src/infrastructure/stores/inMemoryUsageStore.test.ts#L31)).
+- `getBySession` returns only the records of the session asked for, in the order they were recorded ([validated by: filters by session ID](../../src/infrastructure/stores/inMemoryUsageStore.test.ts#L35)).
 
 ### PromptBuilderConfig
 
@@ -181,7 +181,7 @@ interface PromptBuilderConfig {
 
 ### OrchestratorHooks
 
-Async lifecycle hooks for customizing the orchestration flow. Every hook is optional and receives the current session, and an orchestrator built with none behaves exactly as one built with an empty set ([validated by](../../src/orchestration/chatOrchestrator.test.ts#L359)).
+Async lifecycle hooks for customizing the orchestration flow. Every hook is optional and receives the current session, and an orchestrator built with none behaves exactly as one built with an empty set ([validated by: works without any hooks configured](../../src/orchestration/chatOrchestrator.test.ts#L359)).
 
 <!-- doc-block: src/orchestration/chatOrchestrator.ts#OrchestratorHooks -->
 ```typescript
@@ -202,19 +202,19 @@ The hooks fire in this order:
 beforeSession → beforeUserInput → afterUserInput → beforeModelResponse → ...streaming... → afterModelResponse → afterSession
 ```
 
-- The order above holds for a successful pass ([validated by](../../src/orchestration/chatOrchestrator.test.ts#L286)).
-- When the stream fails, `afterModelResponse` is skipped and the tail becomes `onError` then `afterSession` ([validated by](../../src/orchestration/chatOrchestrator.test.ts#L326)).
-- `beforeSession` runs before any other hook ([validated by](../../src/orchestration/chatOrchestrator.test.ts#L106)).
-- `beforeUserInput` receives the content of the last user message ([validated by](../../src/orchestration/chatOrchestrator.test.ts#L147)).
-- `beforeUserInput` can modify that message by returning a different string ([validated by](../../src/orchestration/chatOrchestrator.test.ts#L162)).
-- `afterUserInput` receives the message as `beforeUserInput` left it, not as the client sent it ([validated by](../../src/orchestration/chatOrchestrator.test.ts#L177)).
-- `beforeModelResponse` can replace the system prompt, for example loading it from a `PromptStore` ([validated by](../../src/orchestration/chatOrchestrator.test.ts#L194)).
-- `afterModelResponse` receives the collected response text and the usage the provider reported ([validated by](../../src/orchestration/chatOrchestrator.test.ts#L209)).
-- `afterModelResponse` does not run when the stream throws, so it never reports a response that was not delivered ([validated by](../../src/orchestration/chatOrchestrator.test.ts#L229)).
-- `onError` receives the session and the error ([validated by](../../src/orchestration/chatOrchestrator.test.ts#L251)).
-- `onError` observes rather than handles: the error still propagates to the caller after it returns ([validated by](../../src/orchestration/chatOrchestrator.test.ts#L273)).
-- `afterSession` runs after everything else completes ([validated by](../../src/orchestration/chatOrchestrator.test.ts#L118)).
-- `afterSession` fires even on error ([validated by](../../src/orchestration/chatOrchestrator.test.ts#L128)).
+- The order above holds for a successful pass ([validated by: calls all hooks in correct order](../../src/orchestration/chatOrchestrator.test.ts#L286)).
+- When the stream fails, `afterModelResponse` is skipped and the tail becomes `onError` then `afterSession` ([validated by: error path calls onError then afterSession](../../src/orchestration/chatOrchestrator.test.ts#L326)).
+- `beforeSession` runs before any other hook ([validated by: called before anything else](../../src/orchestration/chatOrchestrator.test.ts#L106)).
+- `beforeUserInput` receives the content of the last user message ([validated by: receives the last user message content](../../src/orchestration/chatOrchestrator.test.ts#L147)).
+- `beforeUserInput` can modify that message by returning a different string ([validated by: modifies user message when returning different value](../../src/orchestration/chatOrchestrator.test.ts#L162)).
+- `afterUserInput` receives the message as `beforeUserInput` left it, not as the client sent it ([validated by: receives user message after any beforeUserInput modification](../../src/orchestration/chatOrchestrator.test.ts#L177)).
+- `beforeModelResponse` can replace the system prompt, for example loading it from a `PromptStore` ([validated by: replaces system prompt with returned value](../../src/orchestration/chatOrchestrator.test.ts#L194)).
+- `afterModelResponse` receives the collected response text and the usage the provider reported ([validated by: receives collected response text and usage](../../src/orchestration/chatOrchestrator.test.ts#L209)).
+- `afterModelResponse` does not run when the stream throws, so it never reports a response that was not delivered ([validated by: not called when stream throws](../../src/orchestration/chatOrchestrator.test.ts#L229)).
+- `onError` receives the session and the error ([validated by: called with session and error when stream fails](../../src/orchestration/chatOrchestrator.test.ts#L251)).
+- `onError` observes rather than handles: the error still propagates to the caller after it returns ([validated by: error still propagates after onError hook](../../src/orchestration/chatOrchestrator.test.ts#L273)).
+- `afterSession` runs after everything else completes ([validated by: called after everything completes](../../src/orchestration/chatOrchestrator.test.ts#L118)).
+- `afterSession` fires even on error ([validated by: called even when an error occurs](../../src/orchestration/chatOrchestrator.test.ts#L128)).
 
 ## Message Lifecycle
 
@@ -318,24 +318,24 @@ Here is what the message handler does when a tool call comes through:
 2. The handler creates a `ToolEntry` and sends it to the client via `entry_upsert`
 3. The orchestrator executes the tool (via `ToolRegistry.execute()`)
 4. Tool results get added to the conversation as a `tool_result` message
-5. If the tool returned `clientMessages`, they are forwarded to the frontend as-is, in one `tool_result` chunk ([validated by](../../src/orchestration/chatOrchestrator.test.ts#L436))
-6. If the tool set `suppressAssistantResponse`, the AI's next reply is kept in session context but hidden from the frontend ([validated by](../../src/orchestration/chatOrchestrator.test.ts#L466))
-7. The orchestrator re-queries the AI provider with the updated messages, and the chunks of every round reach the client in order ([validated by](../../src/orchestration/chatOrchestrator.test.ts#L401))
-8. This repeats while `round <= maxToolRounds`, counted from zero, so the default of 5 permits six model calls in total ([validated by](../../src/orchestration/chatOrchestrator.test.ts#L422))
+5. If the tool returned `clientMessages`, they are forwarded to the frontend as-is, in one `tool_result` chunk ([validated by: forwards the client messages a tool returned as one tool_result chunk](../../src/orchestration/chatOrchestrator.test.ts#L436))
+6. If the tool set `suppressAssistantResponse`, the AI's next reply is kept in session context but hidden from the frontend ([validated by: asks for suppression when the tool says the reply is already handled](../../src/orchestration/chatOrchestrator.test.ts#L466))
+7. The orchestrator re-queries the AI provider with the updated messages, and the chunks of every round reach the client in order ([validated by: runs another round after a tool call and streams both rounds in order](../../src/orchestration/chatOrchestrator.test.ts#L401))
+8. This repeats while `round <= maxToolRounds`, counted from zero, so the default of 5 permits six model calls in total ([validated by: stops asking for tools once maxToolRounds is spent](../../src/orchestration/chatOrchestrator.test.ts#L422))
 
 ### Whether a round continues
 
-- A round continues only when the model stopped for `tool_use`, named at least one tool, and a `ToolRegistry` is configured ([validated by](../../src/orchestration/orchestratorHelpers.test.ts#L11)).
-- With no registry configured the loop stops, whatever the model asked for, because nothing could execute the call ([validated by](../../src/orchestration/orchestratorHelpers.test.ts#L15)).
-- A `tool_use` stop naming no tool stops the loop, rather than re-querying with nothing to add ([validated by](../../src/orchestration/orchestratorHelpers.test.ts#L19)).
-- Any other stop reason ends the loop even when tool calls are pending ([validated by](../../src/orchestration/orchestratorHelpers.test.ts#L23)).
+- A round continues only when the model stopped for `tool_use`, named at least one tool, and a `ToolRegistry` is configured ([validated by: continues when the model requested a tool and a registry can run it](../../src/orchestration/orchestratorHelpers.test.ts#L11)).
+- With no registry configured the loop stops, whatever the model asked for, because nothing could execute the call ([validated by: stops when no registry is configured, whatever the model asked for](../../src/orchestration/orchestratorHelpers.test.ts#L15)).
+- A `tool_use` stop naming no tool stops the loop, rather than re-querying with nothing to add ([validated by: stops when the model named no tool](../../src/orchestration/orchestratorHelpers.test.ts#L19)).
+- Any other stop reason ends the loop even when tool calls are pending ([validated by: stops when the model finished for a reason other than tool use](../../src/orchestration/orchestratorHelpers.test.ts#L23)).
 
 ### Across rounds
 
-- The loop ends as soon as a round stops with `end_turn`, and nothing further is asked of the provider ([validated by](../../src/orchestration/chatOrchestrator.test.ts#L413)).
-- An `entry_upsert` a tool returns is appended to the session and its index rewritten to the position it actually landed in, because a tool cannot know how long the session already is ([validated by](../../src/orchestration/chatOrchestrator.test.ts#L449)).
-- The response text a hook sees is the text of every round joined, not only the last ([validated by](../../src/orchestration/chatOrchestrator.test.ts#L478)).
-- Usage an earlier round reported is kept when a later round reports none, so a tool round does not erase the token count ([validated by](../../src/orchestration/chatOrchestrator.test.ts#L500)).
+- The loop ends as soon as a round stops with `end_turn`, and nothing further is asked of the provider ([validated by: stops after one round when nothing asked for a tool](../../src/orchestration/chatOrchestrator.test.ts#L413)).
+- An `entry_upsert` a tool returns is appended to the session and its index rewritten to the position it actually landed in, because a tool cannot know how long the session already is ([validated by: appends an upserted entry to the session and rewrites its index to match](../../src/orchestration/chatOrchestrator.test.ts#L449)).
+- The response text a hook sees is the text of every round joined, not only the last ([validated by: joins the text of every round, not only the last](../../src/orchestration/chatOrchestrator.test.ts#L478)).
+- Usage an earlier round reported is kept when a later round reports none, so a tool round does not erase the token count ([validated by: keeps the usage an earlier round reported when a later round reports none](../../src/orchestration/chatOrchestrator.test.ts#L500)).
 
 The frontend shows a spinner on the last tool entry while the stream is still processing (`isProcessing` is `true`). The `stream_end` message clears the processing state, which hides the spinner. This works correctly even when tool suppression prevents assistant entries from reaching the frontend. See [tool-responses.md](../hal-engine-tool-responses/spec.md) for details on client messages and suppression.
 

@@ -28,36 +28,36 @@ The bucket every non-terminal spec is entitled to claim is its own link coverage
 | some                       | `partial` | `In Progress`     |
 | all                        | `full`    | `Shipped`         |
 
-- A spec claiming a tier above its coverage is reported against its status row, naming the status the coverage entitles it to ([validated by](../../scripts/eslint-spec-docs.test.ts#L65)).
-- A spec whose coverage matches its status passes ([validated by](../../scripts/eslint-spec-docs.test.ts#L75)).
-- An alias buckets exactly as its canonical spelling does, in both directions: `In Review` behaves as `In Progress` and passes on partial coverage, while `Accepted` behaves as `Shipped` and is told to step down ([validated by](../../scripts/eslint-spec-docs.test.ts#L83), [accepted](../../scripts/eslint-spec-docs.test.ts#L87)).
-- A terminal bucket skips the tier entirely: `Retired` and `Rejected` pass with no statement linked at all ([validated by](../../scripts/eslint-spec-docs.test.ts#L96)).
-- A spec carrying no status row is reported as untagged ([validated by](../../scripts/eslint-spec-docs.test.ts#L50)).
-- A spec whose status no parser can read is reported as untagged against that row's own line ([validated by](../../scripts/eslint-spec-docs.test.ts#L59)).
-- A spec that opens straight into a section, with no lead paragraph before the first `##`, is reported against line 1 ([validated by](../../scripts/eslint-spec-docs.test.ts#L38)).
-- An ADR with no lead paragraph is reported by the same rule ([validated by](../../scripts/eslint-spec-docs.test.ts#L44)).
+- A spec claiming a tier above its coverage is reported against its status row, naming the status the coverage entitles it to ([validated by: a spec tagged Shipped with one unlinked statement is told to set "In Progress"](../../scripts/eslint-spec-docs.test.ts#L65)).
+- A spec whose coverage matches its status passes ([validated by: a spec tagged "In Progress" with partial coverage passes both rules](../../scripts/eslint-spec-docs.test.ts#L75)).
+- An alias buckets exactly as its canonical spelling does, in both directions: `In Review` behaves as `In Progress` and passes on partial coverage, while `Accepted` behaves as `Shipped` and is told to step down ([validated by: a spec tagged "In Review" with partial coverage buckets in-progress and passes](../../scripts/eslint-spec-docs.test.ts#L83), [accepted](../../scripts/eslint-spec-docs.test.ts#L87)).
+- A terminal bucket skips the tier entirely: `Retired` and `Rejected` pass with no statement linked at all ([validated by: a spec tagged Retired or Rejected passes with no statement linked: terminal buckets skip the tier](../../scripts/eslint-spec-docs.test.ts#L96)).
+- A spec carrying no status row is reported as untagged ([validated by: a spec with no status row fails with re-lint/require-status-matches-coverage as untagged](../../scripts/eslint-spec-docs.test.ts#L50)).
+- A spec whose status no parser can read is reported as untagged against that row's own line ([validated by: a spec whose status row reads "Banana" fails as untagged at that row\'s line](../../scripts/eslint-spec-docs.test.ts#L59)).
+- A spec that opens straight into a section, with no lead paragraph before the first `##`, is reported against line 1 ([validated by: a spec opening straight into a section fails with re-lint/require-intro-paragraph at line 1](../../scripts/eslint-spec-docs.test.ts#L38)).
+- An ADR with no lead paragraph is reported by the same rule ([validated by: an ADR with no lead paragraph fails with re-lint/require-intro-paragraph](../../scripts/eslint-spec-docs.test.ts#L44)).
 
 ## The ADR exception
 
-- An ADR with a lead paragraph and no test links passes both rules, because the coverage rule's `files` glob names specs alone ([validated by](../../scripts/eslint-spec-docs.test.ts#L79)).
-- The script carries the half of the status rule that glob leaves unspoken for ADRs: an ADR whose frontmatter `status:` no parser can read is reported as untagged against that line ([validated by](../../scripts/check-spec-status.test.ts#L43)).
-- The script never applies the coverage tier to an ADR ([validated by](../../scripts/check-spec-status.test.ts#L36)).
-- A spec passed to the script's default run contributes nothing, whatever its status row ([validated by](../../scripts/check-spec-status.test.ts#L54)).
-- An ADR's lead paragraph is likewise the rule's business, not the script's ([validated by](../../scripts/check-spec-status.test.ts#L61)).
+- An ADR with a lead paragraph and no test links passes both rules, because the coverage rule's `files` glob names specs alone ([validated by: an accepted ADR with a lead paragraph and no test links passes: ADRs are exempt from the coverage tier](../../scripts/eslint-spec-docs.test.ts#L79)).
+- The script carries the half of the status rule that glob leaves unspoken for ADRs: an ADR whose frontmatter `status:` no parser can read is reported as untagged against that line ([validated by: an ADR whose frontmatter status reads "banana" reports untagged at that line](../../scripts/check-spec-status.test.ts#L43)).
+- The script never applies the coverage tier to an ADR ([validated by: an accepted ADR with no test links reports nothing and exits 0: the coverage tier never applies to an ADR](../../scripts/check-spec-status.test.ts#L36)).
+- A spec passed to the script's default run contributes nothing, whatever its status row ([validated by: a spec reports nothing here whatever its status row: specs are gated by eslint](../../scripts/check-spec-status.test.ts#L54)).
+- An ADR's lead paragraph is likewise the rule's business, not the script's ([validated by: an ADR with no lead paragraph reports nothing here: lead paragraphs are gated by eslint](../../scripts/check-spec-status.test.ts#L61)).
 
 ## The script's contract
 
-- With no path arguments it scans every `specs/<slug>/spec.md` in sorted slug order followed by every `adrs/*.md` in sorted name order, which is exactly the list an explicit invocation of those paths produces ([validated by](../../scripts/check-spec-status.test.ts#L167)).
-- Each finding prints one line carrying the doc, the line a human has to edit, and the finding itself; the run closes with `spec-status: <N> findings across <M> docs (<D> scanned)` and exits 1 when `N` is above zero ([validated by](../../scripts/check-spec-status.test.ts#L65)).
-- `--coverage` replaces the report with one line per unlinked testable statement under a `spec-coverage: <U> unlinked testable statements across <M> docs (<D> scanned)` summary ([validated by](../../scripts/check-spec-status.test.ts#L76)).
-- `--coverage` exits 0 even on a doc the default run fails ([validated by](../../scripts/check-spec-status.test.ts#L90)).
-- `--json` replaces the report with an array alone, each entry carrying `doc`, `line`, `kind` and `message` ([validated by](../../scripts/check-spec-status.test.ts#L97)).
-- Under `--coverage` every entry's `kind` is `unlinked` ([validated by](../../scripts/check-spec-status.test.ts#L113)).
-- An unrecognised flag exits 2 with the usage line rather than scanning anything ([validated by](../../scripts/check-spec-status.test.ts#L124)).
-- A doc path that cannot be read exits 2 naming that path, so a typo is never reported as a clean run ([validated by](../../scripts/check-spec-status.test.ts#L134)).
-- A doc path under neither `specs/` nor `adrs/` exits 2 naming that path rather than being scanned with no corpus to judge it by ([validated by](../../scripts/check-spec-status.test.ts#L143)).
-- A relative path means the same doc from any working directory ([validated by](../../scripts/check-spec-status.test.ts#L153)).
-- An absolute path is accepted and reported root-relative ([validated by](../../scripts/check-spec-status.test.ts#L160)).
+- With no path arguments it scans every `specs/<slug>/spec.md` in sorted slug order followed by every `adrs/*.md` in sorted name order, which is exactly the list an explicit invocation of those paths produces ([validated by: no doc paths scans the sorted specs directories followed by the sorted adrs](../../scripts/check-spec-status.test.ts#L167)).
+- Each finding prints one line carrying the doc, the line a human has to edit, and the finding itself; the run closes with `spec-status: <N> findings across <M> docs (<D> scanned)` and exits 1 when `N` is above zero ([validated by: three ADRs report one finding across one doc and exit 1](../../scripts/check-spec-status.test.ts#L65)).
+- `--coverage` replaces the report with one line per unlinked testable statement under a `spec-coverage: <U> unlinked testable statements across <M> docs (<D> scanned)` summary ([validated by: --coverage lists each unlinked statement and exits 0 under its own summary](../../scripts/check-spec-status.test.ts#L76)).
+- `--coverage` exits 0 even on a doc the default run fails ([validated by: --coverage exits 0 on a doc the default run fails](../../scripts/check-spec-status.test.ts#L90)).
+- `--json` replaces the report with an array alone, each entry carrying `doc`, `line`, `kind` and `message` ([validated by: --json prints only an array of findings carrying doc, line, kind and message](../../scripts/check-spec-status.test.ts#L97)).
+- Under `--coverage` every entry's `kind` is `unlinked` ([validated by: --coverage --json labels every finding "unlinked"](../../scripts/check-spec-status.test.ts#L113)).
+- An unrecognised flag exits 2 with the usage line rather than scanning anything ([validated by: an unknown flag exits 2 with the usage line](../../scripts/check-spec-status.test.ts#L124)).
+- A doc path that cannot be read exits 2 naming that path, so a typo is never reported as a clean run ([validated by: a doc path that cannot be read exits 2 naming the path](../../scripts/check-spec-status.test.ts#L134)).
+- A doc path under neither `specs/` nor `adrs/` exits 2 naming that path rather than being scanned with no corpus to judge it by ([validated by: a doc path under neither specs nor adrs exits 2 rather than scanning it](../../scripts/check-spec-status.test.ts#L143)).
+- A relative path means the same doc from any working directory ([validated by: a relative doc path resolves against the repo root, not the working directory](../../scripts/check-spec-status.test.ts#L153)).
+- An absolute path is accepted and reported root-relative ([validated by: an absolute doc path is scanned and reported repo-relative](../../scripts/check-spec-status.test.ts#L160)).
 
 ## Rationale
 

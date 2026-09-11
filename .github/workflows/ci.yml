@@ -118,6 +118,11 @@ jobs:
       - name: Documented regions
         run: npm run check:regions
 
+      # A line number is a derived pointer; the name is what the author cited. This catches a citation
+      # whose line moved under it, which no baseline comparison can see on a branch that edits the spec.
+      - name: Spec citations name their test
+        run: npm run spec:names
+
       - name: Spec link placement
         run: npm run check:spec-links
 

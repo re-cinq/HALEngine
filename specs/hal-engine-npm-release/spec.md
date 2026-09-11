@@ -28,14 +28,14 @@ This is a breaking change under AGENTS.md § Breaking Changes and inherits that 
 
 - Importing the package root MUST NOT require either optional peer to be installed. Measured on the built `dist/`: a bare root import loaded 38 `@google-cloud/vertexai` modules before this change and 0 after, with Bedrock at 0 throughout. The automated form of this check is the tarball smoke test.
 - An absent peer MUST fail at provider construction, not at import — the contract `src/providers/bedrock/bedrockProvider.ts` already kept and `createVertexProvider` now matches.
-- Both providers route their absent-peer failure through one helper, so the message names the package and its install command rather than surfacing a raw `MODULE_NOT_FOUND` from inside `dist/` ([validated by](../../src/providers/requireOptionalPeer.test.ts#L15)).
-- That failure is an `AIError` carrying the code `OPTIONAL_PEER_MISSING`, not a bare module-resolution error ([validated by](../../src/providers/requireOptionalPeer.test.ts#L22)).
-- It is not retryable, because installing a package is not a retry ([validated by](../../src/providers/requireOptionalPeer.test.ts#L26)).
-- An installed peer is returned unchanged ([validated by](../../src/providers/requireOptionalPeer.test.ts#L11)).
+- Both providers route their absent-peer failure through one helper, so the message names the package and its install command rather than surfacing a raw `MODULE_NOT_FOUND` from inside `dist/` ([validated by: throws an error naming the absent package and the command that installs it](../../src/providers/requireOptionalPeer.test.ts#L15)).
+- That failure is an `AIError` carrying the code `OPTIONAL_PEER_MISSING`, not a bare module-resolution error ([validated by: tags the absent-peer failure with OPTIONAL_PEER_MISSING rather than a raw module error](../../src/providers/requireOptionalPeer.test.ts#L22)).
+- It is not retryable, because installing a package is not a retry ([validated by: does not mark an absent peer retryable, because installing a package is not a retry](../../src/providers/requireOptionalPeer.test.ts#L26)).
+- An installed peer is returned unchanged ([validated by: returns the installed module untouched when the peer is present](../../src/providers/requireOptionalPeer.test.ts#L11)).
 - The helper decides "absent" structurally rather than with `instanceof Error`, because a module loader running in another realm throws an `Error` this one disowns — measured under jest, where `instanceof Error` is `false` for exactly that failure.
 - "Absent" is decided from the first line of the loader's message, which names the module that was not found. The Require stack below that line holds the peer's own files, so a substring test reports a peer whose own dependency is missing as the peer being absent — telling the caller to install what they already have and discarding the real cause.
-- An installed peer whose own dependency is missing rethrows the loader's error ([validated by](../../src/providers/requireOptionalPeer.test.ts#L58)).
-- That failure is not dressed as an absent optional peer ([validated by](../../src/providers/requireOptionalPeer.test.ts#L62)).
+- An installed peer whose own dependency is missing rethrows the loader's error ([validated by: rethrows the loader error rather than reporting the peer itself as absent](../../src/providers/requireOptionalPeer.test.ts#L58)).
+- That failure is not dressed as an absent optional peer ([validated by: does not dress that failure as an absent optional peer](../../src/providers/requireOptionalPeer.test.ts#L62)).
 - The helper lives at the providers-layer root, not in `src/shared/`. `layers.yaml` declares `shared: []` — it may import nothing, `types` included — so `AIError` is unreachable from there, and a helper that could not build the error would defeat its own purpose.
 - Subpath exports are explicitly not the answer here; the `exports` map stays a single root entry.
 
@@ -92,24 +92,24 @@ AGENTS.md § Quality Gates already commits this repository to "npm audit must sh
 
 The gate runs immediately before `npm publish`, so the two ways it can report a clean tree without having checked one are part of its contract rather than details of its implementation. It shells out to `npm audit`, whose registry failures are themselves JSON and carry no `vulnerabilities` key; and an acceptance names an advisory, which means an acceptance recorded for one advisory must not absorb the next one in the same package.
 
-- A report carrying no vulnerability data fails the check rather than reading as nothing-to-report ([validated by](../../scripts/check-audit.test.ts#L73)).
-- That failure names the reason rather than exiting silently ([validated by](../../scripts/check-audit.test.ts#L79)).
-- Output that is not JSON at all fails the same way ([validated by](../../scripts/check-audit.test.ts#L85)).
-- An unacknowledged advisory at `high` or above fails the check ([validated by](../../scripts/check-audit.test.ts#L93)).
-- The blocking line carries the package, the affected range, the advisory id, its title and the path it is reached through ([validated by](../../scripts/check-audit.test.ts#L97)).
-- An acceptance naming that advisory passes it ([validated by](../../scripts/check-audit.test.ts#L103)).
-- An acceptance naming a different advisory in the same package does not ([validated by](../../scripts/check-audit.test.ts#L110)).
-- Such an acceptance is itself reported as matching no current advisory ([validated by](../../scripts/check-audit.test.ts#L117)).
-- A second advisory in an otherwise accepted package still fails ([validated by](../../scripts/check-audit.test.ts#L138)).
-- An expired acceptance fails the check ([validated by](../../scripts/check-audit.test.ts#L124)).
-- An expired acceptance is named by advisory and package ([validated by](../../scripts/check-audit.test.ts#L131)).
-- A clean report with no acceptances passes ([validated by](../../scripts/check-audit.test.ts#L150)).
+- A report carrying no vulnerability data fails the check rather than reading as nothing-to-report ([validated by: refuses to report clean when npm returns its registry-failure document](../../scripts/check-audit.test.ts#L73)).
+- That failure names the reason rather than exiting silently ([validated by: names the reason rather than failing silently](../../scripts/check-audit.test.ts#L79)).
+- Output that is not JSON at all fails the same way ([validated by: refuses to report clean when npm returns no JSON at all](../../scripts/check-audit.test.ts#L85)).
+- An unacknowledged advisory at `high` or above fails the check ([validated by: fails on an unacknowledged critical advisory](../../scripts/check-audit.test.ts#L93)).
+- The blocking line carries the package, the affected range, the advisory id, its title and the path it is reached through ([validated by: names the package, version range, advisory id and path in the blocking line](../../scripts/check-audit.test.ts#L97)).
+- An acceptance naming that advisory passes it ([validated by: passes when the acceptance names that advisory](../../scripts/check-audit.test.ts#L103)).
+- An acceptance naming a different advisory in the same package does not ([validated by: does not let an acceptance for one advisory cover a different one in the same package](../../scripts/check-audit.test.ts#L110)).
+- Such an acceptance is itself reported as matching no current advisory ([validated by: reports the unmatched acceptance as stale rather than ignoring it](../../scripts/check-audit.test.ts#L117)).
+- A second advisory in an otherwise accepted package still fails ([validated by: still fails on a second unacknowledged advisory in an otherwise accepted package](../../scripts/check-audit.test.ts#L138)).
+- An expired acceptance fails the check ([validated by: fails on an acceptance whose expiry has passed](../../scripts/check-audit.test.ts#L124)).
+- An expired acceptance is named by advisory and package ([validated by: names the expired acceptance by advisory and package](../../scripts/check-audit.test.ts#L131)).
+- A clean report with no acceptances passes ([validated by: passes a clean report with no acceptances](../../scripts/check-audit.test.ts#L150)).
 
 Three holes in the first version of this gate, each of which let it pass on something it should have stopped. `metadata.vulnerabilities` was accepted as an alternative to the real map, so a report carrying counts but no listing printed a critical count and the word clean in the same sentence; every modern `npm audit --json` carries the map, so the alternative bought nothing. The `unknown:` fallback for a missing advisory id was applied on a cycle-pruned re-entry, so an ordinary circular `via` pair fabricated an advisory that no acceptance could name and no maintainer could clear, on a tag that cannot be re-pointed. And `source` is npm's id for the package rather than the advisory, so two advisories on one package collapsed to one id and a single acceptance silenced both.
 
-- A report carrying only metadata counts is rejected rather than read as zero findings ([validated by](../../scripts/check-audit.test.ts#L159)).
-- A `via` cycle produces no fabricated advisory ([validated by](../../scripts/check-audit.test.ts#L165)).
-- Two advisories on one package stay distinct when neither carries a GHSA url ([validated by](../../scripts/check-audit.test.ts#L186)).
+- A report carrying only metadata counts is rejected rather than read as zero findings ([validated by: rejects a report carrying only metadata counts, which declares vulnerabilities it cannot list](../../scripts/check-audit.test.ts#L159)).
+- A `via` cycle produces no fabricated advisory ([validated by: does not fabricate an advisory when two packages reach each other through via](../../scripts/check-audit.test.ts#L165)).
+- Two advisories on one package stay distinct when neither carries a GHSA url ([validated by: keeps two advisories on one package distinct when neither carries a GHSA url](../../scripts/check-audit.test.ts#L186)).
 
 ### Tarball smoke test
 
@@ -197,56 +197,56 @@ Trusted publishing cannot be registered against a package name that has never be
 
 `HalEngineConfig.onConnect` is declared at `src/config.ts:37`, forwarded at `:75`, and declared again on `HalServerOptions` at `src/transport/createServer.ts:20` — and then omitted from the `deps` object at `:50` that the connection handler receives. Its sibling `onDisconnect` is forwarded on the adjacent line and is invoked on every close, so a consumer sees half the pair work. Four committed documents say both work.
 
-- `createServer` forwards `onConnect` into the `deps` object the connection handler receives, which is the omission that made the hook dead ([validated by](../../src/transport/createServer.test.ts#L39)).
-- `onConnect` is invoked once per accepted connection, with the session the socket was given ([validated by](../../src/transport/ws/connectionHandler.test.ts#L43)).
-- It is invoked after the `connected` frame is sent, not before ([validated by](../../src/transport/ws/connectionHandler.test.ts#L54)).
-- It is not invoked inline in the `connection` listener, where a synchronous throw corrupts an already-upgraded socket. It runs on a microtask, which drains before the loop delivers any inbound frame ([validated by](../../src/transport/ws/connectionHandler.test.ts#L65)).
-- Both hooks widen to `void | Promise<void>` and are fire-and-forget. The engine never awaits either, and a hook that rejects does not reach the process ([validated by](../../src/transport/ws/connectionHandler.test.ts#L86)).
-- Both route through one helper that logs `{sessionId, error}` and swallows, so a throwing `onConnect` leaves the connection intact ([validated by](../../src/transport/ws/connectionHandler.test.ts#L74)).
-- The same helper covers the close path, where a throwing `onDisconnect` would otherwise escape the `close` listener ([validated by](../../src/transport/ws/connectionHandler.test.ts#L116)).
-- Either hook may be absent, and a connection without one behaves identically ([validated by](../../src/transport/ws/connectionHandler.test.ts#L94)).
-- `onDisconnect` is called with the session id, after the store entry for it is deleted ([validated by](../../src/transport/ws/connectionHandler.test.ts#L105)).
-- A rejecting `onDisconnect` is swallowed too, where an unhandled rejection would end the process under Node's defaults ([validated by](../../src/transport/ws/connectionHandler.test.ts#L127)).
-- A server configured with neither hook starts and accepts connections unchanged ([validated by](../../src/transport/createServer.test.ts#L50)).
+- `createServer` forwards `onConnect` into the `deps` object the connection handler receives, which is the omission that made the hook dead ([validated by: forwards onConnect to the connection handler](../../src/transport/createServer.test.ts#L39)).
+- `onConnect` is invoked once per accepted connection, with the session the socket was given ([validated by: is called once for an accepted connection, with the session the socket was given](../../src/transport/ws/connectionHandler.test.ts#L43)).
+- It is invoked after the `connected` frame is sent, not before ([validated by: runs after the connected frame is sent, not before it](../../src/transport/ws/connectionHandler.test.ts#L54)).
+- It is not invoked inline in the `connection` listener, where a synchronous throw corrupts an already-upgraded socket. It runs on a microtask, which drains before the loop delivers any inbound frame ([validated by: is deferred, so it never runs inside the connection listener](../../src/transport/ws/connectionHandler.test.ts#L65)).
+- Both hooks widen to `void | Promise<void>` and are fire-and-forget. The engine never awaits either, and a hook that rejects does not reach the process ([validated by: survives a hook that rejects](../../src/transport/ws/connectionHandler.test.ts#L86)).
+- Both route through one helper that logs `{sessionId, error}` and swallows, so a throwing `onConnect` leaves the connection intact ([validated by: survives a hook that throws synchronously](../../src/transport/ws/connectionHandler.test.ts#L74)).
+- The same helper covers the close path, where a throwing `onDisconnect` would otherwise escape the `close` listener ([validated by: does not let a throwing hook escape the close listener](../../src/transport/ws/connectionHandler.test.ts#L116)).
+- Either hook may be absent, and a connection without one behaves identically ([validated by: is optional, so a connection without one still sends its frame](../../src/transport/ws/connectionHandler.test.ts#L94)).
+- `onDisconnect` is called with the session id, after the store entry for it is deleted ([validated by: is called with the session id after the store entry is deleted](../../src/transport/ws/connectionHandler.test.ts#L105)).
+- A rejecting `onDisconnect` is swallowed too, where an unhandled rejection would end the process under Node's defaults ([validated by: does not let a rejecting hook reach the process](../../src/transport/ws/connectionHandler.test.ts#L127)).
+- A server configured with neither hook starts and accepts connections unchanged ([validated by: accepts a server configured without either hook](../../src/transport/createServer.test.ts#L50)).
 
 ### Log lines carry a severity
 
 `src/shared/logger.ts:21` is the only `console.*` call under `src/`, and it is `console.log` for all four levels. Every line is unstructured text, so `log.error` is indistinguishable from `log.info` to anything reading the stream: a deployment filtering on severity matches nothing and stays green through an outage. This is public surface — `src/index.ts` exports both `log` and the `Logger` type.
 
-- `emit` writes one JSON object per line, parseable and carrying no embedded newline ([validated by](../../src/shared/logger.test.ts#L41)).
-- The key set is `severity`, `message`, `timestamp` and `category`, in that order ([validated by](../../src/shared/logger.test.ts#L48)).
-- `severity` is the uppercase level name ([validated by](../../src/shared/logger.test.ts#L71)).
-- `timestamp` is ISO-8601 UTC ([validated by](../../src/shared/logger.test.ts#L88)).
-- A call's fields arrive as `data` rather than spread across the top level, and `data` is absent when the call passed none ([validated by](../../src/shared/logger.test.ts#L54)).
-- Nesting them is what makes the key set stable: a field named `severity` cannot overwrite the line's own ([validated by](../../src/shared/logger.test.ts#L64)).
-- `ERROR` goes to `console.error`; the other three levels go to `console.log` ([validated by](../../src/shared/logger.test.ts#L80)).
-- A level below the `LOG_LEVEL` threshold is dropped before the line is built ([validated by](../../src/shared/logger.test.ts#L98)).
+- `emit` writes one JSON object per line, parseable and carrying no embedded newline ([validated by: writes one parseable JSON object per call](../../src/shared/logger.test.ts#L41)).
+- The key set is `severity`, `message`, `timestamp` and `category`, in that order ([validated by: carries severity, message, timestamp and category, in that order](../../src/shared/logger.test.ts#L48)).
+- `severity` is the uppercase level name ([validated by: uses the uppercase level name as severity](../../src/shared/logger.test.ts#L71)).
+- `timestamp` is ISO-8601 UTC ([validated by: timestamps in ISO-8601 UTC](../../src/shared/logger.test.ts#L88)).
+- A call's fields arrive as `data` rather than spread across the top level, and `data` is absent when the call passed none ([validated by: nests caller fields under data rather than at the top level](../../src/shared/logger.test.ts#L54)).
+- Nesting them is what makes the key set stable: a field named `severity` cannot overwrite the line's own ([validated by: cannot have its own keys overwritten by a caller field of the same name](../../src/shared/logger.test.ts#L64)).
+- `ERROR` goes to `console.error`; the other three levels go to `console.log` ([validated by: sends ERROR to stderr and every other level to stdout](../../src/shared/logger.test.ts#L80)).
+- A level below the `LOG_LEVEL` threshold is dropped before the line is built ([validated by: drops a level below the configured threshold before writing anything](../../src/shared/logger.test.ts#L98)).
 
 A log call must not be able to take down the call site it observes. `JSON.stringify` throws on a circular reference and on a `BigInt`, and one call site passes a value the consumer controls: `connectionHandler.ts` logs `userId`, which is whatever the configured `WsAuthenticator` returned. Before this was guarded, such an identity threw between `sessionStore.create` and the registration of the `close` listener, so the upgraded socket was answered with a raw `500` status line - the client reported a malformed frame - and the session was orphaned in the store permanently, once per connection attempt.
 
-- A field that cannot be serialised does not propagate out of the log call ([validated by](../../src/shared/logger.test.ts#L123)).
-- The line is still written, with the four envelope keys intact and `data` replaced by a string naming the reason ([validated by](../../src/shared/logger.test.ts#L127)).
-- The reason is the serialiser's own, so an operator can tell a cycle from a `BigInt` ([validated by](../../src/shared/logger.test.ts#L139)).
-- A degraded line still goes to the stream its severity selects ([validated by](../../src/shared/logger.test.ts#L145)).
+- A field that cannot be serialised does not propagate out of the log call ([validated by: does not throw out of the call site it was observing](../../src/shared/logger.test.ts#L123)).
+- The line is still written, with the four envelope keys intact and `data` replaced by a string naming the reason ([validated by: still writes a parseable line, with the envelope intact and data marked](../../src/shared/logger.test.ts#L127)).
+- The reason is the serialiser's own, so an operator can tell a cycle from a `BigInt` ([validated by: names the reason a BigInt field could not be written](../../src/shared/logger.test.ts#L139)).
+- A degraded line still goes to the stream its severity selects ([validated by: keeps the degraded line on the stream its severity selects](../../src/shared/logger.test.ts#L145)).
 
 ### The logger a consumer supplies is the one that gets used
 
 `logger` is declared on `HalEngineConfig`, is documented in five places, and was read by nothing: every line went through the module singleton regardless. It is the fifth instance of the seam this spec records above, and the one with a migration instruction resting on it - the release notes told consumers to supply a logger to keep the old line format. Seven modules import `log` at module scope, so the swap is a module-level one and is process-wide rather than per engine; `docs/logging.md` states that limit.
 
-- A logger passed to `createHalEngine` receives the package's own log lines ([validated by](../../src/config.test.ts#L63)).
-- Supplying none leaves the built-in console logger in place ([validated by](../../src/config.test.ts#L76)).
-- `setLogger` sends lines to the supplied implementation instead of the console, and the console receives nothing ([validated by](../../src/shared/logger.test.ts#L158)).
-- Calling `setLogger` with nothing restores the built-in one ([validated by](../../src/shared/logger.test.ts#L177)).
+- A logger passed to `createHalEngine` receives the package's own log lines ([validated by: delivers the package's own log lines to a supplied logger](../../src/config.test.ts#L63)).
+- Supplying none leaves the built-in console logger in place ([validated by: leaves an already-supplied logger in place when the config names none](../../src/config.test.ts#L76)).
+- `setLogger` sends lines to the supplied implementation instead of the console, and the console receives nothing ([validated by: sends lines to a supplied logger instead of the console](../../src/shared/logger.test.ts#L158)).
+- Calling `setLogger` with nothing restores the built-in one ([validated by: restores the built-in console logger when called with nothing](../../src/shared/logger.test.ts#L177)).
 
 Delegating to a supplied logger initially bypassed both of the built-in emitter's guarantees, because both lived in the emitter rather than in the dispatch above it. The level test and the throw guard now sit in one place, applied before the active logger is called, so they hold whichever logger is installed.
 
-- `LOG_LEVEL` gates a supplied logger exactly as it gates the built-in one ([validated by](../../src/shared/logger.test.ts#L200)).
-- A supplied logger that throws does not propagate into the call site being logged ([validated by](../../src/shared/logger.test.ts#L210)).
-- The line is written to the console instead rather than being lost ([validated by](../../src/shared/logger.test.ts#L223)).
-- A logger missing one of the four methods fails the same way rather than at an arbitrary later call ([validated by](../../src/shared/logger.test.ts#L240)).
-- A value whose `toString` throws still produces a line ([validated by](../../src/shared/logger.test.ts#L253)).
+- `LOG_LEVEL` gates a supplied logger exactly as it gates the built-in one ([validated by: is gated by LOG_LEVEL exactly as the built-in logger is](../../src/shared/logger.test.ts#L200)).
+- A supplied logger that throws does not propagate into the call site being logged ([validated by: does not let its own throw escape into the call site being logged](../../src/shared/logger.test.ts#L210)).
+- The line is written to the console instead rather than being lost ([validated by: falls back to the console when it throws, so the line is not lost](../../src/shared/logger.test.ts#L223)).
+- A logger missing one of the four methods fails the same way rather than at an arbitrary later call ([validated by: survives a partially implemented logger rather than failing at an arbitrary later call](../../src/shared/logger.test.ts#L240)).
+- A value whose `toString` throws still produces a line ([validated by: still writes a line rather than throwing out of the emitter](../../src/shared/logger.test.ts#L253)).
 - `setLogger` is exported from `src/index.ts`, so a consumer can put the built-in logger back; without it the process-global swap had no documented way out.
-- `createHalEngine` installs a logger only when the config names one, so a second engine naming none keeps the first one's logger ([validated by](../../src/config.test.ts#L76)).
+- `createHalEngine` installs a logger only when the config names one, so a second engine naming none keeps the first one's logger ([validated by: leaves an already-supplied logger in place when the config names none](../../src/config.test.ts#L76)).
 - No call site changes. All 29 `log.*` calls under `src/` keep their category, message, level and data - 28 at the time this was written, plus the hook-failure line T015 added.
 - A new `docs/logging.md` covers the key set, the level mapping, the stream split, and which fields can identify a person.
 
@@ -256,11 +256,11 @@ Delegating to a supplied logger initially bypassed both of the built-in emitter'
 
 Measured before the fix, one config object produced `{"status":"","count":0}` through `createProvider` and `{"status":"configured","count":42}` through `createMockProvider`.
 
-- The `mock` arm forwards `config` like the other four, so a configured structured response survives the factory ([validated by](../../src/providers/providerFactory.test.ts#L17)).
-- A message the map does not name still falls back to schema-shaped defaults ([validated by](../../src/providers/providerFactory.test.ts#L24)).
-- `createMockProvider`'s parameter stays optional - making it required would break the existing no-argument call sites to guard against a typo the new test catches - so a `mock` config carrying no map is accepted ([validated by](../../src/providers/providerFactory.test.ts#L31)).
-- Every arm returns a provider implementing both `AIProvider` methods ([validated by](../../src/providers/providerFactory.test.ts#L37)).
-- The `mock` arm reaches the mock rather than a neighbouring arm ([validated by](../../src/providers/providerFactory.test.ts#L52)).
+- The `mock` arm forwards `config` like the other four, so a configured structured response survives the factory ([validated by: forwards MockConfig, so a configured structured response survives the factory](../../src/providers/providerFactory.test.ts#L17)).
+- A message the map does not name still falls back to schema-shaped defaults ([validated by: falls back to schema-shaped defaults for a message the map does not name](../../src/providers/providerFactory.test.ts#L24)).
+- `createMockProvider`'s parameter stays optional - making it required would break the existing no-argument call sites to guard against a typo the new test catches - so a `mock` config carrying no map is accepted ([validated by: accepts a mock config carrying no map at all](../../src/providers/providerFactory.test.ts#L31)).
+- Every arm returns a provider implementing both `AIProvider` methods ([validated by: dispatches each arm to a provider satisfying the full AIProvider interface](../../src/providers/providerFactory.test.ts#L37)).
+- The `mock` arm reaches the mock rather than a neighbouring arm ([validated by: routes the mock arm to the mock, not to a neighbouring arm](../../src/providers/providerFactory.test.ts#L52)).
 - The mock is the only provider the tarball smoke test can exercise without a cloud account, which is why this lands before the smoke fixture is written.
 - `structuredResponses` is honoured by both entry points, but it configures `generateStructured`, and nothing inside `createHalEngine` ever calls that method — the orchestrator only calls `sendMessage`. A consumer configuring the map through `createHalEngine` should learn that from the documentation rather than from a debugger.
 
@@ -270,19 +270,19 @@ Measured before the fix, one config object produced `{"status":"","count":0}` th
 
 The alias is removed. `user_message` is the only wire name, which is what the exported types have always said.
 
-- `send_message` is rejected like any other unknown type, so a client still sending it gets an `error` frame carrying `INVALID_MESSAGE` rather than a silent acceptance ([validated by](../../src/transport/ws/validation.test.ts#L12)).
-- `user_message` is accepted and returns exactly the frame `UserMessagePayload` describes ([validated by](../../src/transport/ws/validation.test.ts#L6)).
+- `send_message` is rejected like any other unknown type, so a client still sending it gets an `error` frame carrying `INVALID_MESSAGE` rather than a silent acceptance ([validated by: rejects send_message, which is no longer a wire name](../../src/transport/ws/validation.test.ts#L12)).
+- `user_message` is accepted and returns exactly the frame `UserMessagePayload` describes ([validated by: accepts user_message and returns the frame the exported union describes](../../src/transport/ws/validation.test.ts#L6)).
 - No deprecation window was needed. This package has never been published, so there were no registry consumers to deprecate for, and the window would only ever have been cheap before the first release.
 
 ### Two config options that were declared and dropped
 
 `createHalEngine` forwarded `maxToolRounds` and `contextConfig` to the orchestrator it builds and stopped there, and passed no port to the server at all. Both options are declared on `HalEngineConfig`, both are documented, and neither did anything - the third and fourth instances of the same seam after `onConnect` and the `send_message` alias.
 
-- `orchestrator.hooks` is declared and forwarded, so a hook passed through the factory fires ([validated by](../../src/config.test.ts#L17)).
-- `transport.port` reaches the server, and the resolution order is the `start(port)` argument, then `transport.port`, then `PORT`, then `8086` ([validated by](../../src/config.test.ts#L34)).
-- An explicit `start(port)` still wins over the configured one ([validated by](../../src/config.test.ts#L45)).
+- `orchestrator.hooks` is declared and forwarded, so a hook passed through the factory fires ([validated by: forwards an orchestrator hook, so one passed through the config actually fires](../../src/config.test.ts#L17)).
+- `transport.port` reaches the server, and the resolution order is the `start(port)` argument, then `transport.port`, then `PORT`, then `8086` ([validated by: forwards transport.port, so the server listens where the config said](../../src/config.test.ts#L34)).
+- An explicit `start(port)` still wins over the configured one ([validated by: lets an explicit start(port) win over the configured one](../../src/config.test.ts#L45)).
 - The started line logs the bound port rather than the requested one, which is what a configured `0` makes visible.
-- A port that cannot be bound rejects the promise `start()` returned, rather than surfacing as an unhandled `error` event that ends the process ([validated by](../../src/config.test.ts#L94)).
+- A port that cannot be bound rejects the promise `start()` returned, rather than surfacing as an unhandled `error` event that ends the process ([validated by: rejects instead of taking the process down with an unhandled error event](../../src/config.test.ts#L94)).
 - `transport.port` resolves with `??` rather than `||`, so a configured `0` means "let the OS choose a free port" instead of collapsing to the default. `PORT` keeps its `||`, because an environment variable that fails to parse should not silently bind port 0.
 - Writing the tests exposed a third defect: `createServer` opened its heartbeat interval at construction, so an engine that was built and never started held the Node event loop open forever. The timer is now `unref`ed - the listening socket is what should keep a process alive.
 

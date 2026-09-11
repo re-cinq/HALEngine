@@ -42,6 +42,8 @@
     "eslint": "eslint --max-warnings 0 .",
     "lint:backlog": "eslint -c eslint.config.backlog.mjs .",
     "check:spec-links": "node scripts/check-spec-links.mjs",
+    "spec:names": "node scripts/check-spec-anchor-names.mjs",
+    "spec:names:fix": "node scripts/check-spec-anchor-names.mjs --fix",
     "check:spec-status": "node scripts/check-spec-status.mjs",
     "check:audit": "node scripts/check-audit.mjs",
     "check:action-pins": "bash scripts/check-action-pins.sh",

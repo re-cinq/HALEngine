@@ -132,8 +132,17 @@ in this repo, so the path points into `src/`:
 ```markdown
 - All entries within a single assistant response are committed before the next
   user message is processed
-  ([validated by](../../src/orchestration/chatOrchestrator.test.ts#L42)).
+  ([validated by: commits every entry before the next user message](../../src/orchestration/chatOrchestrator.test.ts#L42)).
 ```
+
+The citation carries the test's **name** as well as its line. The name is what the
+author cited; the line is a derived pointer, and it goes stale on its own - adding
+an import above a suite moves every test below it, and the citation lands on a
+different, still-valid declaration without anything noticing. `npm run spec:names`
+holds each citation to the test it names, and `npm run spec:names:fix` repoints the
+line from the name. The `#Lnn` stays because the lint rule and the coverage job
+both index by it; a citation without one marks the whole file covered rather than
+one test.
 
 A citation counts as coverage only where it is trailing, and a test link placed
 anywhere else in the statement is a misplaced citation rather than a weaker one.

@@ -86,7 +86,7 @@ See [spike-bedrock-integration.md](../../docs/spikes/spike-bedrock-integration.m
 
 ## Google Vertex AI
 
-Supports streaming through `sendMessage` and structured JSON output through `generateStructured` ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L55), [structured](../../src/providers/vertex/vertexProvider.test.ts#L208)).
+Supports streaming through `sendMessage` and structured JSON output through `generateStructured` ([validated by: streams text chunks from Vertex AI response](../../src/providers/vertex/vertexProvider.test.ts#L55), [structured](../../src/providers/vertex/vertexProvider.test.ts#L208)).
 
 <!-- doc-block: none -- a composed provider configuration; its fields are checked through src/config.ts by typecheck -->
 ```typescript
@@ -142,22 +142,22 @@ const result = await provider.generateStructured<{score: number; feedback: strin
 
 ### Streaming
 
-- A function call part becomes a `tool_use` chunk. Vertex reports no call id of its own, so the function's name is used as the id as well ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L76)).
-- A `MAX_TOKENS` finish reason becomes the stop reason `max_tokens`, so a truncated reply is distinguishable from a completed one ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L110)).
-- A candidate carrying no parts is skipped rather than emitted as an empty chunk ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L158)).
-- The `assistant` role is sent to Vertex as `model`, which is the only role name its API accepts for a prior reply; `user` passes through unchanged ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L175)).
+- A function call part becomes a `tool_use` chunk. Vertex reports no call id of its own, so the function's name is used as the id as well ([validated by: yields tool_use chunks for function calls](../../src/providers/vertex/vertexProvider.test.ts#L76)).
+- A `MAX_TOKENS` finish reason becomes the stop reason `max_tokens`, so a truncated reply is distinguishable from a completed one ([validated by: maps MAX_TOKENS finish reason](../../src/providers/vertex/vertexProvider.test.ts#L110)).
+- A candidate carrying no parts is skipped rather than emitted as an empty chunk ([validated by: skips chunks with no candidate parts](../../src/providers/vertex/vertexProvider.test.ts#L158)).
+- The `assistant` role is sent to Vertex as `model`, which is the only role name its API accepts for a prior reply; `user` passes through unchanged ([validated by: maps assistant role to model for Vertex API](../../src/providers/vertex/vertexProvider.test.ts#L175)).
 
 ### Structured output
 
-- `generateStructured` sets `responseMimeType` to `application/json` and passes the schema with its type names upper-cased, which is the form the Vertex SDK expects ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L228)).
-- A response body that is not valid JSON raises `AIError` with code `PARSE_ERROR`, rather than returning something the caller would have to re-check ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L263)).
+- `generateStructured` sets `responseMimeType` to `application/json` and passes the schema with its type names upper-cased, which is the form the Vertex SDK expects ([validated by: configures model with responseMimeType and responseSchema](../../src/providers/vertex/vertexProvider.test.ts#L228)).
+- A response body that is not valid JSON raises `AIError` with code `PARSE_ERROR`, rather than returning something the caller would have to re-check ([validated by: throws AIError with PARSE_ERROR on invalid JSON](../../src/providers/vertex/vertexProvider.test.ts#L263)).
 
 ### Error mapping
 
-- A message naming `429` or `RESOURCE_EXHAUSTED` becomes `RATE_LIMITED` and is marked retryable ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L122)).
-- A message naming `401`, `403` or `PERMISSION_DENIED` becomes `AUTH_ERROR` ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L134)).
-- Anything the mapping cannot classify becomes `PROVIDER_ERROR`, so an SDK error never reaches the caller as a raw `Error` ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L146)).
-- The mapping is shared: a failure raised during `generateStructured` is classified exactly as the same failure during `sendMessage` would be ([validated by](../../src/providers/vertex/vertexProvider.test.ts#L277)).
+- A message naming `429` or `RESOURCE_EXHAUSTED` becomes `RATE_LIMITED` and is marked retryable ([validated by: throws AIError with RATE_LIMITED on 429](../../src/providers/vertex/vertexProvider.test.ts#L122)).
+- A message naming `401`, `403` or `PERMISSION_DENIED` becomes `AUTH_ERROR` ([validated by: throws AIError with AUTH_ERROR on permission denied](../../src/providers/vertex/vertexProvider.test.ts#L134)).
+- Anything the mapping cannot classify becomes `PROVIDER_ERROR`, so an SDK error never reaches the caller as a raw `Error` ([validated by: falls back to PROVIDER_ERROR for a failure it cannot classify](../../src/providers/vertex/vertexProvider.test.ts#L146)).
+- The mapping is shared: a failure raised during `generateStructured` is classified exactly as the same failure during `sendMessage` would be ([validated by: throws mapped AIError on Vertex API failure](../../src/providers/vertex/vertexProvider.test.ts#L277)).
 
 ## OpenAI
 
@@ -217,9 +217,9 @@ const engine = createHalEngine({
 });
 ```
 
-- `sendMessage` streams `Mock response to: "<last user message>"` one word at a time ([validated by](../../src/providers/mock/mockProvider.test.ts#L7)).
-- The stream closes with a `stop` chunk carrying fixed usage metadata, so usage plumbing can be exercised without a real provider ([validated by](../../src/providers/mock/mockProvider.test.ts#L16)).
-- A last message whose content is not a string falls back to `Hello` rather than failing ([validated by](../../src/providers/mock/mockProvider.test.ts#L28)).
+- `sendMessage` streams `Mock response to: "<last user message>"` one word at a time ([validated by: streams word-by-word response echoing user input](../../src/providers/mock/mockProvider.test.ts#L7)).
+- The stream closes with a `stop` chunk carrying fixed usage metadata, so usage plumbing can be exercised without a real provider ([validated by: ends with stop chunk containing usage metadata](../../src/providers/mock/mockProvider.test.ts#L16)).
+- A last message whose content is not a string falls back to `Hello` rather than failing ([validated by: handles non-string content in last message](../../src/providers/mock/mockProvider.test.ts#L28)).
 
 `generateStructured` is the configurable half. `structuredResponses` maps a user message to the exact object to return for it; anything unmatched gets a value built from the response schema's shape.
 
@@ -231,15 +231,15 @@ const provider = createProvider({
 });
 ```
 
-- A matching key returns that object verbatim ([validated by](../../src/providers/mock/mockProvider.test.ts#L68)).
-- No match returns the schema's default shape: `''` for a string, `0` for a number, `false` for a boolean, `[]` for an array, and recursively for an object ([validated by](../../src/providers/mock/mockProvider.test.ts#L62)).
-- A `structuredResponses` map that holds no entry for this message falls back to the same default shape, rather than failing or returning nothing ([validated by](../../src/providers/mock/mockProvider.test.ts#L104)).
-- A schema whose top level is not an object is built from the scalar table directly, so a top-level `array` schema returns `[]` ([validated by](../../src/providers/mock/mockProvider.test.ts#L77)).
-- Each caller gets its own array, so one caller mutating a returned `[]` cannot affect another ([validated by](../../src/providers/mock/mockProvider.test.ts#L88)).
+- A matching key returns that object verbatim ([validated by: returns preconfigured response when user text matches](../../src/providers/mock/mockProvider.test.ts#L68)).
+- No match returns the schema's default shape: `''` for a string, `0` for a number, `false` for a boolean, `[]` for an array, and recursively for an object ([validated by: returns default values matching schema shape](../../src/providers/mock/mockProvider.test.ts#L62)).
+- A `structuredResponses` map that holds no entry for this message falls back to the same default shape, rather than failing or returning nothing ([validated by: falls back to default when no preconfigured response matches](../../src/providers/mock/mockProvider.test.ts#L104)).
+- A schema whose top level is not an object is built from the scalar table directly, so a top-level `array` schema returns `[]` ([validated by: returns empty array for array schema](../../src/providers/mock/mockProvider.test.ts#L77)).
+- Each caller gets its own array, so one caller mutating a returned `[]` cannot affect another ([validated by: gives each caller its own array, so one mutating it cannot affect another](../../src/providers/mock/mockProvider.test.ts#L88)).
 
 There is no `responses` array and no cycling: the only knob is `structuredResponses`.
 
-Both entry points honour it: the example above goes through `createProvider`, which once called `createMockProvider()` with no arguments and dropped the map ([validated by](../../src/providers/providerFactory.test.ts#L17)).
+Both entry points honour it: the example above goes through `createProvider`, which once called `createMockProvider()` with no arguments and dropped the map ([validated by: forwards MockConfig, so a configured structured response survives the factory](../../src/providers/providerFactory.test.ts#L17)).
 
 It configures `generateStructured` only, and nothing inside `createHalEngine` calls that method - the orchestrator drives `sendMessage`. A consumer who sets `structuredResponses` and drives the engine over HTTP or a WebSocket will see mock chat responses and never a configured object; the map is for code calling the provider directly.
 
