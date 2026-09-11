@@ -18,11 +18,20 @@ The HTTP chat routes are the non-streaming counterpart to the WebSocket protocol
 - A caller who is not the owner still sees `404` for an id that does not exist, so ownership never becomes an oracle for which ids are real ([validated by](../../src/transport/routes/chats.test.ts#L76)).
 - Owner ids are compared strictly, so numeric `1` and string `"1"` are different users rather than the same one ([validated by](../../src/transport/routes/chats.test.ts#L94)).
 
+### When no middleware is configured
+
+`authMiddleware` is optional, and when it is absent there is nothing that could identify a caller, so the routes deny instead of serving every caller as one shared user.
+
+- Creating a chat is refused `401 Unauthorized` ([validated by](../../src/transport/routes/chats.test.ts#L167)).
+- Reading a chat is refused the same way ([validated by](../../src/transport/routes/chats.test.ts#L175)).
+- A message is refused and the orchestrator is never invoked, so an unauthenticated request costs no model call ([validated by](../../src/transport/routes/chats.test.ts#L183)).
+- The `401` precedes the chat lookup, so an unauthenticated caller cannot probe which ids exist ([validated by](../../src/transport/routes/chats.test.ts#L195)).
+
 ### When the guard does nothing
 
-The guard only refuses a caller it can identify, so a request carrying no `user` — no auth middleware configured, or middleware that attaches nothing — passes through to the chat unchecked ([validated by](../../src/transport/routes/chats.test.ts#L85)).
+Middleware that runs but attaches no `user` is the separate case, and the one configuration in which the ownership guard does nothing: the guard only refuses a caller it can identify, so the request reaches the chat unchecked ([validated by](../../src/transport/routes/chats.test.ts#L85)).
 
-A deployment that serves more than one user MUST configure `authMiddleware`, because without it any caller holding a chat id can read and post to that chat.
+A deployment that serves more than one user MUST configure `authMiddleware` that attaches a `user`. Middleware attaching nothing leaves any caller holding a chat id able to read and post to that chat, and the absent-middleware denial above does not cover it.
 
 ## GET /chats/:id
 

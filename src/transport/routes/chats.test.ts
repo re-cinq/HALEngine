@@ -153,3 +153,50 @@ describe('chat routes ownership guard', () => {
     });
   });
 });
+
+// Pins the deny-by-default: with no middleware configured there is nobody to identify, so nothing is served.
+describe('chat routes with no auth middleware', () => {
+  const unguarded = () => {
+    const processMessage = jest.fn<(...args: unknown[]) => Promise<string>>().mockResolvedValue('assistant reply');
+    const app = express();
+    app.use(express.json());
+    app.use('/chats', createChatRoutes({processMessage} as unknown as ChatOrchestrator, {} as SessionStore));
+    return {app, processMessage};
+  };
+
+  it('refuses to create a chat', async () => {
+    const {app} = unguarded();
+
+    const response = await request(app).post('/chats');
+
+    expect({status: response.status, body: response.body}).toEqual({status: 401, body: {error: 'Unauthorized'}});
+  });
+
+  it('refuses to read a chat', async () => {
+    const {app} = unguarded();
+
+    const response = await request(app).get('/chats/any-id');
+
+    expect({status: response.status, body: response.body}).toEqual({status: 401, body: {error: 'Unauthorized'}});
+  });
+
+  it('refuses to post a message, and never reaches the orchestrator', async () => {
+    const {app, processMessage} = unguarded();
+
+    const response = await request(app).post('/chats/any-id/messages').send({content: 'hello'});
+    const {calls} = processMessage.mock;
+
+    expect({status: response.status, orchestratorCalls: calls.length}).toEqual({
+      status: 401,
+      orchestratorCalls: 0,
+    });
+  });
+
+  it('answers 401 before 404, so an unauthenticated caller cannot probe which chat ids exist', async () => {
+    const {app} = unguarded();
+
+    const response = await request(app).get('/chats/definitely-not-a-chat');
+
+    expect(response.status).toBe(401);
+  });
+});

@@ -30,6 +30,7 @@ const engine = createHalEngine({
   },
   tools,
   auth: {
+    // No `http` middleware here, so the chat routes under /api/chats answer 401 rather than serving anyone.
     ws: async req => {
       const token = req.headers.authorization;
       if (!token) return null;

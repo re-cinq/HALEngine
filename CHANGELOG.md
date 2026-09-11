@@ -33,6 +33,13 @@ published before it, so there is no upgrade path from `0.1.0` on the registry â€
   `npm audit signatures` that the tarball was built by this repository's release workflow from the
   commit the version was tagged at, rather than uploaded by whoever held a token.
 
+### Security
+
+- **Breaking: the HTTP chat routes deny by default.** With no `auth.http` middleware configured,
+  `POST /chats`, `GET /chats/:id` and `POST /chats/:id/messages` now answer `401 Unauthorized`. They
+  previously served every caller as one shared `anonymous` user, so anyone holding a chat id could read
+  and post to it. Configure `auth.http` to keep them reachable.
+
 ### Fixed
 
 - Importing the package root no longer loads the Google Vertex AI SDK. It previously pulled in 38

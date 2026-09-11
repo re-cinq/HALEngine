@@ -28,7 +28,12 @@ export function createChatRoutes(
   const router = Router();
   const chats = new Map<string, Chat>();
 
-  const auth = authMiddleware ?? ((_req: Request, _res: Response, next: () => void) => next());
+  // No middleware means no way to identify a caller, so deny rather than serve everyone as one shared user.
+  const auth: HttpAuthMiddleware =
+    authMiddleware ??
+    ((_req, res) => {
+      res.status(401).json({error: 'Unauthorized'});
+    });
 
   router.post('/', auth, (req: Request, res: Response) => {
     const chatId = randomUUID();

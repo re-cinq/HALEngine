@@ -20,6 +20,6 @@ export default {
   // red run is fixed by adding the missing test, never by lowering the number
   // (specs/hal-engine-npm-release/spec.md).
   coverageThreshold: {
-    global: {statements: 67.96, branches: 57.54, functions: 68, lines: 68.34},
+    global: {statements: 68.09, branches: 57.86, functions: 68.5, lines: 68.39},
   },
 };
