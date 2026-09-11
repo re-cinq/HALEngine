@@ -62,6 +62,11 @@ jobs:
       - name: Format check
         run: npm run prettier:check
 
+      # The gate that catches a README or guide code block drifting from the source being published,
+      # which is the one thing npm renders and the one thing a tarball cannot be re-cut to fix.
+      - name: Documented code blocks
+        run: npm run docs:check
+
       - name: Test (with coverage floor)
         run: npm run test:coverage
 
