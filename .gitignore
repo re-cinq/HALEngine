@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.env
+.idea
+
+# Claude Code local artifacts. settings.json is tracked and shared; these are
+# per-developer or vendored. skills/ is authored upstream and installed
+# globally, so a consumer repo carries none of it.
+.claude/settings.local.json
+.claude/skills/
+.claude/worktrees/

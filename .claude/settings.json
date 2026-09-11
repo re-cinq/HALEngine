@@ -1,0 +1,3 @@
+{
+  "systemPromptSuffix": "\n\nYou have access to the Lore MCP server. ALWAYS call get_context as your FIRST action before reading files or answering. Then use search_memory to check what other developers learned. Before session ends, call write_memory with a session summary."
+}
