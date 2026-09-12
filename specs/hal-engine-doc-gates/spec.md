@@ -17,9 +17,9 @@ They are separate scripts rather than one because they fail for different reason
 - An opt-out states a reason, and one that does not is reported ([validated by: reports an opt-out that states no reason](../../scripts/check-doc-blocks.test.ts#L95)).
 - An opt-out that states one is accepted ([validated by: accepts an opt-out that states one](../../scripts/check-doc-blocks.test.ts#L101)).
 - A fence that is never closed is reported rather than compared against the rest of the file ([validated by: reports a block whose fence is never closed rather than comparing to end of file](../../scripts/check-doc-blocks.test.ts#L107)).
-- A marker naming a declaration its source does not export is reported ([validated by: reports a marker naming a declaration the source does not export](../../scripts/check-doc-blocks.test.ts#L113)).
+- A marker naming a declaration its source does not export is reported ([validated by: reports a marker naming a declaration the source does not export](../../scripts/check-doc-blocks.test.ts#L132)).
 
-The fence tag is the gate's own blind spot, because a block it does not recognise keeps its marker and quietly stops being compared. Matching one spelling was not enough: `ts` renders identically to `typescript`, is already used elsewhere in this repository, and an editor or an author sidestepping a `--fix` conflict can produce it without meaning anything by it.
+The fence tag is the gate's own blind spot, because a block it does not recognise keeps its marker and quietly stops being compared. Matching one spelling was not enough: `ts` renders identically to `typescript`, is already used elsewhere in this repository, and an editor or an author sidestepping a `--fix` conflict can produce it without meaning anything by it. Widening the recognised set narrowed the blind spot without closing it, because the next unrecognised tag reopens it. The marker drives the check as well as the fence: a marker is a claim that the block below it is generated, so anything other than a recognised fence under one is reported - a relabelled block, or no block at all.
 
 - A drifted block fenced `typescript` is reported ([validated by: compares a block fenced as typescript](../../scripts/check-doc-blocks.test.ts#L57)).
 - One fenced `ts` is reported ([validated by: compares a block fenced as ts, which renders identically](../../scripts/check-doc-blocks.test.ts#L61)).
@@ -28,9 +28,12 @@ The fence tag is the gate's own blind spot, because a block it does not recognis
 - One whose fence carries an info string is reported ([validated by: compares a block whose fence carries an info string](../../scripts/check-doc-blocks.test.ts#L73)).
 - A block that matches its source is accepted rather than reported for being recognised ([validated by: accepts a matching block rather than reporting every fence it recognises](../../scripts/check-doc-blocks.test.ts#L77)).
 - A closing fence carrying trailing whitespace still closes its block ([validated by: closes on a fence carrying trailing whitespace](../../scripts/check-doc-blocks.test.ts#L81)).
-- `--fix` rewrites a drifted block from its source ([validated by: rewrites a drifted block from its source](../../scripts/check-doc-blocks.test.ts#L121)).
-- `--fix` leaves the document's own fence tag alone, so the gate does not impose a house style ([validated by: leaves a fence tag it did not write alone, so --fix does not rewrite the document's style](../../scripts/check-doc-blocks.test.ts#L129)).
-- `--fix` on a tree that already matches produces no diff ([validated by: produces no diff on a tree that already matches](../../scripts/check-doc-blocks.test.ts#L137)).
+- A marker above a fence tagged with something the gate does not recognise is reported ([validated by: reports a marker whose fence carries a tag it does not recognise](../../scripts/check-doc-blocks.test.ts#L114)).
+- That report fails the run rather than passing silently ([validated by: fails rather than passing silently on a relabelled fence](../../scripts/check-doc-blocks.test.ts#L120)).
+- A marker that no fence follows at all is reported ([validated by: reports a marker that no fence follows at all](../../scripts/check-doc-blocks.test.ts#L126)).
+- `--fix` rewrites a drifted block from its source ([validated by: rewrites a drifted block from its source](../../scripts/check-doc-blocks.test.ts#L140)).
+- `--fix` leaves the document's own fence tag alone, so the gate does not impose a house style ([validated by: leaves a fence tag it did not write alone, so --fix does not rewrite the document's style](../../scripts/check-doc-blocks.test.ts#L148)).
+- `--fix` on a tree that already matches produces no diff ([validated by: produces no diff on a tree that already matches](../../scripts/check-doc-blocks.test.ts#L156)).
 
 ## Paths in prose resolve
 

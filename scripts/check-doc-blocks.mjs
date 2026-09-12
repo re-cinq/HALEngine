@@ -36,6 +36,7 @@ const IMPORT_REWRITES = [[/from '\.\.\/src\/index\.js'/g, "from '@re-cinq/hal-en
 // spelling let a block keep its marker, stop being compared, and still render as code.
 const TYPESCRIPT_FENCE = /^```[ \t]*(typescript|ts|tsx)\b[^`]*$/i;
 const CLOSING_FENCE = /^```[ \t]*$/;
+const MARKER = /^<!-- doc-block: (.+?) -->$/;
 
 const args = process.argv.slice(2);
 const fix = args.includes('--fix');
@@ -104,6 +105,14 @@ for (const doc of DOCS) {
   const lines = read(doc).split('\n');
   let changed = false;
 
+  // Driven from the marker as well as the fence: widening the recognised set left the bypass open,
+  // because relabelling a block ```js keeps the marker, stops the comparison, and still renders as code.
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!MARKER.test(lines[i].trim())) continue;
+    if (TYPESCRIPT_FENCE.test(lines[i + 1] ?? '')) continue;
+    findings.push(`${doc}:${i + 1} doc-block marker is not followed by a typescript fence`);
+  }
+
   for (let i = 0; i < lines.length; i += 1) {
     if (!TYPESCRIPT_FENCE.test(lines[i])) continue;
 
@@ -113,7 +122,7 @@ for (const doc of DOCS) {
       continue;
     }
     const previous = (lines[i - 1] ?? '').trim();
-    const match = previous.match(/^<!-- doc-block: (.+?) -->$/);
+    const match = previous.match(MARKER);
 
     if (!match) {
       findings.push(`${doc}:${i + 1} typescript block carries no doc-block marker`);

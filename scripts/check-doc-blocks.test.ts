@@ -110,6 +110,25 @@ describe('check-doc-blocks markers', () => {
     expect(run(workspace(body, SOURCE)).stdout).toContain('never closed');
   });
 
+  // Relabelling the fence keeps the marker, ends the comparison, and still renders as code.
+  it('reports a marker whose fence carries a tag it does not recognise', () => {
+    const body = `# Fixture\n\n<!-- doc-block: src/types/sample.ts#Sample -->\n\`\`\`js\n${BODY}\n\`\`\`\n`;
+
+    expect(run(workspace(body, SOURCE)).stdout).toContain('not followed by a typescript fence');
+  });
+
+  it('fails rather than passing silently on a relabelled fence', () => {
+    const body = `# Fixture\n\n<!-- doc-block: src/types/sample.ts#Sample -->\n\`\`\`js\n${BODY}\n\`\`\`\n`;
+
+    expect(run(workspace(body, SOURCE))).toMatchObject({status: 1});
+  });
+
+  it('reports a marker that no fence follows at all', () => {
+    const body = `# Fixture\n\n<!-- doc-block: src/types/sample.ts#Sample -->\n\nSome prose instead.\n`;
+
+    expect(run(workspace(body, SOURCE)).stdout).toContain('not followed by a typescript fence');
+  });
+
   it('reports a marker naming a declaration the source does not export', () => {
     const body = `# Fixture\n\n<!-- doc-block: src/types/sample.ts#Absent -->\n\`\`\`ts\n${BODY}\n\`\`\`\n`;
 
