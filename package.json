@@ -46,7 +46,7 @@
     "spec:names:fix": "node scripts/check-spec-anchor-names.mjs --fix",
     "check:spec-status": "node scripts/check-spec-status.mjs",
     "check:audit": "node scripts/check-audit.mjs",
-    "check:action-pins": "bash scripts/check-action-pins.sh",
+    "check:action-pins": "node scripts/check-action-pins.mjs",
     "check:version": "bash scripts/check-version.sh",
     "docs:check": "node scripts/check-doc-blocks.mjs",
     "docs:check-paths": "node scripts/check-doc-paths.mjs",

@@ -108,12 +108,16 @@ The gate runs immediately before `npm publish`, so the two ways it can report a 
 
 A `uses:` reference is pinned to a commit SHA because a tag is a mutable pointer its owner can repoint under a job holding repository credentials. The scan covers the whole of `.github/`, not `workflows/` alone: a composite action carries its own `uses:` lines and runs inside whichever job calls it, so scanning only workflows leaves it unpinnable with nothing to notice.
 
-- A reference pinned to a 40-hex commit SHA is accepted ([validated by: accepts a reference pinned to a 40-hex commit SHA](../../scripts/check-action-pins.test.ts#L17)).
-- A reference pinned to a tag is refused ([validated by: refuses a reference pinned to a tag](../../scripts/check-action-pins.test.ts#L21)).
-- The report names the file, the line and the reference ([validated by: names the file, the line and the reference it refused](../../scripts/check-action-pins.test.ts#L25)).
-- A local `./` reference is skipped, having no SHA to pin ([validated by: skips a local reference, which cannot be pinned to a SHA](../../scripts/check-action-pins.test.ts#L29)).
-- An unpinned reference inside a composite action is refused ([validated by: refuses an unpinned reference inside a composite action, not just a workflow](../../scripts/check-action-pins.test.ts#L34)).
-- That same composite passes under a workflows-only scan, which is the gap the wider scope closes ([validated by: would have passed that composite under a workflows-only scan, which is why the scope widened](../../scripts/check-action-pins.test.ts#L38)).
+The documents are parsed rather than scanned line by line. A line scan reads one YAML spelling and misses every other one that means the same thing: `steps: [{uses: actions/checkout@v4}]` is legal flow style, and it passed a gate that exists to stand between a mutable tag and publish rights. A parser sees the reference wherever the author put it.
+
+- A reference pinned to a 40-hex commit SHA is accepted ([validated by: accepts a reference pinned to a 40-hex commit SHA](../../scripts/check-action-pins.test.ts#L16)).
+- A reference pinned to a tag is refused ([validated by: refuses a reference pinned to a tag](../../scripts/check-action-pins.test.ts#L20)).
+- The report names the file, the line and the reference ([validated by: names the file, the line and the reference it refused](../../scripts/check-action-pins.test.ts#L24)).
+- A local `./` reference is skipped, having no SHA to pin ([validated by: skips a local reference, which cannot be pinned to a SHA](../../scripts/check-action-pins.test.ts#L28)).
+- An unpinned reference written in YAML flow style is refused ([validated by: refuses an unpinned reference written in YAML flow style](../../scripts/check-action-pins.test.ts#L33)).
+- It is named in the report, which no line grep reached ([validated by: names the reference it found in flow style, which no line grep could reach](../../scripts/check-action-pins.test.ts#L37)).
+- An unpinned reference inside a composite action is refused ([validated by: refuses an unpinned reference inside a composite action, not just a workflow](../../scripts/check-action-pins.test.ts#L42)).
+- That same composite passes under a workflows-only scan, which is the gap the wider scope closes ([validated by: would have passed that composite under a workflows-only scan, which is why the scope widened](../../scripts/check-action-pins.test.ts#L46)).
 
 The pack list is checked for what it must carry as well as what it must not. A pure absence check calls an empty `dist/` clean: `npm publish` would then ship a package with no entry point, unpublishable after 72 hours and permanent after that. The required set is `package.json`, `README.md`, `LICENSE`, `dist/index.js` and `dist/index.d.ts`.
 
