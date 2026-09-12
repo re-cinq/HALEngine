@@ -46,9 +46,21 @@ import {createProvider} from '@re-cinq/hal-engine';
 
 const provider = createProvider({
   type: 'openai',
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: requireEnv('OPENAI_API_KEY'),
   model: 'gpt-4o',
 });
+```
+
+`apiKey` is a `string`, and `process.env.X` is `string | undefined`, so reading one straight into the config does not compile under `strict: true`. `requireEnv` stands in for whatever your project does about that, and the shape matters more than the name: fail at startup on a missing credential rather than at the first model call, where it arrives as an authentication error from the vendor.
+
+<!-- doc-block: none -- the guard a reader writes in their own project, not something this package exports -->
+```typescript
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (value === undefined) throw new Error(`${name} is not set`);
+
+  return value;
+}
 ```
 
 ## AWS Bedrock
@@ -166,7 +178,7 @@ const result = await provider.generateStructured<{score: number; feedback: strin
 const engine = createHalEngine({
   provider: {
     type: 'openai',
-    apiKey: process.env.OPENAI_API_KEY,
+    apiKey: requireEnv('OPENAI_API_KEY'),
     model: 'gpt-4o',
     maxTokens: 4096,
   },
@@ -190,7 +202,7 @@ Connects to Anthropic's API directly, bypassing Bedrock.
 const engine = createHalEngine({
   provider: {
     type: 'anthropic',
-    apiKey: process.env.ANTHROPIC_API_KEY,
+    apiKey: requireEnv('ANTHROPIC_API_KEY'),
     model: 'claude-sonnet-4-6',
     maxTokens: 4096,
   },
@@ -387,7 +399,7 @@ Because all providers implement the same interface, switching is a config-only c
 ```typescript
 // Development: use mock
 const devEngine = createHalEngine({
-  provider: {type: 'mock', responses: ['Test response']},
+  provider: {type: 'mock'},
   // ...
 });
 
@@ -399,7 +411,7 @@ const stagingEngine = createHalEngine({
 
 // Production: use Bedrock
 const prodEngine = createHalEngine({
-  provider: {type: 'bedrock', region: 'eu-west-1', modelId: 'eu.anthropic.claude-sonnet-4-5-20250929-v1:0'},
+  provider: {type: 'bedrock', region: 'eu-west-1', modelId: 'eu.anthropic.claude-sonnet-4-5-20250929-v1:0', maxTokens: 4096},
   // ...
 });
 ```
