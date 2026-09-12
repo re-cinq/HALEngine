@@ -72,7 +72,8 @@ export function createChatRoutes(
     const chat = authorizedChat(req, res, chats);
     if (!chat) return;
 
-    const {content} = req.body as {content: string};
+    // `req.body` is undefined when no parser claimed the content type; destructuring that threw past the guard.
+    const {content} = (req.body ?? {}) as {content?: string};
 
     if (!content || typeof content !== 'string') {
       res.status(400).json({error: 'Message content is required'});

@@ -143,6 +143,16 @@ describe('chat routes ownership guard', () => {
       expect(response.status).toBe(403);
     });
 
+    // Express leaves req.body undefined when no parser claimed the type, and destructuring it threw.
+    it('answers 400 when no body parser claimed the request, rather than 500', async () => {
+      const {as, chatOwnedBy} = harness();
+      const id = await chatOwnedBy(ALICE);
+
+      const response = await as(ALICE).post(`/chats/${id}/messages`).type('text/plain').send('content=hi');
+
+      expect(response.status).toBe(400);
+    });
+
     it('does not record the rejected message in the chat', async () => {
       const {as, chatOwnedBy} = harness();
       const id = await chatOwnedBy(ALICE);
