@@ -13,12 +13,9 @@ Create a new file in `src/orchestration/tools/`. Each tool exports two things:
 
 Here is a complete example:
 
-<!-- doc-block: none -- a complete worked tool for a fictional weather API, written to be copied and edited -->
+<!-- doc-block: example/weather-tool.ts#weather-tool -->
 ```typescript
-// src/orchestration/tools/weatherTool.ts
-
-import type {ToolDefinition} from '../../types/ai.js';
-import type {ToolExecutor} from './registry.js';
+import type {ToolDefinition, ToolExecutor} from '@re-cinq/hal-engine';
 
 export const weatherTool: ToolDefinition = {
   name: 'get_weather',
@@ -36,7 +33,6 @@ export const weatherTool: ToolDefinition = {
   inputSchema: {
     type: 'object',
     properties: {
-      /* eslint-disable camelcase */
       location: {
         type: 'string',
         description: 'The city name or location to look up.',
@@ -46,17 +42,16 @@ export const weatherTool: ToolDefinition = {
         enum: ['celsius', 'fahrenheit'],
         description: 'Temperature units. Defaults to celsius.',
       },
-      /* eslint-enable camelcase */
     },
     required: ['location'],
   },
 };
 
-export const executeWeather: ToolExecutor = async (input) => {
+export const executeWeather: ToolExecutor = async input => {
   const location = (input.location as string) || 'Unknown';
   const units = (input.units as string) || 'celsius';
 
-  // Replace with real API call
+  // Replace with a real API call. `input` is untrusted: inputSchema shapes what the model sends, it does not enforce it.
   const result = {
     location,
     temperature: 18,
@@ -147,9 +142,9 @@ For tools that need to send messages directly to the client or suppress the AI's
 
 Open `src/orchestration/tools/index.ts` and add two lines:
 
-<!-- doc-block: none -- the registration call for the fictional tool defined earlier in this document -->
+<!-- doc-block: example/register-tool.ts#register -->
 ```typescript
-import {weatherTool, executeWeather} from './weatherTool.js';
+import {weatherTool, executeWeather} from './weather-tool.js';
 
 // ... existing registrations ...
 

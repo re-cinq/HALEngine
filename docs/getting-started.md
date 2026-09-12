@@ -48,7 +48,7 @@ This starts a server with:
 
 Tools let the AI fetch data or perform actions. Register them on the engine's `toolRegistry`:
 
-<!-- doc-block: none -- a worked tool for a fictional weather API, not a declaration this repository exports -->
+<!-- doc-block: example/with-tools.ts#with-tools -->
 ```typescript
 import {createHalEngine, ToolRegistry} from '@re-cinq/hal-engine';
 import type {ToolDefinition} from '@re-cinq/hal-engine';
@@ -88,10 +88,7 @@ const engine = createHalEngine({
   },
   tools: toolRegistry,
   auth: {
-    ws: async req => {
-      const user = await verifyToken(req.headers.authorization);
-      return user && {id: user.id};
-    },
+    ws: async req => verifyToken(req.headers.authorization),
   },
 });
 ```
@@ -100,15 +97,41 @@ const engine = createHalEngine({
 
 Here is every option available on `HalEngineConfig`:
 
-<!-- doc-block: none -- a composed configuration using a provider this repository cannot call in CI -->
+<!-- doc-block: example/full-config.ts#full-config -->
 ```typescript
+import {createHalEngine, InMemorySessionStore, ToolRegistry, log} from '@re-cinq/hal-engine';
+import type {AuthenticatedRequest, HttpAuthMiddleware, Logger, OrchestratorHooks} from '@re-cinq/hal-engine';
+
+const toolRegistry = new ToolRegistry();
+
+// Your own SessionStore goes here; InMemorySessionStore is the default and loses everything on restart.
+const sessionStore = new InMemorySessionStore();
+
+// The chat routes answer 401 until this attaches a user; authenticating without attaching one is the same to them.
+const authMiddleware: HttpAuthMiddleware = (req: AuthenticatedRequest, _res, next) => {
+  req.user = {id: 'user-1'};
+  next();
+};
+
+const hooks: OrchestratorHooks = {
+  beforeSession: async session => log.info('app', 'session opened', {sessionId: session.sessionId}),
+  beforeUserInput: async (_session, userMessage) => userMessage.trim(),
+  afterUserInput: async (_session, userMessage) => log.info('app', 'received', {length: userMessage.length}),
+  beforeModelResponse: async (_session, systemPrompt) => systemPrompt,
+  afterModelResponse: async (_session, _responseText, usage) => log.info('app', 'answered', {usage}),
+  afterSession: async session => log.info('app', 'session closed', {sessionId: session.sessionId}),
+  onError: async (_session, error) => log.error('app', 'orchestration failed', {error: error.message}),
+};
+
+const myLogger: Logger = log;
+
 const engine = createHalEngine({
   // REQUIRED: AI provider settings
   provider: {
-    type: 'bedrock',             // 'bedrock' | 'vertex' | 'openai' | 'anthropic' | 'mock'
+    type: 'bedrock', // 'bedrock' | 'vertex' | 'openai' | 'anthropic' | 'mock'
     region: 'eu-west-1',
     modelId: 'eu.anthropic.claude-sonnet-4-5-20250929-v1:0',
-    maxTokens: 4096,             // REQUIRED for bedrock
+    maxTokens: 4096, // REQUIRED for bedrock
   },
 
   // REQUIRED: System prompt configuration. Every field but `identity` is optional.
@@ -119,45 +142,44 @@ const engine = createHalEngine({
     toolPreamble: 'Replaces the built-in instructions telling the model when to call a tool.',
   },
 
-  // REQUIRED: Authentication
+  // REQUIRED: Authentication. `ws` receives the upgrade request; return null to reject it.
   auth: {
-    ws: async req => ({id: 'user-1'}),   // Receives the upgrade request; return null to reject
-    http: authMiddleware,                // Express middleware for the chat routes (401 without it)
+    ws: async () => ({id: 'user-1'}),
+    http: authMiddleware,
   },
 
   // OPTIONAL: Tool registry
   tools: toolRegistry,
 
   // OPTIONAL: Session store (defaults to InMemorySessionStore)
-  session: new RedisSessionStore(redisClient),
+  session: sessionStore,
 
   // OPTIONAL: Transport settings
   transport: {
-    port: 3000,
+    port: 8086, // 0 lets the OS choose; unset falls through to PORT, then 8086
     corsOrigin: ['https://example.com'],
-    basePath: '/hal',                // WebSocket path prefix (default '/hal')
-    heartbeatIntervalMs: 30000,      // Ping interval (default 30s)
+    // basePath defaults to '/hal' and the heartbeat to 30s.
+    basePath: '/hal',
+    heartbeatIntervalMs: 30_000,
   },
 
   // OPTIONAL: Orchestrator settings
   orchestrator: {
-    maxToolRounds: 5,                // Max tool execution rounds (default 5)
+    maxToolRounds: 5, // Max tool execution rounds (default 5)
     contextConfig: {
-      maxTokens: 100000,             // Context window limit
+      // How many messages are kept, and how much of each.
+      maxMessages: 50,
+      maxContentLength: 4000,
     },
-    hooks: {                         // Message lifecycle hooks; see below
-      beforeUserInput: async (session, message) => message.trim(),
-      onError: async (session, error) => report(error),
-    },
+    hooks,
   },
 
-  // OPTIONAL: Logger
+  // OPTIONAL: Logger. Process-wide, not per engine - see docs/logging.md.
   logger: myLogger,
 
-  // OPTIONAL: Lifecycle hooks. Fire-and-forget: never awaited, and a throw or
-  // rejection is logged and swallowed rather than dropping the connection.
-  onConnect: (session) => console.log(`Connected: ${session.sessionId}`),
-  onDisconnect: (sessionId) => console.log(`Disconnected: ${sessionId}`),
+  // OPTIONAL: Lifecycle hooks. Fire-and-forget: never awaited, and a throw is logged and swallowed.
+  onConnect: session => log.info('app', 'connected', {sessionId: session.sessionId}),
+  onDisconnect: sessionId => log.info('app', 'disconnected', {sessionId}),
 });
 ```
 
