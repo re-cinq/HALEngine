@@ -8,6 +8,10 @@
 # A committed script rather than an inline workflow step: a tag that has already
 # fired a publish cannot be un-pushed, so the check has to be runnable before the
 # tag exists.
+#
+# It also holds CHANGELOG.md to the version being tagged. check-changelog.sh only
+# asks that the file was touched, so the release rename was ungated and the
+# version shipped under a heading that never named it.
 set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -35,4 +39,11 @@ if [ "$tag" != "v$version" ]; then
   exit 1
 fi
 
-echo "check-version: OK - $tag matches package.json $version"
+# Keep a Changelog writes the released version as a `## [x.y.z]` heading, optionally dated.
+if ! grep -Eq "^## \\[${version//./\\.}\\]" "$repo/CHANGELOG.md"; then
+  echo "check-version: FAILED - CHANGELOG.md has no '## [$version]' heading" >&2
+  echo "check-version: rename '## [Unreleased]' to '## [$version]' and open a fresh one above it" >&2
+  exit 1
+fi
+
+echo "check-version: OK - $tag matches package.json $version, and CHANGELOG.md names it"

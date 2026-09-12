@@ -165,7 +165,16 @@ The repository has zero git tags. `0.1.0` was never tagged and never published, 
 
 - A `v*` tag triggers one publish job.
 - The job authenticates with npm Trusted Publishing over OIDC. No `NPM_TOKEN` secret exists in the repository after bootstrap.
-- A guard fails the job when the tag and the committed `package.json` version disagree. It is a committed script rather than an inline step, so a developer can run it before pushing a tag they cannot un-push.
+- A guard fails the job when the tag and the committed `package.json` version disagree. It is a committed script rather than an inline step, so a developer can run it before pushing a tag they cannot un-push ([validated by: refuses a tag that disagrees with the committed version](../../scripts/check-version.test.ts#L39)).
+- A matching tag is accepted ([validated by: accepts a tag that matches the version under a changelog heading naming it](../../scripts/check-version.test.ts#L35)).
+- A prerelease tag is refused, because nothing here passes `--tag` and one would publish as `latest` ([validated by: refuses a prerelease tag, because nothing here passes a dist-tag](../../scripts/check-version.test.ts#L43)).
+
+The same guard holds `CHANGELOG.md` to the version being tagged. `check-changelog.sh` asks only that the file was touched, so the release rename was ungated, and the version reached the registry under a heading that never named it.
+
+- A version the changelog never names is refused ([validated by: refuses a version the changelog never names](../../scripts/check-version.test.ts#L48)).
+- The report names the heading that is missing ([validated by: says which heading is missing rather than only that something is wrong](../../scripts/check-version.test.ts#L52)).
+- A heading matching the version only as a pattern does not satisfy it ([validated by: does not accept a heading that merely matches the version as a pattern](../../scripts/check-version.test.ts#L57)).
+- A heading carrying no date is accepted, which Keep a Changelog allows ([validated by: accepts a heading carrying no date, which Keep a Changelog allows](../../scripts/check-version.test.ts#L61)).
 - A guard fails the job when the tagged commit is not an ancestor of `origin/main`. A tag is pushable from any branch, so without it the protection on `main` is not the boundary the release rests on.
 - Whether the publish carries `--provenance` is decided by [ADR-007](../../adrs/ADR-007-repository-visibility.md), which makes the repository public, so it does. npm generates provenance only from a public source repository, and refuses it for any repository an unauthenticated client cannot read.
 - AGENTS.md gains a § Releasing section covering the four human steps: bump in the pull request, merge, tag `vX.Y.Z` on `main`, push the tag.
