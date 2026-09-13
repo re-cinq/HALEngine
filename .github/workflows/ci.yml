@@ -140,9 +140,11 @@ jobs:
       # label is the escape hatch for a src/ change nothing installable observes.
       - name: Changelog entry
         if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'no-changelog')
-        run: |
-          git fetch --quiet origin "${{ github.base_ref }}"
-          bash scripts/check-changelog.sh "origin/${{ github.base_ref }}"
+        # No fetch: the checkout above resolves every head into refs/remotes
+        # with fetch-depth 0, and its credential is gone by the time a step
+        # runs, so fetching here asked an unauthenticated git for a private
+        # repository and exited 128 before the gate was ever reached.
+        run: bash scripts/check-changelog.sh "origin/${{ github.base_ref }}"
 
   # Separate job, not a step on `verify`: these two check what the build chain
   # pulls in rather than what the code does, and a red audit should not read as
