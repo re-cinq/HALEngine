@@ -10,6 +10,21 @@ export const runScript = (script: string, args: string[], {cwd}: {cwd: string}):
   return {status: result.status, stdout: result.stdout, stderr: result.stderr};
 };
 
+// The shell gates are run through bash rather than node, and more than one test needs that.
+export const runBash = (
+  script: string,
+  args: string[],
+  {cwd, env}: {cwd: string; env?: NodeJS.ProcessEnv}
+): RunResult => {
+  const result = spawnSync('bash', [script, ...args], {
+    cwd,
+    encoding: 'utf8',
+    env: env ? {...process.env, ...env} : process.env,
+  });
+
+  return {status: result.status, stdout: result.stdout, stderr: result.stderr};
+};
+
 export const git = (repo: string, ...args: string[]): void => {
   execFileSync('git', args, {cwd: repo, stdio: 'ignore'});
 };

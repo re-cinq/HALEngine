@@ -13,7 +13,15 @@ set -uo pipefail
 
 base="${1:-origin/main}"
 
+# A base ref that does not resolve means nothing was compared. On a laptop that
+# is ordinary - a fresh clone has no origin/main - and skipping is right. In CI
+# it is the gate passing without running, which is the one outcome a gate must
+# never have, and it is exactly how a fetch that failed went unnoticed.
 if ! git rev-parse --verify --quiet "$base" >/dev/null; then
+  if [ -n "${GITHUB_ACTIONS:-}" ]; then
+    echo "check-changelog: FAILED - base ref '$base' does not resolve, so nothing was checked" >&2
+    exit 1
+  fi
   echo "check-changelog: base ref '$base' not found; skipping" >&2
   exit 0
 fi

@@ -191,16 +191,25 @@ The repository has zero git tags. `0.1.0` was never tagged and never published, 
 - The guard reads the committed version with `node -p "require('./package.json').version"` rather than by parsing the file, so it reads it the way npm will.
 - The job authenticates with npm Trusted Publishing over OIDC. No `NPM_TOKEN` secret exists in the repository after bootstrap.
 - `id-token: write` is scoped to the `publish` job rather than declared at workflow level, so the `verify` job - which runs the tests, the build and the packed-tarball smoke test - cannot mint an OIDC token at all. The issue specified a workflow-level pair; narrowing it costs nothing and removes a capability from every step that does not publish.
-- A guard fails the job when the tag and the committed `package.json` version disagree. It is a committed script rather than an inline step, so a developer can run it before pushing a tag they cannot un-push ([validated by: refuses a tag that disagrees with the committed version](../../scripts/check-version.test.ts#L39)).
-- A matching tag is accepted ([validated by: accepts a tag that matches the version under a changelog heading naming it](../../scripts/check-version.test.ts#L35)).
-- A prerelease tag is refused, because nothing here passes `--tag` and one would publish as `latest` ([validated by: refuses a prerelease tag, because nothing here passes a dist-tag](../../scripts/check-version.test.ts#L43)).
+- A guard fails the job when the tag and the committed `package.json` version disagree. It is a committed script rather than an inline step, so a developer can run it before pushing a tag they cannot un-push ([validated by: refuses a tag that disagrees with the committed version](../../scripts/check-version.test.ts#L36)).
+- A matching tag is accepted ([validated by: accepts a tag that matches the version under a changelog heading naming it](../../scripts/check-version.test.ts#L32)).
+- A prerelease tag is refused, because nothing here passes `--tag` and one would publish as `latest` ([validated by: refuses a prerelease tag, because nothing here passes a dist-tag](../../scripts/check-version.test.ts#L40)).
+
+A second gate, on the pull request rather than the tag, asks that a change a consumer can observe arrives with a sentence they can read. `check-changelog.sh` compares the branch against the base ref; the `no-changelog` label is the escape hatch, and it is a visible act rather than a silent omission.
+
+- A change to shipped source that updates the changelog is accepted ([validated by: accepts a change to shipped source that updates the changelog](../../scripts/check-changelog.test.ts#L49)).
+- One that leaves the changelog alone is refused ([validated by: refuses a change to shipped source that leaves the changelog alone](../../scripts/check-changelog.test.ts#L56)).
+- The report names the file that changed, so it says what to write about ([validated by: names the file that changed, so the report says what to write about](../../scripts/check-changelog.test.ts#L63)).
+- A change to a test under `src/` is accepted, because it ships nothing a consumer observes ([validated by: accepts a change to a test under src, which ships nothing a consumer observes](../../scripts/check-changelog.test.ts#L70)).
+- A base ref that does not resolve is skipped locally, where a fresh clone legitimately has no remote branch ([validated by: skips on a base ref that does not resolve, because a fresh clone has no remote branch](../../scripts/check-changelog.test.ts#L77)).
+- The same case fails in CI. Skipping there is the gate passing without running, which is how a fetch that failed went unnoticed for a whole pull request ([validated by: fails on an unresolvable base ref in CI, rather than passing a gate that never ran](../../scripts/check-changelog.test.ts#L81)).
 
 The same guard holds `CHANGELOG.md` to the version being tagged. `check-changelog.sh` asks only that the file was touched, so the release rename was ungated, and the version reached the registry under a heading that never named it.
 
-- A version the changelog never names is refused ([validated by: refuses a version the changelog never names](../../scripts/check-version.test.ts#L48)).
-- The report names the heading that is missing ([validated by: says which heading is missing rather than only that something is wrong](../../scripts/check-version.test.ts#L52)).
-- A heading matching the version only as a pattern does not satisfy it ([validated by: does not accept a heading that merely matches the version as a pattern](../../scripts/check-version.test.ts#L57)).
-- A heading carrying no date is accepted, which Keep a Changelog allows ([validated by: accepts a heading carrying no date, which Keep a Changelog allows](../../scripts/check-version.test.ts#L61)).
+- A version the changelog never names is refused ([validated by: refuses a version the changelog never names](../../scripts/check-version.test.ts#L45)).
+- The report names the heading that is missing ([validated by: says which heading is missing rather than only that something is wrong](../../scripts/check-version.test.ts#L49)).
+- A heading matching the version only as a pattern does not satisfy it ([validated by: does not accept a heading that merely matches the version as a pattern](../../scripts/check-version.test.ts#L54)).
+- A heading carrying no date is accepted, which Keep a Changelog allows ([validated by: accepts a heading carrying no date, which Keep a Changelog allows](../../scripts/check-version.test.ts#L58)).
 - A guard fails the job when the tagged commit is not an ancestor of `origin/main`. A tag is pushable from any branch, so without it the protection on `main` is not the boundary the release rests on.
 - Whether the publish carries `--provenance` is decided by [ADR-007](../../adrs/ADR-007-repository-visibility.md), which makes the repository public, so it does. npm generates provenance only from a public source repository, and refuses it for any repository an unauthenticated client cannot read.
 - AGENTS.md gains a § Releasing section covering the four human steps: bump in the pull request, merge, tag `vX.Y.Z` on `main`, push the tag.
