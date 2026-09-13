@@ -63,7 +63,7 @@
     "@types/express": "^5.0.0",
     "@types/node": "^26.5.1",
     "@types/ws": "^8.5.10",
-    "cookie": "^0.7.0",
+    "cookie": "^2.0.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "express": "^5.2.1",
