@@ -39,9 +39,16 @@ const harness = () => {
     return request(app);
   };
 
+  // Throws rather than asserts: setup that failed must name itself, not surface as a 404 from the guard.
   const chatOwnedBy = async (owner: TestUser | undefined): Promise<string> => {
     const created = await as(owner).post('/chats');
-    return (created.body as {id: string}).id;
+    const {id} = created.body as {id?: string};
+
+    if (created.status !== 201 || typeof id !== 'string') {
+      throw new Error(`setup: POST /chats answered ${created.status} with ${JSON.stringify(created.body)}`);
+    }
+
+    return id;
   };
 
   return {as, chatOwnedBy, processMessage};
@@ -118,13 +125,13 @@ describe('chat routes ownership guard', () => {
 
     // The workspace a chat was created in has to reach the tool context, two requests later.
     it('carries the creating user workspace through to the orchestrator', async () => {
-      const {as, processMessage} = harness();
+      const {as, chatOwnedBy, processMessage} = harness();
       const seen: ChatSession[] = [];
       processMessage.mockImplementation(async session => (seen.push(session as ChatSession), 'reply'));
-      const created = await as({id: 'alice', workspaceId: 'w-9'}).post('/chats');
-      const id = (created.body as {id: string}).id;
+      const owner: TestUser = {id: 'alice', workspaceId: 'w-9'};
+      const id = await chatOwnedBy(owner);
 
-      await as({id: 'alice', workspaceId: 'w-9'}).post(`/chats/${id}/messages`).send({content: 'hi'});
+      await as(owner).post(`/chats/${id}/messages`).send({content: 'hi'});
 
       expect(seen[0]?.workspaceId).toBe('w-9');
     });
@@ -200,6 +207,7 @@ describe('chat routes with no auth middleware', () => {
     const app = express();
     app.use(express.json());
     app.use('/chats', createChatRoutes({processMessage} as unknown as ChatOrchestrator, {} as SessionStore));
+
     return {app, processMessage};
   };
 
@@ -312,6 +320,7 @@ describe('what a refused chat request records', () => {
     const app = express();
     app.use(express.json());
     app.use('/chats', createChatRoutes({} as unknown as ChatOrchestrator, {} as SessionStore));
+
     return app;
   };
 
