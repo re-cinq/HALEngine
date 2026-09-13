@@ -121,6 +121,12 @@ export function createServer(options: HalServerOptions): HalServer {
         wss.clients.forEach(ws => ws.close(1001, 'Server shutting down'));
         wss.close();
         clearInterval(heartbeatInterval);
+
+        // Nothing to close after a refused start or a second stop: `close` would reject for a server that never ran.
+        if (!server.listening) {
+          resolve();
+          return;
+        }
         server.close(err => (err ? reject(err) : resolve()));
       }),
   };

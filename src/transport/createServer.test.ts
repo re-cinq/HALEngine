@@ -80,6 +80,17 @@ describe('a server error after start', () => {
     return hal;
   };
 
+  // A stopped engine and a port something else holds, so the next start is refused by the OS.
+  const refusedStart = async () => {
+    const hal = await started();
+    await hal.stop();
+    const blocker = net.createServer();
+    await new Promise<void>(resolve => blocker.listen(0, resolve));
+    const taken = (blocker.address() as net.AddressInfo).port;
+    const release = () => new Promise<void>(resolve => blocker.close(() => resolve()));
+    return {hal, taken, release};
+  };
+
   it('is reported rather than ending the process', async () => {
     const hal = await started();
 
@@ -110,16 +121,25 @@ describe('a server error after start', () => {
   });
 
   it('is not reported for a start that was cleanly refused, because nothing was running', async () => {
-    const hal = await started();
-    await hal.stop();
-    const blocker = net.createServer();
-    await new Promise<void>(resolve => blocker.listen(0, resolve));
-    const taken = (blocker.address() as net.AddressInfo).port;
+    const {hal, taken, release} = await refusedStart();
 
     await hal.start(taken).catch((error: NodeJS.ErrnoException) => engineLines.push(`rejected ${error.code}`));
-    await new Promise<void>(resolve => blocker.close(() => resolve()));
+    await release();
 
     expect(engineLines).toEqual(['HAL Engine started', 'rejected EADDRINUSE']);
+  });
+
+  it('stops cleanly after a refused start, so a finally block does not turn one failure into two', async () => {
+    const {hal, taken, release} = await refusedStart();
+    await hal.start(taken).catch(() => undefined);
+
+    const stopped = hal.stop().then(
+      () => 'resolved',
+      (error: NodeJS.ErrnoException) => `rejected ${error.code}`
+    );
+    await release();
+
+    await expect(stopped).resolves.toBe('resolved');
   });
 
   it('refuses a second start without stripping the running server of its handler', async () => {
