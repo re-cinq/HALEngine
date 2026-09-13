@@ -1,5 +1,10 @@
 blank_issues_enabled: true
 contact_links:
+  # The mailto link is first on purpose: the blob URL below resolves for nobody outside the
+  # organisation while this repository is not public, which is exactly when a reporter needs it.
   - name: Report a security vulnerability
+    url: mailto:security@re-cinq.com
+    about: Do not open a public issue. Report privately to security@re-cinq.com; see SECURITY.md for scope and timelines.
+  - name: Security policy (scope, timelines, supported versions)
     url: https://github.com/re-cinq/HALEngine/blob/main/SECURITY.md
-    about: Do not open a public issue. Report privately to security@re-cinq.com.
+    about: Requires access to this repository while it is not public. The address above does not.

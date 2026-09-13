@@ -8,11 +8,17 @@ Do not open a public GitHub issue for a vulnerability. A public report tells an 
 
 Report privately to **security@re-cinq.com**. Include the package version, the provider in use if the defect is provider-specific, and the smallest reproduction you have — a WebSocket frame, a tool definition, or a configuration is worth more than a prose description.
 
-The address is also in this package's `bugs` metadata, so it reaches you from `npm view @re-cinq/hal-engine bugs` without needing access to this repository.
+The address is also in this package's `bugs` metadata, so it reaches you from `npm view @re-cinq/hal-engine bugs` without needing access to this repository. That matters more than it looks: while this repository is not public, a link into it resolves for nobody outside the organisation, so the address is the route that always works.
+
+The mailbox is monitored by the package maintainers — a role rather than a named individual, so a report does not wait on one person's calendar, and whoever is on it acknowledges.
+
+It accepts plaintext. We publish no key, so do not encrypt: an encrypted report we cannot open is a report that arrives nowhere. Send the smallest reproduction rather than a working exploit, and say plainly if you believe the defect is being exploited.
 
 ## What to expect
 
 We aim to acknowledge a report within **48 hours**.
+
+A report that indicates active exploitation is escalated immediately by whichever maintainer acknowledges it, to the re:cinq security contact at the same address, who decides whether a regulatory clock has started. Under NIS-2 an early warning is due within 24 hours of becoming aware of a significant incident, so that decision is made on acknowledgement rather than after triage.
 
 We coordinate disclosure: please give us a reasonable window to ship a fix before publishing details, and we will credit you in the release notes unless you ask us not to.
 
