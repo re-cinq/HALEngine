@@ -380,8 +380,9 @@ For new provider support:
   commit subject have different readers
 
 ### Releasing
-- Four human steps: bump `version` in `package.json` inside the pull request,
-  merge it, tag `vX.Y.Z` on `main`, push the tag. Everything after the tag is CI
+- Five human steps: bump `version` in `package.json` inside the pull request,
+  merge it, tag `vX.Y.Z` on `main`, push the tag, approve the staged version.
+  Everything between the tag and the approval is CI
 - Release notes are hand-written on Keep a Changelog 1.1.0, not generated from
   commit subjects. The audience is somebody installing the package, who cannot
   act on `refactor(transport):` and needs to know what changed for them
@@ -409,6 +410,12 @@ For new provider support:
   re-registered
 - The publish carries `--provenance`, which is available only because ADR-007
   makes the source repository public
+- The publish is staged. The workflow puts the tarball, its dist-tag and its
+  provenance on the registry, and the version stays uninstallable until a
+  maintainer approves it with 2FA - the package page's Versions tab, or
+  `npm stage list` then `npm stage approve <id>`. A staged version nobody
+  approves reaches nobody, which is the closest thing to an undo that exists
+  once a tag has fired
 
 ### Breaking Changes
 - MUST be discussed in issue before implementation
