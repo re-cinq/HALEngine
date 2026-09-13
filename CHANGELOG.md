@@ -88,9 +88,11 @@ path from `0.1.0` on the registry — only from the git specifier.
 - `AuthenticatedRequest` is exported from the package root: `Request` plus an optional `user`, for typing
   the `auth.http` middleware you supply. `HttpAuthMiddleware` is stated in its terms rather than as a bare
   Express `RequestHandler`.
-- Every published version carries an npm provenance attestation, so you can verify with
-  `npm audit signatures` that the tarball was built by this repository's release workflow from the
-  commit the version was tagged at, rather than uploaded by whoever held a token.
+- Provenance. This is the first version on the registry, and it and every version after it carry an npm
+  provenance attestation: `npm audit signatures` verifies that the tarball was built by this repository's
+  release workflow from the commit the version was tagged at, rather than uploaded by whoever held a
+  token. It is attestable because the source repository is public, which [ADR-007](adrs/ADR-007-repository-visibility.md)
+  decided and gives the reasoning for.
 
 ### Removed
 

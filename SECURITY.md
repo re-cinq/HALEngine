@@ -8,7 +8,7 @@ Do not open a public GitHub issue for a vulnerability. A public report tells an 
 
 Report privately to **security@re-cinq.com**. Include the package version, the provider in use if the defect is provider-specific, and the smallest reproduction you have — a WebSocket frame, a tool definition, or a configuration is worth more than a prose description.
 
-The address is also in this package's `bugs` metadata, so it reaches you from `npm view @re-cinq/hal-engine bugs` without needing access to this repository. That matters more than it looks: while this repository is not public, a link into it resolves for nobody outside the organisation, so the address is the route that always works.
+The address is also in this package's `bugs` metadata, so it reaches you from `npm view @re-cinq/hal-engine bugs` without needing to open this repository at all. That is deliberate: a reporter who has only installed the package can find where to send a report without first finding the repository.
 
 The mailbox is monitored by the package maintainers — a role rather than a named individual, so a report does not wait on one person's calendar, and whoever is on it acknowledges.
 

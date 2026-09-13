@@ -13,7 +13,7 @@ domains:
 
 # ADR-007: The source repository is public so releases carry provenance
 
-This ADR records that this repository becomes public, and states the rule a later package should read rather than re-derive: a package published to the public registry from this scope is published with provenance, and a provenance attestation requires a publicly resolvable source repository. The decision is accepted and not yet implemented - the repository is `internal` at the time of writing, and the flip is a prerequisite of the first release rather than a step inside it.
+This ADR records that this repository is public, and states the rule a later package should read rather than re-derive: a package published to the public registry from this scope is published with provenance, and a provenance attestation requires a publicly resolvable source repository. The repository was `internal` when this was written; the flip was carried out as a prerequisite of the first release rather than as a step inside it, which is why the measurements below record the state before it.
 
 ## Context
 
@@ -23,7 +23,7 @@ Provenance is not indifferent. `npm publish --provenance` produces a signed atte
 
 Where that requirement is written down matters, because it is not where you would look. npm's own page on the subject, [Generating provenance statements](https://docs.npmjs.com/generating-provenance-statements), read 2026-09-13, lists the prerequisite only as "Ensure your `package.json` is configured with a public `repository`" and describes the result as "a verifiable link to the package's source code and build instructions". It does not state a visibility requirement in those words, and it does not enumerate what the attestation records. The requirement is enforced by the CLI and the registry rather than documented there, which is why this ADR records the measurement below instead of citing a sentence.
 
-The asymmetry, measured against this repository on 2026-09-13:
+The asymmetry, measured against this repository on 2026-09-13, while it was still `internal` - the point of recording it is that the first two commands answer differently now:
 
 ```
 $ curl -s -o /dev/null -w '%{http_code}\n' https://api.github.com/repos/re-cinq/HALEngine
@@ -38,7 +38,7 @@ $ git ls-remote origin HEAD          # authenticated, over ssh
 
 One trap in taking that measurement, found while taking it. A `url.git@github.com:.insteadof https://github.com` entry in a developer's git config rewrites the HTTPS URL to SSH before it leaves the machine, so `git ls-remote https://…` succeeds on an unreadable repository and appears to prove the opposite of the truth. The unauthenticated API call has no such rewrite and is the check to trust. So the two are separable: tokenless publishing is available now, and provenance is available only at the cost of visibility. The release workflow therefore either carries the flag or it does not, and cannot be finished until that is settled.
 
-The repository is currently `internal`, not private. Both are equivalent for this decision - neither is publicly resolvable, so neither can carry provenance - but the distinction matters to the size of the change: the code is already readable across the enterprise, and going public widens the audience rather than opening a closed repository for the first time.
+The repository was `internal` rather than private when this was decided. Both are equivalent for this decision - neither is publicly resolvable, so neither can carry provenance - but the distinction matters to the size of the change: the code is already readable across the enterprise, and going public widens the audience rather than opening a closed repository for the first time.
 
 ## Decision
 
@@ -75,7 +75,7 @@ Against that cost, provenance buys a consumer something they cannot otherwise ge
 
 - T011 carries `--provenance`; T031's first publish is attested, and the attestation is visible on the registry listing. This ADR is what unblocks both.
 - A consumer verifies the result with `npm audit signatures`, which reports how many installed packages carry a verified registry signature and how many carry a verified attestation. That command is the whole consumer-facing benefit of this decision: without a public repository there is no attestation for it to verify, and it reports the package as unattested.
-- Secret scanning and push protection become available and are enabled by default, which is the backstop against the next accidental credential reaching a repository anyone can read. They are unavailable while the repository is `internal`.
+- Secret scanning and push protection become available, and are the backstop against the next accidental credential reaching a repository anyone can read. They are unavailable to an `internal` repository, so enabling them is part of the flip and not something to assume happened: the other public repositories in this scope do not agree on which of the two is on, which is evidence enough that no org-wide default is doing it for us.
 - A pull request from a fork receives no repository secrets and a read-only token whatever a workflow's `permissions` block requests. The workflows already account for this; a contributor-facing note is T033's.
 - Push access to `main` becomes, transitively, the ability to publish under this scope, because OIDC leaves no stored credential to revoke. Branch protection is the lock and T032 is the alarm behind it; both are dependencies of T031 rather than improvements on it.
 - The issue record, the specs and the ADRs - this one included - become public. They are written to be read.
