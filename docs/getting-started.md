@@ -99,6 +99,7 @@ Here is every option available on `HalEngineConfig`:
 
 <!-- doc-block: example/full-config.ts#full-config -->
 ```typescript
+import process from 'node:process';
 import {createHalEngine, InMemorySessionStore, ToolRegistry, log} from '@re-cinq/hal-engine';
 import type {AuthenticatedRequest, HttpAuthMiddleware, Logger, OrchestratorHooks} from '@re-cinq/hal-engine';
 
@@ -123,7 +124,14 @@ const hooks: OrchestratorHooks = {
   onError: async (_session, error) => log.error('app', 'orchestration failed', {error: error.message}),
 };
 
-const myLogger: Logger = log;
+// A Logger of your own; this one writes plain lines to stderr. Passing `log` itself here is treated as passing none.
+const line = (level: string, category: string, message: string) => `${level} ${category}: ${message}\n`;
+const myLogger: Logger = {
+  debug: (category, message) => process.stderr.write(line('debug', category, message)),
+  info: (category, message) => process.stderr.write(line('info', category, message)),
+  warn: (category, message) => process.stderr.write(line('warn', category, message)),
+  error: (category, message) => process.stderr.write(line('error', category, message)),
+};
 
 const engine = createHalEngine({
   // REQUIRED: AI provider settings

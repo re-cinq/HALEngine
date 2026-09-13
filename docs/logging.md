@@ -49,7 +49,7 @@ The split matters where the collector has no JSON parser in front of it: a conta
 
 ## Supplying your own
 
-Pass `logger` in `HalEngineConfig` and every line above goes to your implementation instead of the console, called with the three arguments the `Logger` interface declares -- `category`, `message`, and the optional fields object. `setLogger` is exported too, for an engine you assemble by hand or to put the built-in logger back: calling it with no argument restores the console one.
+Pass `logger` in `HalEngineConfig` and every line above goes to your implementation instead of the console, called with the three arguments the `Logger` interface declares -- `category`, `message`, and the optional fields object. `setLogger` is exported too, for an engine you assemble by hand or to put the built-in logger back: calling it with no argument restores the console one, and so does passing the package's own `log` object, which would otherwise delegate to itself.
 
 `LOG_LEVEL` gates your logger exactly as it gates the built-in one. The threshold is tested once, before dispatch, so a level below it never reaches you at all.
 

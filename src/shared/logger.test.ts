@@ -184,6 +184,16 @@ describe('swapping the logger', () => {
 
     expect(sink.out.length).toBe(1);
   });
+
+  it('treats being handed its own log object as nothing, rather than recursing until no line is written', () => {
+    const sink = capture();
+    setLogger(log);
+
+    log.info('ws', 'connected');
+    sink.restore();
+
+    expect(sink.out.length).toBe(1);
+  });
 });
 
 // A supplied logger is reached through the same gate as the built-in one; the earlier delegation bypassed both.

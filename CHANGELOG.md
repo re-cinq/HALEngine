@@ -8,6 +8,14 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+### Fixed
+
+- `setLogger(log)` and `logger: log` in `HalEngineConfig` no longer silence the engine. Handing the package's
+  own `log` object back to it made every call recurse until the stack ran out, and the overflow was swallowed,
+  so nothing was written and nothing failed. It is now treated as passing no logger: the console one is used.
+  The full configuration example did exactly this; it now shows a logger of its own.
+
+
 ## [0.2.0] - 2026-09-12
 
 First release under the `@re-cinq` scope. Nothing has been published before it, so there is no upgrade

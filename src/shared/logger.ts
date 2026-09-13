@@ -84,7 +84,8 @@ let active: Logger = consoleLogger;
 
 // Process-global by design: every module that logs imports `log` at module scope, so there is one.
 export function setLogger(logger?: Logger): void {
-  active = logger ?? consoleLogger;
+  // Handed `log` itself, the delegate below would call itself until the stack ran out, so that reads as none.
+  active = logger === undefined || logger === log ? consoleLogger : logger;
 }
 
 // The one place a level is tested, so LOG_LEVEL gates a supplied logger exactly as it gates the built-in one.
