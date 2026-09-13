@@ -42,6 +42,15 @@ Spike documents are covered differently. A spike records what was believed when 
 - A spike block that names a source is reported ([validated by: refuses a spike block that names a source](../../scripts/check-doc-blocks.test.ts#L174)).
 - An explicit opt-out marker is still accepted, saying per block what the file says once ([validated by: accepts an explicit opt-out marker, which says the same thing the file already says](../../scripts/check-doc-blocks.test.ts#L180)).
 
+## The documented pre-commit set is the one CI runs
+
+`AGENTS.md` and `CONTRIBUTING.md` both told a contributor to run seven commands and called that "the blocking set CI runs, in the same order". CI's `verify` job blocks on sixteen steps. Four of them appeared in neither document and two were described as optional, so following the contributing guide exactly could still leave a pull request red on a gate nobody had mentioned. Both documents now name one script, and the script is compared against the workflow.
+
+- `npm run verify` runs every `npm run` step of the `verify` job, in the workflow's order ([validated by: runs every npm script the CI verify job runs, in the same order](../../scripts/verify-script.test.ts#L36)).
+- Every script it names exists, so a rename fails in the suite rather than under a contributor ([validated by: names scripts that exist, so a rename fails here rather than at the contributor](../../scripts/verify-script.test.ts#L40)).
+
+Two steps of that job are deliberately outside the script: the spec anchor check and the changelog check both diff against `origin/main`, and neither behaves the same on a checkout as it does against a pull request's base.
+
 ## Paths in prose resolve
 
 `npm run docs:check-paths` resolves every backticked repository path written in a document - `src/`, `scripts/`, `example/`, `smoke/`, `docs/`, `specs/`, `adrs/`, `dist/`, `.github/` and `.specify/`. A path that legitimately does not resolve is named in the script's own allowlist with the reason, because an exception has to be written down to be one; narrowing the pattern instead would hide every other path behind the same prefix. A path in prose is a citation, and a citation nobody resolves rots in silence: the file moves, the sentence naming it stays, and the next reader follows it to nothing.

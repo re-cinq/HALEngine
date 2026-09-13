@@ -53,6 +53,8 @@
     "docs:check-spikes": "node scripts/check-spike-status.mjs",
     "check:regions": "node scripts/check-doc-regions.mjs",
     "docs:fix": "node scripts/check-doc-blocks.mjs --fix",
+    "verify": "npm run typecheck && npm run typecheck:example && npm run eslint && npm run lint:backlog && npm run prettier:check && npm run test:coverage && npm run build && npm run docs:check && npm run docs:check-paths && npm run docs:check-spikes && npm run check:regions && npm run spec:names && npm run check:spec-links && npm run check:spec-status",
+    "lint": "npm run eslint",
     "check:build-chain": "npm run check:audit && npm run check:action-pins",
     "prettier": "prettier --write \"{src,scripts,smoke}/**/*.ts\"",
     "prettier:check": "prettier --check \"{src,scripts,smoke}/**/*.ts\""

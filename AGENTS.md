@@ -49,16 +49,19 @@ npm run prettier:check  # Check formatting without writing
 
 ### All Checks (Recommended Pre-Commit)
 ```bash
-npm run typecheck && npm run typecheck:example && npm run eslint && npm run prettier:check && \
-  npm run docs:check && npm test && npm run build
+npm run verify
 ```
 
-That is the blocking set CI runs on every pull request, in the same order. Three
-further gates run there and are worth running locally before a release or a
-change that touches packaging: `npm run check:build-chain` (audit and action
-pins), `npm run smoke` (packs the tarball and installs it outside this tree), and
-`npm run check:spec-links` with `npm run check:spec-status` for a change that
-touches `specs/`.
+That is the blocking set `.github/workflows/ci.yml`'s `verify` job runs on every
+pull request, in the same order, and `scripts/verify-script.test.ts` fails if the
+two stop agreeing - so this command cannot quietly become a subset of what CI
+demands. Two gates in that job are missing from it because both diff against
+`origin/main` and neither runs the same way on a checkout: the spec anchor check
+and the changelog check.
+
+Two further CI jobs are worth running locally before a release or a change that
+touches packaging: `npm run check:build-chain` (audit and action pins) and
+`npm run smoke` (packs the tarball and installs it outside this tree).
 
 ## Spec Header Table
 
@@ -269,8 +272,13 @@ Brief summary of changes and rationale.
 ```
 
 ### Acceptance Criteria
-- [ ] All GitHub Actions CI checks pass (typecheck, eslint, prettier, test, build)
-- [ ] At least one approval from codeowner
+- [ ] All GitHub Actions CI checks pass. `.github/workflows/ci.yml` is three
+      jobs - `verify` (sixteen steps, of which `npm run verify` reproduces
+      fourteen), `build-chain` (audit, action pins) and `smoke` (packed tarball,
+      both peer variants)
+- [ ] Reviewed by somebody other than the author. `main` requires a pull request
+      but is configured for zero required approvals and carries no `CODEOWNERS`,
+      so this one is convention rather than a gate
 - [ ] No merge conflicts
 - [ ] Commit messages follow conventional format
 - [ ] Tests cover new functionality (aim for >80% coverage on modified files)
@@ -316,7 +324,11 @@ For new provider support:
 ### Testing
 - Jest configuration: `jest.config.js`
 - ts-jest for TypeScript support
-- Minimum coverage: 70% lines for new code
+- Minimum coverage: 70% lines for new code. That is review guidance; the gate is
+  `coverageThreshold` in `jest.config.js`, set to what each path measured rather
+  than to a flat 70, which had handed four groups an 18-30 point regression budget
+- The floors ratchet: raise one when coverage rises, never lower one to make a
+  change pass. A floor that moves down is a regression with the alarm switched off
 - All public APIs require at least one test
 - Async code must have proper await/done handling
 
@@ -370,8 +382,12 @@ For new provider support:
 ### Releasing
 - Four human steps: bump `version` in `package.json` inside the pull request,
   merge it, tag `vX.Y.Z` on `main`, push the tag. Everything after the tag is CI
+- Release notes are hand-written on Keep a Changelog 1.1.0, not generated from
+  commit subjects. The audience is somebody installing the package, who cannot
+  act on `refactor(transport):` and needs to know what changed for them
 - Rename `CHANGELOG.md`'s `## [Unreleased]` heading to the version being
-  released in that same pull request, and open a fresh `## [Unreleased]` above it
+  released in that same pull request, and open a fresh `## [Unreleased]` above it.
+  `npm run check:version -- vX.Y.Z` fails if the heading does not name the version
 - Run `npm run check:version -- vX.Y.Z` before pushing the tag. A tag can be
   deleted; a published version cannot be replaced, and after 72 hours cannot be
   withdrawn
@@ -399,6 +415,9 @@ For new provider support:
 - MUST include migration guide in PR
 - MUST increment MINOR version (semver)
 - MUST update README quick start example if API changes
+- MUST publish the migration guide as a `### Changed` entry in `CHANGELOG.md` as
+  well as in the pull request: the PR is where reviewers read it, the changelog is
+  where the consumer it affects reads it
 - MUST add deprecation period (1 minor version) when possible. The unit is a
   published registry version and the audience is a consumer resolving one:
   a deprecation runs from the version that announces it to the version that

@@ -8,11 +8,12 @@ Thanks for looking. This file is the short version: what to run, what will fail,
 
 ```bash
 npm ci
-npm run typecheck && npm run typecheck:example && npm run eslint && npm run prettier:check && \
-  npm run docs:check && npm test && npm run build
+npm run verify
 ```
 
-That is the blocking set CI runs, in the same order. Two more run in CI and are worth running locally when you have touched packaging or dependencies: `npm run check:build-chain` and `npm run smoke`.
+That is the blocking set CI's `verify` job runs, in the same order. It is not a copy of that list — `scripts/verify-script.test.ts` compares the two and fails if they drift, so following this cannot leave you red on something nobody told you about. Two of that job's steps are missing from it, both because they diff against `origin/main` and neither behaves the same on a checkout: the spec anchor check and the changelog check.
+
+Two further CI jobs are worth running locally when you have touched packaging or dependencies: `npm run check:build-chain` and `npm run smoke`.
 
 `npm run eslint` is `--max-warnings 0`. A warning fails the build, including an `eslint-disable` directive that has stopped suppressing anything.
 
@@ -24,7 +25,7 @@ That is the blocking set CI runs, in the same order. Two more run in CI and are 
 
 **Test traceability.** `re-lint/require-spec-link` wants every test to be cited from a spec or ADR, as `([validated by](path/to/test.ts#L12))` in the statement it validates. A test that validates nothing a spec claims is asking whether it belongs in the traceable suite.
 
-**Documented code blocks.** Every fenced `typescript` block in the ten documents `scripts/check-doc-blocks.mjs` covers carries a marker naming where it comes from — an exported declaration, or a `#region` in a compiled file under `example/`. Run `npm run docs:fix` to regenerate, and read the diff: it will happily delete an annotation the type cannot express. A block that genuinely cannot be generated carries `none -- reason`, and an empty reason fails.
+**Documented code blocks.** Every fenced `typescript` block in the ten documents `scripts/check-doc-blocks.mjs` covers (spikes are covered separately: their blocks are opted out wholesale, and one that names a source is reported) carries a marker naming where it comes from — an exported declaration, or a `#region` in a compiled file under `example/`. Run `npm run docs:fix` to regenerate, and read the diff: it will happily delete an annotation the type cannot express. A block that genuinely cannot be generated carries `none -- reason`, and an empty reason fails.
 
 **Changelog.** A pull request that touches non-test files under `src/` must also touch `CHANGELOG.md`. Entries are written for somebody installing the package, not for somebody reading the commit log. The `no-changelog` label is the escape hatch for a change nothing installable can observe, and applying it is a visible act.
 
