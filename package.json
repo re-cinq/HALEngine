@@ -67,7 +67,7 @@
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "express": "^5.2.1",
-    "uuid": "^9.0.0",
+    "uuid": "^14.0.2",
     "ws": "^8.16.0"
   },
   "peerDependencies": {
