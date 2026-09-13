@@ -11,9 +11,16 @@ name: Publish
 # refuses an attestation whose source repository an unauthenticated client
 # cannot resolve.
 #
+# The publish is staged rather than direct. The tarball, its dist-tag and its
+# provenance all reach the registry, but the version is not installable until a
+# maintainer approves the stage with 2FA - the package page's Versions tab, or
+# `npm stage list` then `npm stage approve <id>`. Nothing this workflow can do
+# makes a version installable on its own, which is the only brake there is on
+# the one step here that cannot be undone.
+#
 # Three preconditions, all of which fail closed rather than publishing wrongly:
-#   1. npm >= 11.5.1. Trusted publishing does not exist before it, and Node 22
-#      ships an older npm, so the publish job installs it explicitly.
+#   1. npm >= 11.15.0. Trusted publishing needs 11.5.1 and `npm stage` needs
+#      11.15.0, and Node 22 ships an older npm, so the job installs it.
 #   2. The repository is public. Until it is, --provenance fails here.
 #   3. A trusted publisher exists for this name. It cannot, before the first
 #      publish: npm has nothing to attach one to. The first release therefore
@@ -170,11 +177,11 @@ jobs:
           cache: npm
           registry-url: 'https://registry.npmjs.org'
 
-      # Trusted publishing needs npm >= 11.5.1 and Node 22 ships an older npm. Pinned to the 11.x
-      # line rather than `latest`: this is the one job holding id-token: write, and `latest` lets a
-      # major nobody here has run decide how the publish behaves.
-      - name: Upgrade npm for OIDC trusted publishing
-        run: npm install -g npm@^11.5.1
+      # Trusted publishing needs npm >= 11.5.1, `npm stage` needs >= 11.15.0, and Node 22 ships an
+      # older npm. Pinned to the 11.x line rather than `latest`: this is the one job holding
+      # id-token: write, and `latest` lets a major nobody here has run decide how the publish behaves.
+      - name: Upgrade npm for OIDC trusted publishing and staging
+        run: npm install -g npm@^11.15.0
 
       - name: Install (no build)
         run: npm ci --ignore-scripts
@@ -188,6 +195,18 @@ jobs:
         run: npm run build
 
       # --ignore-scripts so `prepare` does not rebuild: what ships is the tree
-      # the step above produced, not a second build of it.
-      - name: Publish
-        run: npm publish --access public --provenance --ignore-scripts
+      # the step above produced, not a second build of it. pipefail so a failed
+      # stage is not masked by the tee that feeds the job summary.
+      - name: Stage the version on npm
+        run: |
+          set -o pipefail
+          npm stage publish --access public --provenance --ignore-scripts 2>&1 | tee stage.log
+          {
+            echo "## Staged - a maintainer must approve it before anyone can install it"
+            echo
+            echo "The package page's Versions tab -> Approve, with 2FA. Or: \`npm stage list\`, then \`npm stage approve <id>\`."
+            echo
+            echo '```'
+            cat stage.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
