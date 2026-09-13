@@ -89,6 +89,12 @@ export function createServer(options: HalServerOptions): HalServer {
     wss,
     start: (port?: number) =>
       new Promise<void>((resolve, reject) => {
+        // Refused before the handlers are touched: `listen` throws on a running server, and the swap below stripped its handler.
+        if (server.listening) {
+          reject(new Error('HAL Engine is already started'));
+          return;
+        }
+
         // ?? not ||, so a configured port 0 means "let the OS choose" rather than 8086.
         const p = port ?? options.port ?? (Number(process.env.PORT) || 8086);
 

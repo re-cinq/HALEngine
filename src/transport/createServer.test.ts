@@ -121,4 +121,18 @@ describe('a server error after start', () => {
 
     expect(engineLines).toEqual(['HAL Engine started', 'rejected EADDRINUSE']);
   });
+
+  it('refuses a second start without stripping the running server of its handler', async () => {
+    const hal = await started();
+
+    await hal.start(0).catch((error: Error) => engineLines.push(`rejected ${error.message}`));
+    hal.server.emit('error', new Error('after the refused start'));
+    await hal.stop();
+
+    expect(engineLines).toEqual([
+      'HAL Engine started',
+      'rejected HAL Engine is already started',
+      'server error after start',
+    ]);
+  });
 });
