@@ -51,6 +51,18 @@ describe('the websocket connection handler', () => {
       expect({calls: seen.length, sessionId: seen[0]?.sessionId}).toEqual({calls: 1, sessionId: frame.sessionId});
     });
 
+    // A REST chat id is not a socket session id: the socket mints its own, so neither can be guessed
+    it('mints a fresh session id per connection rather than reusing one', async () => {
+      const first = harness();
+      const second = harness();
+
+      first.connect();
+      second.connect();
+
+      const id = (raw: string) => (JSON.parse(raw) as {sessionId: string}).sessionId;
+      expect(id(first.sent[0]) === id(second.sent[0])).toBe(false);
+    });
+
     it('runs after the connected frame is sent, not before it', async () => {
       const order: string[] = [];
       const {connect, sent} = harness({onConnect: () => void order.push('hook')});

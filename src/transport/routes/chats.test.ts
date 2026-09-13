@@ -7,6 +7,7 @@ import type {AuthenticatedUser} from '../../types/session.js';
 import {setLogger} from '../../shared/logger.js';
 import type {ChatOrchestrator} from '../../orchestration/chatOrchestrator.js';
 import type {SessionStore} from '../../types/sessionStore.js';
+import type {ChatSession} from '../../types/session.js';
 
 // Pins the ownership guard, including that a rejected request stops before the route's work.
 
@@ -99,6 +100,33 @@ describe('chat routes ownership guard', () => {
       const response = await as({id: '1'}).get(`/chats/${id}`);
 
       expect(response.status).toBe(403);
+    });
+  });
+
+  describe('POST /chats', () => {
+    // The response body is the contract a client destructures; an extra key is a leak, a missing one breaks it.
+    it('answers 201 with exactly an id and a createdAt', async () => {
+      const {as} = harness();
+
+      const response = await as(ALICE).post('/chats');
+
+      expect({status: response.status, keys: Object.keys(response.body as object).sort()}).toEqual({
+        status: 201,
+        keys: ['createdAt', 'id'],
+      });
+    });
+
+    // The workspace a chat was created in has to reach the tool context, two requests later.
+    it('carries the creating user workspace through to the orchestrator', async () => {
+      const {as, processMessage} = harness();
+      const seen: ChatSession[] = [];
+      processMessage.mockImplementation(async session => (seen.push(session as ChatSession), 'reply'));
+      const created = await as({id: 'alice', workspaceId: 'w-9'}).post('/chats');
+      const id = (created.body as {id: string}).id;
+
+      await as({id: 'alice', workspaceId: 'w-9'}).post(`/chats/${id}/messages`).send({content: 'hi'});
+
+      expect(seen[0]?.workspaceId).toBe('w-9');
     });
   });
 

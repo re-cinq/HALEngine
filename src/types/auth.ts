@@ -7,5 +7,5 @@ export type WsAuthenticator = (req: IncomingMessage) => Promise<AuthenticatedUse
 // `user` is optional because middleware can run and attach nothing; that case is denied at the route, not here.
 export type AuthenticatedRequest<P = Request['params']> = Request<P> & {user?: AuthenticatedUser};
 
-// Stated in terms of what it must produce, not just as a RequestHandler: attach `user`, or the routes answer 401.
-export type HttpAuthMiddleware = (req: AuthenticatedRequest, res: Response, next: NextFunction) => void | Promise<void>;
+// Attach `user` or the routes answer 401; the return is `unknown` because Express declares it so.
+export type HttpAuthMiddleware = (req: AuthenticatedRequest, res: Response, next: NextFunction) => unknown;

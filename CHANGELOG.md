@@ -148,6 +148,11 @@ path from `0.1.0` on the registry — only from the git specifier.
 - Consumers can type-check against the published declarations. `@types/express`, `@types/node` and
   `@types/ws` are runtime dependencies now; the emitted `.d.ts` files import `express`, `http`, `stream`
   and `ws`, so with those packages dev-only a consumer resolved the runtime and then failed to compile.
+- An Express `RequestHandler` can be assigned to `HttpAuthMiddleware`. The option was declared returning
+  `void | Promise<void>` while Express declares its handlers `unknown`, so every middleware a consumer
+  already had was refused by `tsc` and had to be re-typed or cast. The return is `unknown` now; nothing
+  reads it.
+
 - `createProvider({type: 'mock', structuredResponses})` now honours `structuredResponses`. It previously
   dropped the configuration, so the same config object behaved differently through `createProvider` than
   through `createMockProvider`. Note that the map configures `generateStructured`, which nothing inside
