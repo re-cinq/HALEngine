@@ -104,10 +104,13 @@ path from `0.1.0` on the registry — only from the git specifier.
   the `auth.http` middleware you supply. `HttpAuthMiddleware` is stated in its terms rather than as a bare
   Express `RequestHandler`.
 - Provenance. This is the first version on the registry, and it and every version after it carry an npm
-  provenance attestation: `npm audit signatures` verifies that the tarball was built by this repository's
-  release workflow from the commit the version was tagged at, rather than uploaded by whoever held a
-  token. It is attestable because the source repository is public, which [ADR-007](adrs/ADR-007-repository-visibility.md)
-  decided and gives the reasoning for.
+  provenance attestation: `npm audit signatures` verifies that the tarball was built by a workflow in this
+  repository's CI from the commit the attestation names, rather than uploaded by whoever held a token. This
+  version is the one exception to how the rest are made: a name that has never been published cannot hold
+  a trusted publisher, so `0.2.0` was published by a single-use workflow started by hand, and every version
+  after it is published by the release workflow from a `v*` tag with no token anywhere. It is attestable
+  because the source repository is public, which [ADR-007](adrs/ADR-007-repository-visibility.md) decided
+  and gives the reasoning for.
 
 ### Removed
 

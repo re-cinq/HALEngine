@@ -236,7 +236,7 @@ test(tools): add registry conflict detection
 ### Before Opening
 1. Run full check suite and ensure all pass:
    ```bash
-   npm run typecheck && npm run eslint && npm run prettier:check && npm test && npm run build
+   npm run verify
    ```
 2. Create a feature branch from `main`: `git checkout -b feat/description`
 3. Commit with conventional format

@@ -49,9 +49,10 @@ jobs:
       - name: Install
         run: npm ci --ignore-scripts
 
-      # These five are the pre-commit sequence AGENTS.md documents, run in the
-      # same order and kept as separate steps so a red run names the gate that
-      # failed rather than a single opaque command.
+      # Every `npm run` step below is one link of the `verify` script in
+      # package.json, in the same order - scripts/verify-script.test.ts holds
+      # the two together - and kept as separate steps so a red run names the
+      # gate that failed rather than a single opaque command.
       - name: Type check
         run: npm run typecheck
 

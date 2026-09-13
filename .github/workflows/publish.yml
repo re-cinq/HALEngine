@@ -30,9 +30,11 @@ permissions:
   contents: read
 
 jobs:
-  # The same gates CI runs on a pull request, re-run against the tagged commit.
-  # A tag points at whatever its author chose, so passing on main is not
-  # evidence about what is being published.
+  # The gates that speak to the artefact, re-run against the tagged commit:
+  # type check, lint, format, tests, build, doc blocks and the tarball itself.
+  # The gates that speak only to the repository - spec anchors, spike status,
+  # regions, citation names - stay on ci.yml. A tag points at whatever its
+  # author chose, so passing on main is not evidence about what is published.
   verify:
     name: Verify the release candidate
     runs-on: ubuntu-latest

@@ -20,7 +20,7 @@ HAL Engine extracts the core patterns of building an AI-powered chat backend int
 npm install @re-cinq/hal-engine
 ```
 
-**The first release has not happened yet, so that command does not resolve.** Until it does, install from the git specifier below. This section describes the registry specifier because it is the supported install path and the one this project releases against: from the first release onward, every published version is built by a tagged CI run and carries an npm provenance attestation. `npm audit signatures` verifies it, which tells you the tarball was built by this repository's workflow from the commit the version was tagged at, rather than uploaded by whoever held a token.
+**The first release has not happened yet, so that command does not resolve.** Until it does, install from the git specifier below. This section describes the registry specifier because it is the supported install path and the one this project releases against: every published version is built by a workflow run in this repository's CI and carries an npm provenance attestation. `npm audit signatures` verifies it, which tells you the tarball was built by a workflow of this repository from the commit the attestation names, rather than uploaded by whoever held a token. The first version, `0.2.0`, is published once by a single-use workflow started by hand, because the registry cannot hold a trusted publisher for a name that has never been published; every version after it is published by the release workflow from a `v*` tag, with no token anywhere.
 
 A git specifier resolves today, and four things differ. It builds `dist/` from a checkout through the `prepare` script rather than installing a built artefact, so your install runs this package's TypeScript compiler. It carries no provenance, because provenance is produced at publish time. It pins whatever commit your lockfile recorded, not a version, so `npm outdated` has nothing to compare and a fix reaches you only when you repoint it. And npm installs a dependency under its **key**, not the package's `name`.
 
@@ -138,9 +138,9 @@ Three, and only three. Everything else is a config field.
 
 | Variable | Read at | Overridden by | Default |
 |---|---|---|---|
-| `CORS_ORIGIN` | `src/transport/createApp.ts:23` | `transport.corsOrigin` | `http://localhost:3000` |
-| `PORT` | `src/transport/createServer.ts:93` | `transport.port`, or the argument to `engine.start(port)` | `8086` |
-| `LOG_LEVEL` | `src/shared/logger.ts:12` | nothing — there is no config field | `info` |
+| `CORS_ORIGIN` | `src/transport/createApp.ts` | `transport.corsOrigin` | `http://localhost:3000` |
+| `PORT` | `src/transport/createServer.ts` | `transport.port`, or the argument to `engine.start(port)` | `8086` |
+| `LOG_LEVEL` | `src/shared/logger.ts` | nothing — there is no config field | `info` |
 
 `CORS_ORIGIN` carries **one origin**. The value reaches `cors({origin})` unsplit, so a comma-separated list is a single literal string that matches no browser origin. Pass an array to `transport.corsOrigin` for several.
 

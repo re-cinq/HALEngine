@@ -34,7 +34,7 @@
 - [ ] **Tests**: `npm test` passes (new tests added for new code)
 - [ ] **No Secrets**: No API keys, tokens, or credentials committed
 - [ ] **Formatting**: Code follows project style (`npm run prettier:check` or `npm run prettier`)
-- [ ] **Documentation**: Updated relevant docs or added inline comments for complex logic
+- [ ] **Documentation**: Updated the relevant docs; a comment spans one line, so anything longer went to `specs/`, `adrs/` or `docs/`
 - [ ] **Layer Adherence**: Changes respect the 5-layer architecture (types → providers → infrastructure → orchestration → transport)
 - [ ] **No console.log**: Uses `log` from `shared/logger.js` instead
 - [ ] **Changelog**: User-visible changes have a `CHANGELOG.md` entry under `## [Unreleased]`, or the PR carries the `no-changelog` label

@@ -41,7 +41,7 @@ npm run prettier:check   # Check formatting only
 Pre-commit (run all):
 
 ```bash
-npm run typecheck && npm run eslint && npm run prettier:check && npm test && npm run build
+npm run verify
 ```
 
 ## Code rules
