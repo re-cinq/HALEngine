@@ -335,7 +335,11 @@ For new provider support:
   `stream` and `ws`. Moving them back breaks a consumer's `tsc`, not ours
 - Provider SDKs as optional peerDependencies
 - No peer dependency version conflicts
-- Security: npm audit must show no vulnerabilities (npm ci to lock)
+- Security: `npm run check:audit` fails at `high` and above on the full installed
+  tree. Moderate and low advisories do not block. An advisory that cannot be
+  fixed yet goes in `.github/audit-acknowledgements.json` carrying advisory,
+  package, reason, ISO expiry and who acknowledged it; an expired entry fails
+  the gate, so an acceptance cannot become permanent by neglect
 - License: Apache-2.0, declared in `package.json` and carried in `LICENSE`. No
   per-file licence headers: `re-lint/max-comment-lines` caps a comment at one
   line and exempts only tooling directives, so the thirteen-line Apache notice
