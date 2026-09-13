@@ -94,6 +94,7 @@ function collectFindings(audit) {
         name,
         severity: vulnerability.severity,
         range: vulnerability.range ?? 'unknown range',
+        installed: installedVersions(vulnerability),
         through: reachedThrough(name, vulnerability),
         advisory: advisory.id,
         title: advisory.title,
@@ -142,6 +143,20 @@ function advisoryId(entry) {
   return `npm:${entry.source ?? 'unknown'}:${entry.title ?? 'untitled'}`;
 }
 
+// The report carries the affected RANGE, which is not what is installed. A maintainer reading a
+// blocking line needs the version in the tree to decide whether an upgrade exists.
+function installedVersions(vulnerability) {
+  const versions = new Set();
+  for (const node of vulnerability.nodes ?? []) {
+    try {
+      versions.add(JSON.parse(readFileSync(`${node}/package.json`, 'utf8')).version);
+    } catch {
+      continue;
+    }
+  }
+  return versions.size > 0 ? [...versions].join(', ') : 'not resolvable on disk';
+}
+
 function reachedThrough(name, vulnerability) {
   if (vulnerability.isDirect) return 'a direct dependency';
   const effects = (vulnerability.effects ?? []).join(', ');
@@ -149,7 +164,7 @@ function reachedThrough(name, vulnerability) {
 }
 
 function describeFinding(finding) {
-  return `${finding.severity}: ${finding.name}@${finding.range} ${finding.advisory} — ${finding.title}, ${finding.through}`;
+  return `${finding.severity}: ${finding.name} ${finding.installed} installed, affected ${finding.range} — ${finding.advisory} ${finding.title}, ${finding.through}`;
 }
 
 function readAcceptances() {

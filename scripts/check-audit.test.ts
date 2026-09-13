@@ -48,7 +48,15 @@ const advisory = (id: string, severity: string, title: string) => ({
 const report = (via: unknown[]) =>
   JSON.stringify({
     vulnerabilities: {
-      'left-pad': {name: 'left-pad', severity: 'critical', isDirect: true, via, range: '<1.3.0', effects: []},
+      'left-pad': {
+        name: 'left-pad',
+        severity: 'critical',
+        isDirect: true,
+        via,
+        range: '<1.3.0',
+        nodes: ['node_modules/left-pad'],
+        effects: [],
+      },
     },
     metadata: {vulnerabilities: {critical: 1, high: 0, moderate: 0, low: 0}},
   });
@@ -98,8 +106,17 @@ describe('check-audit acceptances', () => {
     const {stderr} = run(workspace(CRITICAL));
 
     expect(stderr).toContain(
-      'critical: left-pad@<1.3.0 GHSA-9999-9999-9999 — Remote code execution, a direct dependency'
+      'critical: left-pad not resolvable on disk installed, affected <1.3.0 — GHSA-9999-9999-9999 Remote code execution, a direct dependency'
     );
+  });
+
+  // The report carries the affected range; a maintainer needs the version actually in the tree.
+  it('names the installed version when the package is resolvable on disk', () => {
+    const dir = workspace(CRITICAL);
+    mkdirSync(join(dir, 'node_modules', 'left-pad'), {recursive: true});
+    writeFileSync(join(dir, 'node_modules', 'left-pad', 'package.json'), JSON.stringify({version: '1.2.0'}));
+
+    expect(run(dir).stderr).toContain('left-pad 1.2.0 installed, affected <1.3.0');
   });
 
   it('passes when the acceptance names that advisory', () => {
@@ -189,8 +206,8 @@ describe('check-audit acceptances', () => {
     expect({status, lines}).toEqual({
       status: 1,
       lines: [
-        'check-audit: high: foo@* GHSA-aaaa-bbbb-cccc — Prototype pollution, a direct dependency',
-        'check-audit: high: bar@<2 GHSA-aaaa-bbbb-cccc — Prototype pollution, reached through foo',
+        'check-audit: high: foo not resolvable on disk installed, affected * — GHSA-aaaa-bbbb-cccc Prototype pollution, a direct dependency',
+        'check-audit: high: bar not resolvable on disk installed, affected <2 — GHSA-aaaa-bbbb-cccc Prototype pollution, reached through foo',
       ],
     });
   });
@@ -209,7 +226,7 @@ describe('check-audit acceptances', () => {
     );
 
     const {stderr} = run(dir);
-    const forTop = stderr.split('\n').filter(line => line.includes('top@*'));
+    const forTop = stderr.split('\n').filter(line => line.includes('high: top '));
 
     expect(forTop).toHaveLength(1);
   });
