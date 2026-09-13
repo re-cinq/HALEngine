@@ -19,7 +19,7 @@ assert.equal(chunks.at(-1), 'stop', `mock stream did not end with stop: ${chunks
 // An absent optional peer must fail at construction with a named AIError, not at
 // import and not with a raw MODULE_NOT_FOUND from inside dist/.
 for (const [config, peer] of [
-  [{type: 'vertex', projectId: 'p', location: 'europe-west1', modelId: 'm'}, '@google-cloud/vertexai'],
+  [{type: 'vertex', projectId: 'p', location: 'europe-west4', modelId: 'm'}, '@google-cloud/vertexai'],
   [{type: 'bedrock', region: 'eu-west-1', modelId: 'm', maxTokens: 16}, '@aws-sdk/client-bedrock-runtime'],
 ]) {
   assert.throws(

@@ -45,7 +45,7 @@ describe('createProvider', () => {
       shape(createProvider({type: 'openai', apiKey: 'k', model: 'm'})),
       shape(createProvider({type: 'anthropic', apiKey: 'k', model: 'm'})),
       shape(createProvider({type: 'bedrock', region: 'eu-west-1', modelId: 'm', maxTokens: 16})),
-      shape(createProvider({type: 'vertex', projectId: 'p', location: 'europe-west1', modelId: 'm'})),
+      shape(createProvider({type: 'vertex', projectId: 'p', location: 'europe-west4', modelId: 'm'})),
     ]).toEqual([true, true, true, true, true]);
   });
 
