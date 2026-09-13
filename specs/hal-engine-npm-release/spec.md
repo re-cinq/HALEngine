@@ -15,6 +15,16 @@ The scope is this repository. One decision it depends on — whether the source 
 
 The package is ESM-only. `package.json` carries `"type": "module"`, and `tsconfig.json` already targets `NodeNext`/`NodeNext` with every relative import in `src/` ending in `.js`, so no import rewriting is needed.
 
+Three ways to keep that lazy load were available, and the third is what shipped:
+
+| | Approach | Cost |
+|---|---|---|
+| A | `await import()`, making `createProvider` async | `createHalEngine` becomes async too, and every consumer's construction site changes. A breaking change to the one function the README opens with |
+| B | Static imports, dropping laziness | Importing the package root pulls in every provider SDK, which is the defect T002 exists to fix |
+| C | `createRequire(import.meta.url)` at the call site | Keeps `createProvider` and `createHalEngine` synchronous, keeps the load lazy, and confines the CommonJS interop to one helper |
+
+C. `createHalEngine` stays synchronous - that is the point of the choice, not a side effect of it - and the interop lives in `src/providers/requireOptionalPeer.ts` rather than being spread across `providerFactory.ts` and `bedrockProvider.ts:24`.
+
 - The five `require()` calls in `src/providers/providerFactory.ts` do not survive, because `require` does not exist under ESM.
 - The lazy-load they implement must survive in some form: `createProvider` MUST NOT load a provider SDK for an arm the caller did not select.
 - `jest.config.js` uses `module.exports`, which is illegal under `"type": "module"`, and becomes an ESM config with a default export. The suite runs as real ESM under `--experimental-vm-modules` rather than being compiled to CommonJS: an ESM-only package whose tests exercise CJS output would hide the failure class this conversion exists to prevent, and `import.meta` in the provider layer cannot compile to CommonJS at all. Every spawn of jest needs the flag, not only the `test` script.
@@ -26,7 +36,7 @@ This is a breaking change under AGENTS.md § Breaking Changes and inherits that 
 
 `@aws-sdk/client-bedrock-runtime` and `@google-cloud/vertexai` are declared optional peers, and exactly one of them behaves like one. `src/index.ts:21` re-exports `createVertexProvider` as a value from a module whose first line statically imports `@google-cloud/vertexai`, so importing the package root loads the Vertex SDK whether or not the caller ever names Vertex.
 
-- Importing the package root MUST NOT require either optional peer to be installed. Measured on the built `dist/`: a bare root import loaded 38 `@google-cloud/vertexai` modules before this change and 0 after, with Bedrock at 0 throughout. The automated form of this check is the tarball smoke test.
+- Importing the package root MUST NOT require either optional peer to be installed. Measured on the built `dist/`: a bare root import loaded 38 `@google-cloud/vertexai` modules before this change and 0 after, with Bedrock at 0 throughout. The `full` smoke variant holds that number: it is the only place both peers are installed, so it is the only place a barrel that went eager again would be visible at all, and it counts the SDK modules loaded by the root import rather than asserting a directory is absent.
 - An absent peer MUST fail at provider construction, not at import — the contract `src/providers/bedrock/bedrockProvider.ts` already kept and `createVertexProvider` now matches.
 - Both providers route their absent-peer failure through one helper, so the message names the package and its install command rather than surfacing a raw `MODULE_NOT_FOUND` from inside `dist/` ([validated by: throws an error naming the absent package and the command that installs it](../../src/providers/requireOptionalPeer.test.ts#L15)).
 - That failure is an `AIError` carrying the code `OPTIONAL_PEER_MISSING`, not a bare module-resolution error ([validated by: tags the absent-peer failure with OPTIONAL_PEER_MISSING rather than a raw module error](../../src/providers/requireOptionalPeer.test.ts#L22)).
@@ -64,7 +74,18 @@ The `@aws-sdk/client-bedrock-runtime` reference in the emitted types is not the 
 
 `tsconfig.build.json` already excludes `**/*.test.ts` from emit while `tsconfig.json` keeps type-checking them, so compiled test files no longer reach the package. What is missing is a check: the publish workflow MUST fail when the pack list contains any `*.test.*` entry, so this cannot silently regress.
 
-`tsconfig.build.json` also turns `declarationMap` and `sourceMap` off, which the root config leaves on for local work. `files` is `["dist"]`, so a published map named a `../src/*.ts` that the tarball did not carry and held no `sourcesContent` — 98 dead maps, half the file list, resolving to nothing in any consumer's debugger. Turning them off rather than adding `src` to `files` keeps the published artifact to what the package runs: measured at the change, 199 files and a 55.6 kB tarball became 101 files and 33.8 kB. A consumer wanting to step through the source has the repository. The publish workflow's pack-list check MUST fail on a `*.map` entry for the same reason it fails on a `*.test.*` one.
+`tsconfig.build.json` also turns `declarationMap` and `sourceMap` off, which the root config leaves on for local work. `files` is `["dist"]`, so a published map named a `../src/*.ts` that the tarball did not carry and held no `sourcesContent` — 98 dead maps, half the file list, resolving to nothing in any consumer's debugger. Turning them off rather than adding `src` to `files` keeps the published artifact to what the package runs: measured at the change, 199 files and a 55.6 kB tarball became 101 files and 33.8 kB. A consumer wanting to step through the source has the repository.
+
+The list itself, rather than a count that drifts unnoticed: `npm pack --dry-run` prints 101 entries, and every one falls in four groups.
+
+| Group | Entries | What it is |
+|---|---|---|
+| `dist/` | 98 | the compiled package - `.js` and `.d.ts` only, no maps and no `*.test.*` |
+| `package.json` | 1 | the manifest, which `files: ["dist"]` cannot exclude |
+| `README.md` | 1 | what npm renders on the package page |
+| `LICENSE` | 1 | Apache-2.0, which npm includes whether or not `files` names it |
+
+Nothing from `src/`, `example/`, `smoke/`, `docs/`, `specs/`, `adrs/` or `scripts/` appears, and the publish workflow fails the job if one does. Sizes move with every source change and are not pinned here; the group table is what a reviewer checks. The publish workflow's pack-list check MUST fail on a `*.map` entry for the same reason it fails on a `*.test.*` one.
 
 ## The release pipeline
 
@@ -165,8 +186,11 @@ Two variants, because a consumer is in one of two states and they fail different
 
 The repository has zero git tags. `0.1.0` was never tagged and never published, so there is no existing convention to fit around.
 
-- A `v*` tag triggers one publish job.
+- A `v*` tag triggers one publish job. There is no `workflow_dispatch` trigger: a publish that can be started by hand is a publish whose input is a branch somebody chose in a dropdown, and the tag is the only thing the version guard and the ancestry check can be stated against.
+- Prereleases are refused rather than routed to a dist-tag. Nothing here passes `--tag`, so a `v0.3.0-rc.1` would publish as `latest` and every plain `npm install` would resolve to it. Adding a dist-tag is a decision for whoever first needs one.
+- The guard reads the committed version with `node -p "require('./package.json').version"` rather than by parsing the file, so it reads it the way npm will.
 - The job authenticates with npm Trusted Publishing over OIDC. No `NPM_TOKEN` secret exists in the repository after bootstrap.
+- `id-token: write` is scoped to the `publish` job rather than declared at workflow level, so the `verify` job - which runs the tests, the build and the packed-tarball smoke test - cannot mint an OIDC token at all. The issue specified a workflow-level pair; narrowing it costs nothing and removes a capability from every step that does not publish.
 - A guard fails the job when the tag and the committed `package.json` version disagree. It is a committed script rather than an inline step, so a developer can run it before pushing a tag they cannot un-push ([validated by: refuses a tag that disagrees with the committed version](../../scripts/check-version.test.ts#L39)).
 - A matching tag is accepted ([validated by: accepts a tag that matches the version under a changelog heading naming it](../../scripts/check-version.test.ts#L35)).
 - A prerelease tag is refused, because nothing here passes `--tag` and one would publish as `latest` ([validated by: refuses a prerelease tag, because nothing here passes a dist-tag](../../scripts/check-version.test.ts#L43)).
@@ -294,7 +318,7 @@ Delegating to a supplied logger initially bypassed both of the built-in emitter'
 - A value whose `toString` throws still produces a line ([validated by: still writes a line rather than throwing out of the emitter](../../src/shared/logger.test.ts#L253)).
 - `setLogger` is exported from `src/index.ts`, so a consumer can put the built-in logger back; without it the process-global swap had no documented way out.
 - `createHalEngine` installs a logger only when the config names one, so a second engine naming none keeps the first one's logger ([validated by: leaves an already-supplied logger in place when the config names none](../../src/config.test.ts#L76)).
-- No call site changes. All 29 `log.*` calls under `src/` keep their category, message, level and data - 28 at the time this was written, plus the hook-failure line T015 added.
+- No call site changes: every `log.*` call under `src/` kept its category, message, level and data. There were 28 when this was written and 29 once T015 added the hook-failure line; later work added more, so the number is a record of the change rather than a count of the tree.
 - A new `docs/logging.md` covers the key set, the level mapping, the stream split, and which fields can identify a person.
 
 ### The mock factory forwards its configuration

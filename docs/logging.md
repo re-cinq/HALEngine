@@ -15,7 +15,7 @@ The logger is public surface: `src/index.ts` exports the `log` object, the `setL
 | `severity` | yes | The uppercase level name: `DEBUG`, `INFO`, `WARN` or `ERROR` |
 | `message` | yes | The short, fixed string passed at the call site. Not interpolated -- values go in `data` |
 | `timestamp` | yes | ISO-8601, UTC, millisecond precision, from `Date.prototype.toISOString` |
-| `category` | yes | Which part of the engine emitted the line. One of `bedrock`, `message`, `orchestrator`, `server`, `stream`, `tool`, `vertex`, `ws` |
+| `category` | yes | Which part of the engine emitted the line. One of `bedrock`, `http`, `message`, `orchestrator`, `server`, `stream`, `tool`, `vertex`, `ws` |
 | `data` | no | The call site's fields, verbatim. Absent when the call passed none -- never `{}` |
 
 Caller fields are nested under `data` rather than spread across the top level. That is deliberate: a field named `severity` or `timestamp` cannot overwrite the line's own, so the five keys above mean the same thing on every line regardless of what a call site passes.
@@ -57,7 +57,7 @@ If your logger throws -- a transport that is not ready, a full disk -- the throw
 
 Note what that means for a logger that writes and *then* throws, which is the ordinary shape of a buffered transport failing to flush: the line is emitted twice, once by you and once to the console. The fallback guarantees a line is never lost, not that it appears exactly once. If double emission matters more to you than losing the line, catch inside your own implementation and return normally.
 
-One caveat, and it is the reason this is documented rather than assumed. The swap is **process-wide, not per engine**, and it persists: `createHalEngine` sets your logger when the config names one and otherwise leaves whatever was last set in place, so a second engine that names none keeps using the first one's logger until `setLogger()` puts the console back. Seven modules import the `log` object at module scope, so there is one logger per process; two engines in the same process share whichever was constructed last. If you run more than one engine in a process and need their lines apart, put the distinguishing field in your own implementation rather than expecting the package to carry it.
+One caveat, and it is the reason this is documented rather than assumed. The swap is **process-wide, not per engine**, and it persists: `createHalEngine` sets your logger when the config names one and otherwise leaves whatever was last set in place, so a second engine that names none keeps using the first one's logger until `setLogger()` puts the console back. Every module that logs imports the `log` object at module scope, so there is one logger per process; two engines in the same process share whichever was constructed last. If you run more than one engine in a process and need their lines apart, put the distinguishing field in your own implementation rather than expecting the package to carry it.
 
 ## Fields that can identify a person
 

@@ -4,6 +4,8 @@
 
 // A chat id from POST /chats is not a WebSocket session id: the socket mints its own and stores that.
 
+// Demo only - see specs/hal-engine-chat-routes/spec.md; content sits in process memory, unredacted.
+
 import {Router, Response} from 'express';
 import {randomUUID} from 'crypto';
 import type {ChatOrchestrator} from '../../orchestration/chatOrchestrator.js';

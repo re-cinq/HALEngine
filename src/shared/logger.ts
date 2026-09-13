@@ -82,7 +82,7 @@ const consoleLogger: Logger = {
 
 let active: Logger = consoleLogger;
 
-// Process-global by design: seven modules import `log` at module scope, so there is one per process.
+// Process-global by design: every module that logs imports `log` at module scope, so there is one.
 export function setLogger(logger?: Logger): void {
   active = logger ?? consoleLogger;
 }

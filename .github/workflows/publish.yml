@@ -10,6 +10,15 @@ name: Publish
 # --provenance is carried because ADR-007 makes the repository public. npm
 # refuses an attestation whose source repository an unauthenticated client
 # cannot resolve.
+#
+# Three preconditions, all of which fail closed rather than publishing wrongly:
+#   1. npm >= 11.5.1. Trusted publishing does not exist before it, and Node 22
+#      ships an older npm, so the publish job installs it explicitly.
+#   2. The repository is public. Until it is, --provenance fails here.
+#   3. A trusted publisher exists for this name. It cannot, before the first
+#      publish: npm has nothing to attach one to. The first release therefore
+#      carries a token, by hand, and every release after it is tokenless. That
+#      token is revoked immediately afterwards.
 
 on:
   push:

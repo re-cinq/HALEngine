@@ -91,6 +91,10 @@ Returns the chat's id, messages and creation time to its owner ([validated by: s
 - A request no body parser claimed answers `400`, not `500`. Express leaves `req.body` undefined when no parser matched the content type, and destructuring it threw past the guard written for exactly that input ([validated by: answers 400 when no body parser claimed the request, rather than 500](../../src/transport/routes/chats.test.ts#L175)).
 - A refused message is not recorded, so the owner's next read shows no trace of it ([validated by: does not record the rejected message in the chat](../../src/transport/routes/chats.test.ts#L184)).
 
+### Personal data
+
+These routes are a demonstration, and what they hold should be read that way. A chat's messages sit in a `Map` in the process, so message content — whatever a caller typed — is retained for the lifetime of the process, with no expiry, no redaction, no export and no deletion route beyond a restart. Nothing is written to disk and nothing is logged: a refusal records a fixed reason and the request itself is never echoed. A deployment that needs retention limits, subject-access or erasure must not build on these routes; it supplies its own, and uses `SessionStore` and `auth.http` to do it.
+
 ### Rationale
 
 Refusing before validating is what keeps `400` from leaking. A body-shape error tells the caller the chat exists and that they got as far as validation; answering `403` first tells them only that they may not touch it.

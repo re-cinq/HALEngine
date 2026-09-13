@@ -76,7 +76,7 @@ land after the first publish.
 
 One task, and it is irreversible.
 
-- [ ] T031 Bootstrap tokenless publishing. In order: create a short-lived granular token and store it as `NPM_TOKEN`; add a single-use `workflow_dispatch` workflow; run it once so `@re-cinq/hal-engine@0.2.0` exists; register the trusted publisher against `publish.yml`; revoke the token, delete the secret, delete the single-use workflow; tag `v0.2.1` and confirm it publishes with no secret in the repository. Run the token publish from CI, not a laptop, so the provenance attestation comes from the GitHub OIDC token. Depends on T011, T032, all of phase 3, and T019–T022.
+- [ ] T031 Bootstrap tokenless publishing. In order: create a short-lived granular token and store it as `NPM_TOKEN`; add a single-use `workflow_dispatch` workflow; run it once so `@re-cinq/hal-engine@0.2.0` exists; register the trusted publisher against `publish.yml`; revoke the token, delete the secret, delete the single-use workflow; tag `v0.2.1` and confirm it publishes with no secret in the repository. Run the token publish from CI, not a laptop, so the provenance attestation comes from the GitHub OIDC token. Depends on T011, T032, all of phase 3, and T019–T022. Before the first publish, walk the pre-publish checklist: `LICENSE` present and declared, `SECURITY.md` present and its address carried in `package.json`'s `bugs` so `npm view @re-cinq/hal-engine bugs` finds it without repository access, `README.md` rendering what npm will show, `CHANGELOG.md` naming the version being tagged, and the pack list carrying `dist/` and nothing else.
 
 ## Not scoped here
 
