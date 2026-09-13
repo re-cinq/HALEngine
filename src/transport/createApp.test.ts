@@ -16,6 +16,17 @@ const orchestrator = () =>
 const app = (options: Parameters<typeof createApp>[0] = {}) =>
   createApp({orchestrator: orchestrator(), sessionStore: new InMemorySessionStore(), ...options});
 
+// Throws rather than asserts: a creation that failed would otherwise satisfy the 404 its caller expects.
+const createdId = (response: {status: number; body: unknown}): string => {
+  const {id} = response.body as {id?: string};
+
+  if (response.status !== 201 || typeof id !== 'string') {
+    throw new Error(`setup: POST /hal/chats answered ${response.status} with ${JSON.stringify(response.body)}`);
+  }
+
+  return id;
+};
+
 describe('createApp with no auth middleware', () => {
   it('refuses to create a chat', async () => {
     const response = await request(app()).post('/hal/chats');
@@ -105,7 +116,7 @@ describe('createApp chat route mounting', () => {
     };
     const options = {orchestrator: orchestrator(), sessionStore: store, authMiddleware: attach};
     const created = await request(createApp(options)).post('/hal/chats');
-    const id = (created.body as {id: string}).id;
+    const id = createdId(created);
 
     const response = await request(createApp(options)).get(`/hal/chats/${id}`);
 
