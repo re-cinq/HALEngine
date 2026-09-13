@@ -76,8 +76,6 @@ describe('createApp auth middleware', () => {
   });
 });
 
-describe('createApp chat route mounting', () => {});
-
 describe('createApp chat route mounting', () => {
   it('mounts no chat routes without a session store', async () => {
     const response = await request(createApp({orchestrator: orchestrator()})).post('/hal/chats');

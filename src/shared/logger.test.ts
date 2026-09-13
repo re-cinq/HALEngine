@@ -248,9 +248,10 @@ describe('a supplied logger', () => {
   });
 
   it('survives a partially implemented logger rather than failing at an arbitrary later call', () => {
-    setLogger({info: () => undefined} as unknown as Parameters<typeof setLogger>[0]);
+    // `info`, not `debug`: the default threshold drops debug before the logger is touched, which proved nothing.
+    setLogger({debug: () => undefined} as unknown as Parameters<typeof setLogger>[0]);
 
-    expect(() => log.debug('ws', 'no debug method exists')).not.toThrow();
+    expect(() => log.info('ws', 'no info method exists')).not.toThrow();
   });
 });
 

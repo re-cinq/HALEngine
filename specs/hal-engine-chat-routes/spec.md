@@ -64,12 +64,12 @@ A deployment MUST configure `auth.http` middleware that attaches a `user` with a
 - A path off the base path still answers `404` ([validated by: still answers 404 off the base path](../../src/transport/createApp.test.ts#L33)).
 - A supplied middleware is invoked ([validated by: invokes the middleware it was given](../../src/transport/createApp.test.ts#L41)).
 - Once it attaches a user, the route is served ([validated by: serves the route once that middleware attaches a user](../../src/transport/createApp.test.ts#L52)).
-- The chat routes mount only when a `sessionStore` is supplied; without one the path is `404` ([validated by: mounts no chat routes without a session store](../../src/transport/createApp.test.ts#L82)).
+- The chat routes mount only when a `sessionStore` is supplied; without one the path is `404` ([validated by: mounts no chat routes without a session store](../../src/transport/createApp.test.ts#L80)).
 
 `sessionStore` gates whether the routes mount and nothing more - the routes keep their own `Map`, so the store stays empty however many chats are created through them, and two apps built on one store share nothing.
 
-- The store is still empty after a chat is created ([validated by: leaves the session store empty after a chat is created through it](../../src/transport/createApp.test.ts#L89)).
-- Two apps built on one store do not see each other's chats ([validated by: does not share chats between two apps built on one session store](../../src/transport/createApp.test.ts#L102)).
+- The store is still empty after a chat is created ([validated by: leaves the session store empty after a chat is created through it](../../src/transport/createApp.test.ts#L87)).
+- Two apps built on one store do not see each other's chats ([validated by: does not share chats between two apps built on one session store](../../src/transport/createApp.test.ts#L100)).
 
 `HttpAuthMiddleware` is stated in terms of what it must produce rather than as a bare `RequestHandler`, so both directions of assignability are pinned: a consumer's existing handler has to fit the option, and ours has to mount on an Express router. Both are compile-time assertions carried by a type annotation - `npm run typecheck` is the gate, not the runtime expectation beside it. The return type is `unknown` rather than `void | Promise<void>` for the first direction's sake: Express declares its handlers `unknown`, and the narrower spelling refused every handler a consumer already had.
 
