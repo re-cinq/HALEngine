@@ -13,27 +13,34 @@ They are separate scripts rather than one because they fail for different reason
 
 `npm run docs:check` compares every fenced TypeScript block in a covered document against the source its marker names, and `docs:fix` rewrites it from there.
 
-- A recognised block carrying no marker at all is reported ([validated by: reports a recognised block that carries no marker at all](../../scripts/check-doc-blocks.test.ts#L89)).
-- An opt-out states a reason, and one that does not is reported ([validated by: reports an opt-out that states no reason](../../scripts/check-doc-blocks.test.ts#L95)).
-- An opt-out that states one is accepted ([validated by: accepts an opt-out that states one](../../scripts/check-doc-blocks.test.ts#L101)).
-- A fence that is never closed is reported rather than compared against the rest of the file ([validated by: reports a block whose fence is never closed rather than comparing to end of file](../../scripts/check-doc-blocks.test.ts#L107)).
-- A marker naming a declaration its source does not export is reported ([validated by: reports a marker naming a declaration the source does not export](../../scripts/check-doc-blocks.test.ts#L132)).
+- A recognised block carrying no marker at all is reported ([validated by: reports a recognised block that carries no marker at all](../../scripts/check-doc-blocks.test.ts#L109)).
+- An opt-out states a reason, and one that does not is reported ([validated by: reports an opt-out that states no reason](../../scripts/check-doc-blocks.test.ts#L115)).
+- An opt-out that states one is accepted ([validated by: accepts an opt-out that states one](../../scripts/check-doc-blocks.test.ts#L121)).
+- A fence that is never closed is reported rather than compared against the rest of the file ([validated by: reports a block whose fence is never closed rather than comparing to end of file](../../scripts/check-doc-blocks.test.ts#L127)).
+- A marker naming a declaration its source does not export is reported ([validated by: reports a marker naming a declaration the source does not export](../../scripts/check-doc-blocks.test.ts#L152)).
 
 The fence tag is the gate's own blind spot, because a block it does not recognise keeps its marker and quietly stops being compared. Matching one spelling was not enough: `ts` renders identically to `typescript`, is already used elsewhere in this repository, and an editor or an author sidestepping a `--fix` conflict can produce it without meaning anything by it. Widening the recognised set narrowed the blind spot without closing it, because the next unrecognised tag reopens it. The marker drives the check as well as the fence: a marker is a claim that the block below it is generated, so anything other than a recognised fence under one is reported - a relabelled block, or no block at all.
 
-- A drifted block fenced `typescript` is reported ([validated by: compares a block fenced as typescript](../../scripts/check-doc-blocks.test.ts#L57)).
-- One fenced `ts` is reported ([validated by: compares a block fenced as ts, which renders identically](../../scripts/check-doc-blocks.test.ts#L61)).
-- One fenced `tsx` is reported ([validated by: compares a block fenced as tsx](../../scripts/check-doc-blocks.test.ts#L65)).
-- One whose fence tag is capitalised is reported ([validated by: compares a block whose fence tag is capitalised](../../scripts/check-doc-blocks.test.ts#L69)).
-- One whose fence carries an info string is reported ([validated by: compares a block whose fence carries an info string](../../scripts/check-doc-blocks.test.ts#L73)).
-- A block that matches its source is accepted rather than reported for being recognised ([validated by: accepts a matching block rather than reporting every fence it recognises](../../scripts/check-doc-blocks.test.ts#L77)).
-- A closing fence carrying trailing whitespace still closes its block ([validated by: closes on a fence carrying trailing whitespace](../../scripts/check-doc-blocks.test.ts#L81)).
-- A marker above a fence tagged with something the gate does not recognise is reported ([validated by: reports a marker whose fence carries a tag it does not recognise](../../scripts/check-doc-blocks.test.ts#L114)).
-- That report fails the run rather than passing silently ([validated by: fails rather than passing silently on a relabelled fence](../../scripts/check-doc-blocks.test.ts#L120)).
-- A marker that no fence follows at all is reported ([validated by: reports a marker that no fence follows at all](../../scripts/check-doc-blocks.test.ts#L126)).
-- `--fix` rewrites a drifted block from its source ([validated by: rewrites a drifted block from its source](../../scripts/check-doc-blocks.test.ts#L140)).
-- `--fix` leaves the document's own fence tag alone, so the gate does not impose a house style ([validated by: leaves a fence tag it did not write alone, so --fix does not rewrite the document's style](../../scripts/check-doc-blocks.test.ts#L148)).
-- `--fix` on a tree that already matches produces no diff ([validated by: produces no diff on a tree that already matches](../../scripts/check-doc-blocks.test.ts#L156)).
+- A drifted block fenced `typescript` is reported ([validated by: compares a block fenced as typescript](../../scripts/check-doc-blocks.test.ts#L77)).
+- One fenced `ts` is reported ([validated by: compares a block fenced as ts, which renders identically](../../scripts/check-doc-blocks.test.ts#L81)).
+- One fenced `tsx` is reported ([validated by: compares a block fenced as tsx](../../scripts/check-doc-blocks.test.ts#L85)).
+- One whose fence tag is capitalised is reported ([validated by: compares a block whose fence tag is capitalised](../../scripts/check-doc-blocks.test.ts#L89)).
+- One whose fence carries an info string is reported ([validated by: compares a block whose fence carries an info string](../../scripts/check-doc-blocks.test.ts#L93)).
+- A block that matches its source is accepted rather than reported for being recognised ([validated by: accepts a matching block rather than reporting every fence it recognises](../../scripts/check-doc-blocks.test.ts#L97)).
+- A closing fence carrying trailing whitespace still closes its block ([validated by: closes on a fence carrying trailing whitespace](../../scripts/check-doc-blocks.test.ts#L101)).
+- A marker above a fence tagged with something the gate does not recognise is reported ([validated by: reports a marker whose fence carries a tag it does not recognise](../../scripts/check-doc-blocks.test.ts#L134)).
+- That report fails the run rather than passing silently ([validated by: fails rather than passing silently on a relabelled fence](../../scripts/check-doc-blocks.test.ts#L140)).
+- A marker that no fence follows at all is reported ([validated by: reports a marker that no fence follows at all](../../scripts/check-doc-blocks.test.ts#L146)).
+- `--fix` rewrites a drifted block from its source ([validated by: rewrites a drifted block from its source](../../scripts/check-doc-blocks.test.ts#L188)).
+- `--fix` leaves the document's own fence tag alone, so the gate does not impose a house style ([validated by: leaves a fence tag it did not write alone, so --fix does not rewrite the document's style](../../scripts/check-doc-blocks.test.ts#L196)).
+- `--fix` on a tree that already matches produces no diff ([validated by: produces no diff on a tree that already matches](../../scripts/check-doc-blocks.test.ts#L204)).
+
+Spike documents are covered differently. A spike records what was believed when it was written, and its status block - which `check-spike-status.mjs` requires - already says every snippet in the file is superseded. Repeating that reason once per block would be 34 copies of one sentence, each free to drift from the status block it restates, so the opt-out is declared once per file in the gate. What the gate checks in a spike is the opposite risk: a block wired to live source would regenerate spike code from the implementation that replaced it, erasing the record the spike exists to keep.
+
+- An unmarked block in a spike is accepted, which is the expected state ([validated by: accepts an unmarked block, which is the expected state for a spike](../../scripts/check-doc-blocks.test.ts#L161)).
+- Those blocks are counted and reported rather than passed over in silence ([validated by: counts the blocks it left alone rather than reporting nothing about them](../../scripts/check-doc-blocks.test.ts#L167)).
+- A spike block that names a source is reported ([validated by: refuses a spike block that names a source](../../scripts/check-doc-blocks.test.ts#L174)).
+- An explicit opt-out marker is still accepted, saying per block what the file says once ([validated by: accepts an explicit opt-out marker, which says the same thing the file already says](../../scripts/check-doc-blocks.test.ts#L180)).
 
 ## Paths in prose resolve
 

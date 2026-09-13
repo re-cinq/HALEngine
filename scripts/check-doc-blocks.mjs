@@ -25,9 +25,18 @@ const DOCS = [
   'specs/hal-engine-tool-responses/spec.md',
 ];
 
-// docs/spikes/** is deliberately absent. A spike records what was believed when it
-// was written, and its status block says which claims no longer hold; regenerating
-// its code would falsify the record rather than repair it.
+// A spike records what was believed when it was written, and its status block says which claims no
+// longer hold. Its blocks are opted out wholesale rather than one marker at a time: the reason is
+// the same for every block in the file, it is already written in the status block that
+// check-spike-status.mjs requires, and 34 copies of it would be 34 places to drift. What is checked
+// here is the opposite risk - a spike block wired to live source would regenerate spike code from
+// the implementation that superseded it, quietly erasing the record.
+const SPIKES = [
+  'docs/spikes/adding-tool-evaluation.md',
+  'docs/spikes/mcp.md',
+  'docs/spikes/spike-ai-response-validation.md',
+  'docs/spikes/spike-bedrock-integration.md',
+];
 
 // example/ imports the source tree; a reader installs the package.
 const IMPORT_REWRITES = [[/from '\.\.\/src\/index\.js'/g, "from '@re-cinq/hal-engine'"]];
@@ -100,6 +109,21 @@ function expected(marker) {
 
 const findings = [];
 let rewritten = 0;
+let spikeBlocks = 0;
+
+for (const doc of SPIKES) {
+  const lines = read(doc).split('\n');
+
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!TYPESCRIPT_FENCE.test(lines[i])) continue;
+    spikeBlocks += 1;
+
+    const marker = (lines[i - 1] ?? '').trim().match(MARKER);
+    if (marker && marker[1].split(' -- ')[0] !== 'none') {
+      findings.push(`${doc}:${i} a spike block names a source; its code is the record, not the implementation`);
+    }
+  }
+}
 
 for (const doc of DOCS) {
   const lines = read(doc).split('\n');
@@ -162,5 +186,7 @@ if (fix) {
 }
 
 for (const finding of findings) process.stdout.write(`  ${finding}\n`);
-process.stdout.write(`check-doc-blocks: ${findings.length} finding(s) across ${DOCS.length} documents\n`);
+process.stdout.write(
+  `check-doc-blocks: ${findings.length} finding(s) across ${DOCS.length} documents, plus ${spikeBlocks} block(s) in ${SPIKES.length} spikes\n`
+);
 process.exit(findings.length > 0 ? 1 : 0);

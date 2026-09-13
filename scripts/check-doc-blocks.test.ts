@@ -21,7 +21,27 @@ const workspace = (docBody: string, sourceBody: string): string => {
   write(dir, 'src/types/sample.ts', sourceBody);
   write(dir, 'package.json', JSON.stringify({name: '@scope/fixture', version: '0.0.0'}));
 
-  const source = readFileSync(script, 'utf8').replace(/const DOCS = \[[\s\S]*?\];/, `const DOCS = ['${covered}'];`);
+  const source = readFileSync(script, 'utf8')
+    .replace(/const DOCS = \[[\s\S]*?\];/, `const DOCS = ['${covered}'];`)
+    .replace(/const SPIKES = \[[\s\S]*?\];/, `const SPIKES = [];`);
+  write(dir, 'scripts/check-doc-blocks.mjs', source);
+  write(dir, 'scripts/lib/repo-root.mjs', 'export const root = process.cwd();\n');
+
+  return dir;
+};
+
+// A spike workspace: no covered documents, one spike, which is how docs/spikes/ is configured.
+const spikeWorkspace = (docBody: string): string => {
+  const dir = mkdtempSync(join(tmpdir(), 'doc-blocks-spike-'));
+  workspaces.push(dir);
+
+  write(dir, 'docs/spikes/one.md', docBody);
+  write(dir, 'src/types/sample.ts', SOURCE);
+  write(dir, 'package.json', JSON.stringify({name: '@scope/fixture', version: '0.0.0'}));
+
+  const source = readFileSync(script, 'utf8')
+    .replace(/const DOCS = \[[\s\S]*?\];/, `const DOCS = [];`)
+    .replace(/const SPIKES = \[[\s\S]*?\];/, `const SPIKES = ['docs/spikes/one.md'];`);
   write(dir, 'scripts/check-doc-blocks.mjs', source);
   write(dir, 'scripts/lib/repo-root.mjs', 'export const root = process.cwd();\n');
 
@@ -133,6 +153,34 @@ describe('check-doc-blocks markers', () => {
     const body = `# Fixture\n\n<!-- doc-block: src/types/sample.ts#Absent -->\n\`\`\`ts\n${BODY}\n\`\`\`\n`;
 
     expect(run(workspace(body, SOURCE)).stdout).toContain('no exported declaration named Absent');
+  });
+});
+
+describe('check-doc-blocks on spike documents', () => {
+  // A spike's code is the record of what was believed, so it is opted out wholesale rather than marked.
+  it('accepts an unmarked block, which is the expected state for a spike', () => {
+    const body = `# Spike\n\n\`\`\`ts\n${BODY}\n\`\`\`\n`;
+
+    expect(run(spikeWorkspace(body))).toMatchObject({status: 0});
+  });
+
+  it('counts the blocks it left alone rather than reporting nothing about them', () => {
+    const body = `# Spike\n\n\`\`\`ts\n${BODY}\n\`\`\`\n`;
+
+    expect(run(spikeWorkspace(body)).stdout).toContain('1 block(s) in 1 spikes');
+  });
+
+  // Wiring a spike block to live source would regenerate it from the implementation that superseded it.
+  it('refuses a spike block that names a source', () => {
+    const body = `# Spike\n\n<!-- doc-block: src/types/sample.ts#Sample -->\n\`\`\`ts\n${BODY}\n\`\`\`\n`;
+
+    expect(run(spikeWorkspace(body)).stdout).toContain('names a source');
+  });
+
+  it('accepts an explicit opt-out marker, which says the same thing the file already says', () => {
+    const body = `# Spike\n\n<!-- doc-block: none -- spike code -->\n\`\`\`ts\n${BODY}\n\`\`\`\n`;
+
+    expect(run(spikeWorkspace(body))).toMatchObject({status: 0});
   });
 });
 

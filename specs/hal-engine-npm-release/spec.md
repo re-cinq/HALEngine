@@ -92,18 +92,20 @@ AGENTS.md § Quality Gates already commits this repository to "npm audit must sh
 
 The gate runs immediately before `npm publish`, so the two ways it can report a clean tree without having checked one are part of its contract rather than details of its implementation. It shells out to `npm audit`, whose registry failures are themselves JSON and carry no `vulnerabilities` key; and an acceptance names an advisory, which means an acceptance recorded for one advisory must not absorb the next one in the same package.
 
-- A report carrying no vulnerability data fails the check rather than reading as nothing-to-report ([validated by: refuses to report clean when npm returns its registry-failure document](../../scripts/check-audit.test.ts#L73)).
-- That failure names the reason rather than exiting silently ([validated by: names the reason rather than failing silently](../../scripts/check-audit.test.ts#L79)).
-- Output that is not JSON at all fails the same way ([validated by: refuses to report clean when npm returns no JSON at all](../../scripts/check-audit.test.ts#L85)).
-- An unacknowledged advisory at `high` or above fails the check ([validated by: fails on an unacknowledged critical advisory](../../scripts/check-audit.test.ts#L93)).
-- The blocking line carries the package, the affected range, the advisory id, its title and the path it is reached through ([validated by: names the package, version range, advisory id and path in the blocking line](../../scripts/check-audit.test.ts#L97)).
-- An acceptance naming that advisory passes it ([validated by: passes when the acceptance names that advisory](../../scripts/check-audit.test.ts#L105)).
-- An acceptance naming a different advisory in the same package does not ([validated by: does not let an acceptance for one advisory cover a different one in the same package](../../scripts/check-audit.test.ts#L112)).
-- Such an acceptance is itself reported as matching no current advisory ([validated by: reports the unmatched acceptance as stale rather than ignoring it](../../scripts/check-audit.test.ts#L119)).
-- A second advisory in an otherwise accepted package still fails ([validated by: still fails on a second unacknowledged advisory in an otherwise accepted package](../../scripts/check-audit.test.ts#L140)).
-- An expired acceptance fails the check ([validated by: fails on an acceptance whose expiry has passed](../../scripts/check-audit.test.ts#L126)).
-- An expired acceptance is named by advisory and package ([validated by: names the expired acceptance by advisory and package](../../scripts/check-audit.test.ts#L133)).
-- A clean report with no acceptances passes ([validated by: passes a clean report with no acceptances](../../scripts/check-audit.test.ts#L152)).
+- A report carrying no vulnerability data fails the check rather than reading as nothing-to-report ([validated by: refuses to report clean when npm returns its registry-failure document](../../scripts/check-audit.test.ts#L81)).
+- That failure names the reason rather than exiting silently ([validated by: names the reason rather than failing silently](../../scripts/check-audit.test.ts#L87)).
+- Output that is not JSON at all fails the same way ([validated by: refuses to report clean when npm returns no JSON at all](../../scripts/check-audit.test.ts#L93)).
+- An unacknowledged advisory at `high` or above fails the check ([validated by: fails on an unacknowledged critical advisory](../../scripts/check-audit.test.ts#L101)).
+- The blocking line carries the package, the version installed, the affected range, the advisory id, its title and the path it is reached through ([validated by: names the package, version range, advisory id and path in the blocking line](../../scripts/check-audit.test.ts#L105)).
+- The installed version is read from the tree rather than taken from the report, which carries only the affected range - a maintainer deciding whether an upgrade exists needs the version they actually have ([validated by: names the installed version when the package is resolvable on disk](../../scripts/check-audit.test.ts#L114)).
+- A package the report names but the tree does not carry is said to be unresolvable rather than given a version the gate does not know ([validated by: names the package, version range, advisory id and path in the blocking line](../../scripts/check-audit.test.ts#L105)).
+- An acceptance naming that advisory passes it ([validated by: passes when the acceptance names that advisory](../../scripts/check-audit.test.ts#L122)).
+- An acceptance naming a different advisory in the same package does not ([validated by: does not let an acceptance for one advisory cover a different one in the same package](../../scripts/check-audit.test.ts#L129)).
+- Such an acceptance is itself reported as matching no current advisory ([validated by: reports the unmatched acceptance as stale rather than ignoring it](../../scripts/check-audit.test.ts#L136)).
+- A second advisory in an otherwise accepted package still fails ([validated by: still fails on a second unacknowledged advisory in an otherwise accepted package](../../scripts/check-audit.test.ts#L157)).
+- An expired acceptance fails the check ([validated by: fails on an acceptance whose expiry has passed](../../scripts/check-audit.test.ts#L143)).
+- An expired acceptance is named by advisory and package ([validated by: names the expired acceptance by advisory and package](../../scripts/check-audit.test.ts#L150)).
+- A clean report with no acceptances passes ([validated by: passes a clean report with no acceptances](../../scripts/check-audit.test.ts#L169)).
 
 
 A `uses:` reference is pinned to a commit SHA because a tag is a mutable pointer its owner can repoint under a job holding repository credentials. The scan covers the whole of `.github/`, not `workflows/` alone: a composite action carries its own `uses:` lines and runs inside whichever job calls it, so scanning only workflows leaves it unpinnable with nothing to notice.
@@ -126,10 +128,10 @@ The pack list is checked for what it must carry as well as what it must not. A p
 The trust-boundary check runs before the gates rather than after them. A tag pushed from a branch that never reached `main` is rejected in seconds instead of after a full build and test run.
 Three holes in the first version of this gate, each of which let it pass on something it should have stopped. `metadata.vulnerabilities` was accepted as an alternative to the real map, so a report carrying counts but no listing printed a critical count and the word clean in the same sentence; every modern `npm audit --json` carries the map, so the alternative bought nothing. The `unknown:` fallback for a missing advisory id was applied on a cycle-pruned re-entry, so an ordinary circular `via` pair fabricated an advisory that no acceptance could name and no maintainer could clear, on a tag that cannot be re-pointed. And `source` is npm's id for the package rather than the advisory, so two advisories on one package collapsed to one id and a single acceptance silenced both.
 
-- A report carrying only metadata counts is rejected rather than read as zero findings ([validated by: rejects a report carrying only metadata counts, which declares vulnerabilities it cannot list](../../scripts/check-audit.test.ts#L161)).
-- A `via` cycle produces no fabricated advisory ([validated by: does not fabricate an advisory when two packages reach each other through via](../../scripts/check-audit.test.ts#L167)).
-- An advisory reached twice through `via` is reported once ([validated by: reports an advisory reached twice through via once, not twice](../../scripts/check-audit.test.ts#L198)).
-- Two advisories on one package stay distinct when neither carries a GHSA url ([validated by: keeps two advisories on one package distinct when neither carries a GHSA url](../../scripts/check-audit.test.ts#L217)).
+- A report carrying only metadata counts is rejected rather than read as zero findings ([validated by: rejects a report carrying only metadata counts, which declares vulnerabilities it cannot list](../../scripts/check-audit.test.ts#L178)).
+- A `via` cycle produces no fabricated advisory ([validated by: does not fabricate an advisory when two packages reach each other through via](../../scripts/check-audit.test.ts#L184)).
+- An advisory reached twice through `via` is reported once ([validated by: reports an advisory reached twice through via once, not twice](../../scripts/check-audit.test.ts#L215)).
+- Two advisories on one package stay distinct when neither carries a GHSA url ([validated by: keeps two advisories on one package distinct when neither carries a GHSA url](../../scripts/check-audit.test.ts#L234)).
 
 ### Tarball smoke test
 
