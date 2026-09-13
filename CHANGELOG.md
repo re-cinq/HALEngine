@@ -8,24 +8,8 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
-### Fixed
-
-- `setLogger(log)` and `logger: log` in `HalEngineConfig` no longer silence the engine. Handing the package's
-  own `log` object back to it made every call recurse until the stack ran out, and the overflow was swallowed,
-  so nothing was written and nothing failed. It is now treated as passing no logger: the console one is used.
-  The full configuration example did exactly this; it now shows a logger of its own.
-
-- `stop()` resolves after a `start()` that was refused, and after a second `stop()`, instead of rejecting with
-  `ERR_SERVER_NOT_RUNNING`. A bind failure inside `try { await start() } finally { await stop() }` used to
-  surface twice.
-
-- Calling `start()` on a running server is refused with `HAL Engine is already started` and leaves the server
-  as it was. It used to reject too, but only after removing the persistent `error` handler, so the next socket
-  error on the still-running server ended the process.
-
-## [0.2.0] - 2026-09-12
-
-First release under the `@re-cinq` scope. Nothing has been published before it, so there is no upgrade
+The first release under the `@re-cinq` scope, and not published yet: this heading becomes `## [0.2.0]`
+in the pull request that releases it. Nothing has been published before it, so there is no upgrade
 path from `0.1.0` on the registry — only from the git specifier.
 
 ### Changed
@@ -122,6 +106,16 @@ path from `0.1.0` on the registry — only from the git specifier.
 
 ### Fixed
 
+- `setLogger(log)` and `logger: log` in `HalEngineConfig` no longer silence the engine. Handing the package's
+  own `log` object back to it made every call recurse until the stack ran out, and the overflow was swallowed,
+  so nothing was written and nothing failed. It is now treated as passing no logger: the console one is used.
+  The full configuration example did exactly this; it now shows a logger of its own.
+- `stop()` resolves after a `start()` that was refused, and after a second `stop()`, instead of rejecting with
+  `ERR_SERVER_NOT_RUNNING`. A bind failure inside `try { await start() } finally { await stop() }` used to
+  surface twice.
+- Calling `start()` on a running server is refused with `HAL Engine is already started` and leaves the server
+  as it was. It used to reject too, but only after removing the persistent `error` handler, so the next socket
+  error on the still-running server ended the process.
 - `orchestrator.hooks` is reachable through `createHalEngine`. `OrchestratorHooks` was documented but the
   factory forwarded only `maxToolRounds` and `contextConfig`, so every hook was silently dropped. Assembling
   the parts by hand is no longer the only way to use them.
@@ -196,5 +190,4 @@ path from `0.1.0` on the registry — only from the git specifier.
 - Resolved a high-severity advisory in `ws`, a direct runtime dependency. The full dependency audit went
   from 18 advisories (1 critical, 6 high) to 3 (2 moderate, 1 low), none at high or above.
 
-[Unreleased]: https://github.com/re-cinq/HALEngine/compare/v0.2.0...main
-[0.2.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.2.0
+[Unreleased]: https://github.com/re-cinq/HALEngine/commits/main
