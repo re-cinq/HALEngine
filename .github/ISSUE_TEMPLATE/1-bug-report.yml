@@ -1,0 +1,61 @@
+name: "Bug report"
+description: "Something this package does is wrong, and you can show it"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report a security vulnerability here. Send it privately to security@re-cinq.com; SECURITY.md has the scope and timelines.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what you expected instead
+      description: State the observed behaviour and the behaviour you expected, so the difference is the report.
+      placeholder: "createHalEngine with provider mock answered 500 on POST /hal/chats; I expected 400."
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce it
+      description: The smallest configuration and calls that show it. A failing test is ideal; a short script is fine.
+      render: typescript
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      description: The version you installed, or the commit if you installed from a git specifier.
+      placeholder: "0.2.0"
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node version
+      description: Output of `node --version`. This package requires Node 22 or newer.
+      placeholder: "v22.11.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Which provider were you using?
+      options:
+        - mock
+        - bedrock
+        - vertex
+        - openai
+        - anthropic
+        - not provider-specific
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log lines or stack trace
+      description: Log lines are JSON, one object per line. Redact anything you would not publish.
+      render: shell
+    validations:
+      required: false
