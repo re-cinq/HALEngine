@@ -3,8 +3,9 @@
 // edits to the cited file - any cited
 // repository file, whatever its kind: each anchor's line number is
 // resolved to the content it cited in the base ref's copy of that file,
-// that content is found in the working copy, and the anchor is rewritten to
-// the match whose surrounding lines agree with the baseline's. When the cited
+// that content is found in the working copy (compared with quotes and
+// whitespace dropped, so a formatter pass is not drift), and the anchor is
+// rewritten to the match whose surrounding lines agree with the baseline's. When the cited
 // content occurs on several working lines, each candidate is scored by how
 // many of the baseline's neighbouring lines it reproduces at the same offsets;
 // a candidate whose context uniquely wins is chosen, and a tie is reported as
@@ -177,13 +178,19 @@ const contextScore = (baseLines, workingLines, baselineLine, candidateLine) => {
       continue;
     }
 
-    if (baseLines[baselineLine - 1 + offset] === workingLines[candidateLine - 1 + offset]) {
+    if (shape(baseLines[baselineLine - 1 + offset]) === shape(workingLines[candidateLine - 1 + offset])) {
       score += 1;
     }
   }
 
   return score;
 };
+
+// Lines are compared by shape, not text: a formatter changes quotes and
+// spacing without moving anything, and that must not read as drift. An
+// out-of-range line stays undefined so it never matches a real one.
+const shape = (line) =>
+  line === undefined ? undefined : line.replace(/["`]/g, "'").replace(/\s+/g, "");
 
 // Resolves one anchor: the content its baseline line held at the base ref,
 // located in the working copy of the same test file. Duplicate matches are
@@ -209,7 +216,8 @@ const resolveAnchor = (anchor, baselineLine, specDir) => {
   if (target === undefined) {
     return { failure: `#L${baselineLine} is beyond the end of ${testPath} at ${baseRef}` };
   }
-  const candidates = workingLines.flatMap((line, index) => (line === target ? [index + 1] : []));
+  const wanted = shape(target);
+  const candidates = workingLines.flatMap((line, index) => (shape(line) === wanted ? [index + 1] : []));
 
   if (candidates.length === 0) {
     return { failure: `"${target.trim().slice(0, 70)}" no longer exists in ${testPath}` };

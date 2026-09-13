@@ -645,4 +645,30 @@ describe('repoint-spec-anchors', () => {
       expectUsageError(run(repo, 'main', 'also-main'));
     });
   });
+
+  // Last in the file on purpose: the spec cites this file by line, and a test inserted above would move them all.
+  describe('a cited file a formatter rewrote', () => {
+    it('follows a line a formatter rewrote, because quotes and spacing are not drift', () => {
+      writeCited(repo, ['alpha', 'it("beta", () => {', 'gamma', 'delta']);
+      commit(repo, 'double quotes');
+      writeCited(repo, ['intro', 'alpha', "it('beta', () => {", 'gamma', 'delta']);
+
+      const {status} = run(repo, 'main');
+
+      expect({status, spec: read(repo, SPEC)}).toEqual({
+        status: 0,
+        spec: asSpec(`../../${CITED}#L3`, `../../${CITED}#L5`),
+      });
+    });
+
+    it('reads a file reformatted in place as up to date under --check', () => {
+      writeCited(repo, ['alpha', 'it("beta", () => {', 'gamma', 'delta']);
+      commit(repo, 'double quotes');
+      writeCited(repo, ['alpha', "it('beta', () => {", 'gamma', 'delta']);
+
+      const {status, stdout} = run(repo, '--check', 'main');
+
+      expect({status, upToDate: stdout.includes('up to date: 3')}).toEqual({status: 0, upToDate: true});
+    });
+  });
 });
