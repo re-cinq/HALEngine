@@ -1,8 +1,8 @@
 import {mkdtempSync, copyFileSync, mkdirSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {spawnSync} from 'node:child_process';
 import {root} from './lib/repo-root.mjs';
+import {runBash} from './helpers/script-runner.js';
 
 // A tag that has fired a publish cannot be un-pushed, so everything here runs before the tag exists.
 
@@ -22,10 +22,7 @@ const workspace = (version: string, changelog: string): string => {
   return dir;
 };
 
-const run = (dir: string, tag: string) => {
-  const result = spawnSync('bash', [join(dir, 'scripts', 'check-version.sh'), tag], {cwd: dir, encoding: 'utf8'});
-  return {status: result.status, stdout: result.stdout, stderr: result.stderr};
-};
+const run = (dir: string, tag: string) => runBash(join(dir, 'scripts', 'check-version.sh'), [tag], {cwd: dir});
 
 afterAll(() => {
   for (const dir of workspaces) rmSync(dir, {recursive: true, force: true});
