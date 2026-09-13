@@ -1,0 +1,37 @@
+name: "Feature request"
+description: "Something this package should do and does not"
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the situation you are in, not the solution you have in mind. What you cannot do today is the useful part.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like it to do
+      description: If you have an API in mind, sketch the call site.
+      render: typescript
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you tried or considered instead
+      description: Existing options that nearly work, and why they do not. A hook, a custom provider, or your own store may already cover it.
+    validations:
+      required: false
+  - type: checkboxes
+    id: breaking
+    attributes:
+      label: Compatibility
+      options:
+        - label: This would change existing behaviour or the public API
+          required: false
+  - type: markdown
+    attributes:
+      value: |
+        A change to the public API is discussed in an issue before it is written, carries a migration guide, and bumps the minor version. CONTRIBUTING.md has what the build expects of a pull request.

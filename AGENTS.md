@@ -23,7 +23,7 @@ Agents should read files in this order to understand the HAL Engine codebase:
 
 ### Development
 ```bash
-npm run dev          # Start example/server.ts with hot reload (node --watch + ts-node)
+npm run dev          # Start example/server.ts with hot reload (tsx watch)
 npm run typecheck    # Run TypeScript type checking without emitting
 ```
 
@@ -49,8 +49,19 @@ npm run prettier:check  # Check formatting without writing
 
 ### All Checks (Recommended Pre-Commit)
 ```bash
-npm run typecheck && npm run eslint && npm run prettier:check && npm test && npm run build
+npm run verify
 ```
+
+That is the blocking set `.github/workflows/ci.yml`'s `verify` job runs on every
+pull request, in the same order, and `scripts/verify-script.test.ts` fails if the
+two stop agreeing - so this command cannot quietly become a subset of what CI
+demands. Two gates in that job are missing from it because both diff against
+`origin/main` and neither runs the same way on a checkout: the spec anchor check
+and the changelog check.
+
+Two further CI jobs are worth running locally before a release or a change that
+touches packaging: `npm run check:build-chain` (audit and action pins) and
+`npm run smoke` (packs the tarball and installs it outside this tree).
 
 ## Spec Header Table
 
@@ -111,7 +122,7 @@ statement it makes is the wrong ask of a decision record.
 spec, it predates the convention, and its content is deliberately frozen -
 giving it a header table and a lead paragraph would mean writing new prose into
 a file that is meant to stay unchanged. The exemption covers the header table
-and the lead paragraph only: upstream's `check:spec-links` does scan
+and the lead paragraph only: the Lore coverage job does scan
 `.specify/spec.md`, so link placement still applies to it.
 
 ## Spec Test Links
@@ -124,8 +135,17 @@ in this repo, so the path points into `src/`:
 ```markdown
 - All entries within a single assistant response are committed before the next
   user message is processed
-  ([validated by](../../src/orchestration/chatOrchestrator.test.ts#L42)).
+  ([validated by: commits every entry before the next user message](../../src/orchestration/chatOrchestrator.test.ts#L42)).
 ```
+
+The citation carries the test's **name** as well as its line. The name is what the
+author cited; the line is a derived pointer, and it goes stale on its own - adding
+an import above a suite moves every test below it, and the citation lands on a
+different, still-valid declaration without anything noticing. `npm run spec:names`
+holds each citation to the test it names, and `npm run spec:names:fix` repoints the
+line from the name. The `#Lnn` stays because the lint rule and the coverage job
+both index by it; a citation without one marks the whole file covered rather than
+one test.
 
 A citation counts as coverage only where it is trailing, and a test link placed
 anywhere else in the statement is a misplaced citation rather than a weaker one.
@@ -216,7 +236,7 @@ test(tools): add registry conflict detection
 ### Before Opening
 1. Run full check suite and ensure all pass:
    ```bash
-   npm run typecheck && npm run eslint && npm run prettier:check && npm test && npm run build
+   npm run verify
    ```
 2. Create a feature branch from `main`: `git checkout -b feat/description`
 3. Commit with conventional format
@@ -252,8 +272,13 @@ Brief summary of changes and rationale.
 ```
 
 ### Acceptance Criteria
-- [ ] All GitHub Actions CI checks pass (typecheck, eslint, prettier, test, build)
-- [ ] At least one approval from codeowner
+- [ ] All GitHub Actions CI checks pass. `.github/workflows/ci.yml` is three
+      jobs - `verify` (sixteen steps, of which `npm run verify` reproduces
+      fourteen), `build-chain` (audit, action pins) and `smoke` (packed tarball,
+      both peer variants)
+- [ ] Reviewed by somebody other than the author. `main` requires a pull request
+      but is configured for zero required approvals and carries no `CODEOWNERS`,
+      so this one is convention rather than a gate
 - [ ] No merge conflicts
 - [ ] Commit messages follow conventional format
 - [ ] Tests cover new functionality (aim for >80% coverage on modified files)
@@ -299,7 +324,11 @@ For new provider support:
 ### Testing
 - Jest configuration: `jest.config.js`
 - ts-jest for TypeScript support
-- Minimum coverage: 70% lines for new code
+- Minimum coverage: 70% lines for new code. That is review guidance; the gate is
+  `coverageThreshold` in `jest.config.js`, set to what each path measured rather
+  than to a flat 70, which had handed four groups an 18-30 point regression budget
+- The floors ratchet: raise one when coverage rises, never lower one to make a
+  change pass. A floor that moves down is a regression with the alarm switched off
 - All public APIs require at least one test
 - Async code must have proper await/done handling
 
@@ -312,11 +341,22 @@ For new provider support:
 - WebSocket protocol defined in types/messages.ts (additive changes only for backward compatibility)
 
 ### Dependency Management
-- Core dependencies only (Express, ws, uuid, cookie)
+- Core dependencies only (Express, ws, uuid, cookie, cors, cookie-parser)
+- `@types/express`, `@types/node` and `@types/ws` are dependencies rather than
+  devDependencies, because the emitted `.d.ts` files import `express`, `http`,
+  `stream` and `ws`. Moving them back breaks a consumer's `tsc`, not ours
 - Provider SDKs as optional peerDependencies
 - No peer dependency version conflicts
-- Security: npm audit must show no vulnerabilities (npm ci to lock)
-- License: ISC (maintain license header in files)
+- Security: `npm run check:audit` fails at `high` and above on the full installed
+  tree. Moderate and low advisories do not block. An advisory that cannot be
+  fixed yet goes in `.github/audit-acknowledgements.json` carrying advisory,
+  package, reason, ISO expiry and who acknowledged it; an expired entry fails
+  the gate, so an acceptance cannot become permanent by neglect
+- License: Apache-2.0, declared in `package.json` and carried in `LICENSE`. No
+  per-file licence headers: `re-lint/max-comment-lines` caps a comment at one
+  line and exempts only tooling directives, so the thirteen-line Apache notice
+  cannot go in a source file. Apache-2.0 recommends headers, it does not
+  require them
 
 ### Documentation Requirements
 - A comment may span at most one line, JSDoc included — see Code Style. What a
@@ -326,14 +366,64 @@ For new provider support:
   "what". Anything longer goes to `specs/` or `adrs/`
 - README.md kept in sync with actual features/examples
 - specs/ directory is source of truth for architecture and protocols; adrs/ records decisions
-- CHANGELOG implied by conventional commits
+- `.specify/spec.md` is the repo-level system spec. It is ingested by context
+  tooling and served as authority, so a claim left stale there reaches every
+  agent that assembles context for this repo. Keep it true when the manifest
+  changes
+- `CHANGELOG.md` at the repo root, Keep a Changelog 1.1.0, newest first under
+  `## [Unreleased]`. Anything a consumer of the published package can observe
+  gets an entry, written for somebody installing it rather than for somebody
+  reading this repo's commit log. Enforced in CI: a pull request touching
+  non-test files under `src/` fails unless it also touches `CHANGELOG.md`, and
+  the `no-changelog` label is the deliberate escape hatch for a change nothing
+  installable observes. Not derived from commit messages - a release note and a
+  commit subject have different readers
+
+### Releasing
+- Four human steps: bump `version` in `package.json` inside the pull request,
+  merge it, tag `vX.Y.Z` on `main`, push the tag. Everything after the tag is CI
+- Release notes are hand-written on Keep a Changelog 1.1.0, not generated from
+  commit subjects. The audience is somebody installing the package, who cannot
+  act on `refactor(transport):` and needs to know what changed for them
+- Rename `CHANGELOG.md`'s `## [Unreleased]` heading to the version being
+  released in that same pull request, and open a fresh `## [Unreleased]` above it.
+  `npm run check:version -- vX.Y.Z` fails if the heading does not name the version
+- Run `npm run check:version -- vX.Y.Z` before pushing the tag. A tag can be
+  deleted; a published version cannot be replaced, and after 72 hours cannot be
+  withdrawn
+- The tag must be `vMAJOR.MINOR.PATCH` and match `package.json` exactly.
+  Prerelease tags are rejected because nothing passes `--tag`, so one would
+  publish as `latest` and every plain `npm install` would resolve to it
+- Tag a commit that is already merged to `main`. The workflow refuses a tag whose
+  commit is not an ancestor of `origin/main`: a tag is pushable from any branch,
+  so without that check the protection on `main` is not the boundary the release
+  rests on
+- `.github/workflows/publish.yml` re-runs the version guard, the build-chain
+  checks and the packed-tarball smoke test against the tagged commit, and
+  refuses a pack list carrying any `*.test.*` entry, before anything is
+  published. A tag points wherever its author chose, so a green run on `main` is
+  not evidence about what is being released
+- Authentication is npm Trusted Publishing over OIDC. There is no `NPM_TOKEN`
+  secret, and the trusted publisher is registered against the workflow file's
+  path - renaming or moving `publish.yml` stops publishing until it is
+  re-registered
+- The publish carries `--provenance`, which is available only because ADR-007
+  makes the source repository public
 
 ### Breaking Changes
 - MUST be discussed in issue before implementation
 - MUST include migration guide in PR
 - MUST increment MINOR version (semver)
 - MUST update README quick start example if API changes
-- MUST add deprecation period (1 minor version) when possible
+- MUST publish the migration guide as a `### Changed` entry in `CHANGELOG.md` as
+  well as in the pull request: the PR is where reviewers read it, the changelog is
+  where the consumer it affects reads it
+- MUST add deprecation period (1 minor version) when possible. The unit is a
+  published registry version and the audience is a consumer resolving one:
+  a deprecation runs from the version that announces it to the version that
+  removes the behaviour. A consumer on a git specifier is outside the clause -
+  they pin a commit, so nothing announces anything to them and no minor
+  elapses on their side
 
 ### AI Provider Compliance
 - No hardcoded API keys or secrets (use environment variables)

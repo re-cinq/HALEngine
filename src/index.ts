@@ -41,7 +41,7 @@ export {InMemoryPromptStore} from './infrastructure/stores/inMemoryPromptStore.j
 export {InMemoryUsageStore} from './infrastructure/stores/inMemoryUsageStore.js';
 export {ThinkingTagParser} from './infrastructure/parsers/thinkingTagParser.js';
 export type {ParsedSegment} from './infrastructure/parsers/thinkingTagParser.js';
-export {log} from './shared/logger.js';
+export {log, setLogger} from './shared/logger.js';
 export type {Logger} from './shared/logger.js';
 
 export type {
@@ -88,7 +88,7 @@ export type {
   UserMessagePayload,
 } from './types/messages.js';
 
-export type {WsAuthenticator, HttpAuthMiddleware} from './types/auth.js';
+export type {WsAuthenticator, HttpAuthMiddleware, AuthenticatedRequest} from './types/auth.js';
 export type {SessionStore, SessionCreateOptions, BaseSession} from './types/sessionStore.js';
 export type {PromptStore, PromptTemplate} from './types/promptStore.js';
 export type {UsageStore, UsageRecord} from './types/usageStore.js';

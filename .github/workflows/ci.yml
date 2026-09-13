@@ -4,6 +4,17 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Manual runs: re-checking a branch against a moved main, or confirming a gate after
+  # changing one, without pushing an empty commit.
+  workflow_dispatch:
+  # An advisory published after a merge is invisible until someone opens a pull request, and this
+  # repository can go days without one. Monday 07:00 UTC; only `build-chain` answers it.
+  schedule:
+    - cron: '0 7 * * 1'
+
+# Every job here only reads the checkout; the repo default is write.
+permissions:
+  contents: read
 
 # A newer push to the same branch supersedes an in-flight run. main is exempt:
 # every commit there should have its own recorded result.
@@ -14,31 +25,41 @@ concurrency:
 jobs:
   verify:
     name: Verify
+    # The scheduled run exists for the dependency audit; re-running the suite on an unchanged
+    # tree every Monday would report nothing new.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-          # Full history, not for this job but for the spec anchor check that
-          # joins it in tooling parity phase 03: it resolves cited content from
+          # Full history, not for this job but for the spec anchor check below:
+          # it resolves cited content from
           # origin/main, which a shallow clone cannot serve.
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: npm
 
-      # The `prepare` script builds on install, so a broken compile fails here
-      # before any named gate runs.
+      # --ignore-scripts so `prepare` does not build on install: what a lifecycle script
+      # runs is out of this workflow's control, and the Build step below is where a broken
+      # compile should be reported. Type check catches it earlier still.
       - name: Install
-        run: npm ci
+        run: npm ci --ignore-scripts
 
-      # These five are the pre-commit sequence AGENTS.md documents, run in the
-      # same order and kept as separate steps so a red run names the gate that
-      # failed rather than a single opaque command.
+      # Every `npm run` step below is one link of the `verify` script in
+      # package.json, in the same order - scripts/verify-script.test.ts holds
+      # the two together - and kept as separate steps so a red run names the
+      # gate that failed rather than a single opaque command.
       - name: Type check
         run: npm run typecheck
+
+      # example/ is outside tsconfig.json's rootDir, so nothing checked the one
+      # file the README and the guide are written against.
+      - name: Type check the example
+        run: npm run typecheck:example
 
       - name: Lint (--max-warnings 0)
         run: npm run eslint
@@ -61,8 +82,10 @@ jobs:
       - name: Format check
         run: npm run prettier:check
 
-      - name: Test
-        run: npm test
+      # Runs the whole suite and fails it on the committed coverage floor in
+      # jest.config.js, so this is the test gate rather than an extra pass.
+      - name: Test (with coverage floor)
+        run: npm run test:coverage
 
       - name: Build
         run: npm run build
@@ -76,10 +99,31 @@ jobs:
         run: node scripts/repoint-spec-anchors.mjs --check origin/main
 
       # A citation counts as coverage only in its statement's trailing
-      # parenthetical; one written mid-statement is dropped upstream in silence,
+      # parenthetical; one written mid-statement is dropped by the Lore job in silence,
       # so the spec reads as cited while its coverage is zero. A red check is
       # fixed by moving the link to the end of its statement, never by deleting
       # it (AGENTS.md § Spec Test Links).
+      # Every fenced typescript block in the three documented files is generated
+      # from source; hand transcription is what produced the defects this catches.
+      - name: Documented code blocks
+        run: npm run docs:check
+
+      # Three rules that held only because somebody remembered them: a path in prose that resolves,
+      # a spike that says it is a spike, and an example region inside the EU.
+      - name: Documented paths resolve
+        run: npm run docs:check-paths
+
+      - name: Spike documents carry a status block
+        run: npm run docs:check-spikes
+
+      - name: Documented regions
+        run: npm run check:regions
+
+      # A line number is a derived pointer; the name is what the author cited. This catches a citation
+      # whose line moved under it, which no baseline comparison can see on a branch that edits the spec.
+      - name: Spec citations name their test
+        run: npm run spec:names
+
       - name: Spec link placement
         run: npm run check:spec-links
 
@@ -90,3 +134,79 @@ jobs:
       # and never gates.
       - name: Spec status
         run: npm run check:spec-status
+
+      # A release note and a commit subject have different readers, so this is a
+      # file the author writes rather than something derived from the log. The
+      # label is the escape hatch for a src/ change nothing installable observes.
+      - name: Changelog entry
+        if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'no-changelog')
+        # No fetch: the checkout above resolves every head into refs/remotes
+        # with fetch-depth 0, and its credential is gone by the time a step
+        # runs, so fetching here asked an unauthenticated git for a private
+        # repository and exited 128 before the gate was ever reached.
+        run: bash scripts/check-changelog.sh "origin/${{ github.base_ref }}"
+
+  # Separate job, not a step on `verify`: these two check what the build chain
+  # pulls in rather than what the code does, and a red audit should not read as
+  # a failing test suite. It needs the tree installed but nothing built, so it
+  # skips `prepare` with --ignore-scripts.
+  build-chain:
+    name: Build chain
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install (no build)
+        run: npm ci --ignore-scripts
+
+      # Full tree, dev included: those packages are what a runner installs
+      # before building dist/, and the release workflow signs what it produces.
+      - name: Audit (high and above)
+        run: npm run check:audit
+
+      # A tag is a mutable pointer its owner can repoint under a job that holds
+      # repository credentials.
+      - name: Action pins
+        run: npm run check:action-pins
+
+  # Its own job because it is the only check that exercises the package as a
+  # consumer receives it - packed, installed outside this tree, with no optional
+  # peer present. Everything else here tests the source in place, where every
+  # dependency is already installed and every one of these failures is invisible.
+  smoke:
+    name: Smoke (packed tarball)
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install (no build)
+        run: npm ci --ignore-scripts
+
+      # Explicit, rather than relying on `npm pack` to trigger `prepare`: a build failure should be
+      # reported by a step named Build, not as a confusing pack error inside the smoke script.
+      - name: Build
+        run: npm run build
+
+      # Two variants, two jobs' worth of signal in one: `bare` is a mock-provider consumer with no
+      # optional peer, `full` is a Bedrock or Vertex consumer with both. They fail differently and
+      # separate steps name which consumer is broken.
+      - name: Smoke (no optional peer)
+        run: npm run smoke -- bare
+
+      - name: Smoke (both optional peers)
+        run: npm run smoke -- full

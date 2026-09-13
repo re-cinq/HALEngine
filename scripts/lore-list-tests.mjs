@@ -18,6 +18,8 @@ try {
   execFileSync('npx', ['jest', '--json', `--outputFile=${reportFile}`], {
     cwd: process.cwd(),
     stdio: ['ignore', 'ignore', 'inherit'],
+    // The suite runs as ESM; jest needs the flag in every spawn, not just npm test.
+    env: {...process.env, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --experimental-vm-modules`.trim()},
   });
 } catch {
   // A failing test still produces a full report, and listing must not depend

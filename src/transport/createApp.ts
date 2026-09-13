@@ -11,6 +11,7 @@ export interface HalAppOptions {
   basePath?: string;
   authMiddleware?: HttpAuthMiddleware;
   orchestrator?: ChatOrchestrator;
+  /** Gates whether the demo chat routes mount; those routes keep their own Map and never read it. */
   sessionStore?: SessionStore;
   additionalRoutes?: (router: Router) => void;
   errorHandler?: express.ErrorRequestHandler;

@@ -6,69 +6,107 @@ HAL Engine extracts the core patterns of building an AI-powered chat backend int
 
 ## Features
 
-- **Multi-provider support**: AWS Bedrock (full), OpenAI, Anthropic, Google Vertex AI (stubs ready for implementation)
-- **Tool system**: Register custom tools with JSON Schema validation, executed in parallel within a configurable tool loop
+- **Multi-provider support**: AWS Bedrock and Google Vertex AI implemented, OpenAI and Anthropic stubbed, plus a built-in Mock. Scored per method in [Providers](#providers) — a provider can implement one of `AIProvider`'s two methods without the other
+- **Tool system**: Register custom tools with a JSON Schema `inputSchema`, executed in parallel within a configurable tool loop. The schema is forwarded to the model to shape the call it produces; it is **not** enforced before your executor runs, so validate the input you are handed
 - **Streaming**: Real-time WebSocket streaming with thinking tag parsing and entry-based protocol
 - **Pluggable auth**: Bring your own WebSocket and HTTP authentication
 - **Pluggable session store**: In-memory default, swap in Redis/database/etc.
 - **Configurable prompts**: Identity, domain context, response guidelines -- all injectable
 - **Express + WebSocket**: Full HTTP API and WebSocket server out of the box
 
-## Quick Start
+## Install
 
 ```bash
-npm install hal-engine
+npm install @re-cinq/hal-engine
 ```
 
+**The first release has not happened yet, so that command does not resolve.** Until it does, install from the git specifier below. This section describes the registry specifier because it is the supported install path and the one this project releases against: every published version is built by a workflow run in this repository's CI and carries an npm provenance attestation. `npm audit signatures` verifies it, which tells you the tarball was built by a workflow of this repository from the commit the attestation names, rather than uploaded by whoever held a token. The first version, `0.2.0`, is published once by a single-use workflow started by hand, because the registry cannot hold a trusted publisher for a name that has never been published; every version after it is published by the release workflow from a `v*` tag, with no token anywhere.
+
+A git specifier resolves today, and four things differ. It builds `dist/` from a checkout through the `prepare` script rather than installing a built artefact, so your install runs this package's TypeScript compiler. It carries no provenance, because provenance is produced at publish time. It pins whatever commit your lockfile recorded, not a version, so `npm outdated` has nothing to compare and a fix reaches you only when you repoint it. And npm installs a dependency under its **key**, not the package's `name`.
+
+That last one has a trap in it. An existing `"hal-engine": "github:…"` entry keeps resolving after the rename — the directory is still `node_modules/hal-engine`, so `import 'hal-engine'` keeps working while the package inside it declares `@re-cinq/hal-engine`. The rename produces no error, no warning and no failed build. Worse, following the rename and switching your imports to `@re-cinq/hal-engine` is what breaks: that specifier resolves to nothing until the key is renamed too. Move to the registry specifier, or rename the key and the imports together.
+
+## Quick Start
+
+<!-- doc-block: example/server.ts#quick-start -->
 ```typescript
-import {createHalEngine, ToolRegistry} from 'hal-engine';
+import {createHalEngine, ToolRegistry} from '@re-cinq/hal-engine';
 
 const tools = new ToolRegistry();
+
 tools.register(
   {
     name: 'get_weather',
-    description: 'Get weather for a city',
+    description: 'Get current weather for a city',
     inputSchema: {
       type: 'object',
-      properties: {city: {type: 'string'}},
+      properties: {
+        city: {type: 'string', description: 'City name'},
+      },
       required: ['city'],
     },
+    promptInstructions: 'Use this tool when the user asks about weather in a specific city.',
+    examplePrompts: ['What is the weather in Berlin?', 'Is it raining in Tokyo?'],
   },
-  async input => `Weather in ${input.city}: 22C, sunny`
+  async input => {
+    const city = input.city as string;
+    return `Weather in ${city}: 22C, partly cloudy, wind 12 km/h NW`;
+  }
 );
 
 const engine = createHalEngine({
-  provider: {type: 'bedrock', modelId: 'eu.amazon.nova-pro-v1:0', region: 'eu-central-1', maxTokens: 4096},
-  prompt: {identity: 'You are a helpful assistant.'},
+  provider: {type: 'mock'},
+  prompt: {
+    identity: 'You are a helpful AI assistant.',
+    responseGuidelines: 'Be concise and informative.',
+  },
   tools,
   auth: {
+    // No `http` middleware here, so the chat routes under /api/chats answer 401 rather than serving anyone.
     ws: async req => {
       const token = req.headers.authorization;
       if (!token) return null;
       return {id: 'user-1'};
     },
   },
+  transport: {
+    port: 8086,
+    basePath: '/api',
+  },
 });
 
-engine.start(8086);
+await engine.start();
 ```
+
+This is [`example/server.ts`](example/server.ts) apart from the import specifier, and CI type-checks that file on every pull request, so it cannot drift from the API it demonstrates.
+
+`provider: {type: 'mock'}` needs no credentials and no SDK — swap it for one from the [Providers](#providers) table when you have them. The server listens on `ws://localhost:8086/api/ws`, answers `GET /api/health`, and mounts the demo chat routes at `/api/chats`, which reply `401` until you configure `auth.http`.
 
 ## Providers
 
-| Provider | Status | Package |
-|----------|--------|---------|
-| AWS Bedrock | Full | `@aws-sdk/client-bedrock-runtime` |
-| Google Vertex AI | Full | `@google-cloud/vertexai` |
-| OpenAI / ChatGPT | Stub | `openai` |
-| Anthropic / Claude | Stub | `@anthropic-ai/sdk` |
-| Mock | Full | (built-in) |
+`AIProvider` has two methods and a provider can implement one without the other, so status is scored per method. Bedrock streams but cannot produce structured output; Vertex does both. This is the only implementation-status matrix in the repository — npm renders `README.md` and nothing else, and a second copy would drift from it.
 
-Stub providers throw a descriptive error with implementation guidance. See [docs/providers.md](specs/hal-engine-providers/spec.md) for details on implementing a provider.
+| Provider | `type` | `sendMessage` | `generateStructured` | Package |
+|---|---|---|---|---|
+| AWS Bedrock | `'bedrock'` | Implemented | throws `Bedrock structured output is not yet implemented.` | `@aws-sdk/client-bedrock-runtime` |
+| Google Vertex AI | `'vertex'` | Implemented | Implemented | `@google-cloud/vertexai` |
+| Mock | `'mock'` | Implemented | Implemented | (built-in) |
+| OpenAI / ChatGPT | `'openai'` | throws `OpenAI provider is not yet implemented.` | throws `OpenAI provider is not yet implemented.` | `openai` |
+| Anthropic / Claude | `'anthropic'` | throws `Anthropic provider is not yet implemented.` | throws `Anthropic provider is not yet implemented.` | `@anthropic-ai/sdk` |
+
+A stub's message continues past the sentence in the table, naming the SDK to install and a provider to copy — for example `OpenAI provider is not yet implemented. Install openai and implement the streaming logic. See src/providers/bedrock/ for a reference implementation.`
+
+`generateStructured` returns typed JSON for internal decisions — evaluation, classification, extraction — and is never user-facing. If your application does not call it, the `generateStructured` column does not constrain your choice.
+
+**Switching providers is config-only only within a column.** Moving from Vertex to Bedrock changes one config object if you only stream, and breaks at runtime if anything calls `generateStructured`. There is no compile-time signal: every provider satisfies `AIProvider`, and a stub satisfies it by throwing.
+
+See [the providers spec](specs/hal-engine-providers/spec.md) for configuration and for implementing one.
 
 ## Configuration
 
 The `createHalEngine()` function accepts a single config object:
 
+<!-- doc-block: none -- annotated for the npm front page; the unannotated interface is HalEngineConfig in src/config.ts, which typecheck covers -->
 ```typescript
 interface HalEngineConfig {
   provider: ProviderConfig;        // Which AI provider to use
@@ -89,10 +127,28 @@ interface HalEngineConfig {
     maxToolRounds?: number;        // Max tool loop iterations (default: 5)
     contextConfig?: Partial<ContextConfig>;
   };
-  onConnect?: (session) => void;
-  onDisconnect?: (sessionId) => void;
+  onConnect?: (session) => void | Promise<void>;      // Fire-and-forget; never awaited
+  onDisconnect?: (sessionId) => void | Promise<void>;  // Fire-and-forget; never awaited
 }
 ```
+
+### Environment variables
+
+Three, and only three. Everything else is a config field.
+
+| Variable | Read at | Overridden by | Default |
+|---|---|---|---|
+| `CORS_ORIGIN` | `src/transport/createApp.ts` | `transport.corsOrigin` | `http://localhost:3000` |
+| `PORT` | `src/transport/createServer.ts` | `transport.port`, or the argument to `engine.start(port)` | `8086` |
+| `LOG_LEVEL` | `src/shared/logger.ts` | nothing — there is no config field | `info` |
+
+`CORS_ORIGIN` carries **one origin**. The value reaches `cors({origin})` unsplit, so a comma-separated list is a single literal string that matches no browser origin. Pass an array to `transport.corsOrigin` for several.
+
+`PORT` is read only when neither `engine.start(port)` nor `transport.port` supplied one. A value that is not a positive number falls through to `8086` — `Number(process.env.PORT) || 8086`, so `PORT=0` and `PORT=http` both yield `8086`. `transport.port` is resolved with `??` rather than `||`, so a configured `0` means "let the OS choose a free port" and is not replaced by the default.
+
+`LOG_LEVEL` is resolved once at module load, so changing `process.env.LOG_LEVEL` afterwards has no effect. See [Logging](docs/logging.md).
+
+No vendor credential variable appears here, because this package reads none of them. See [Providers](#providers).
 
 ## Project Structure
 
@@ -116,7 +172,15 @@ src/
 - [Adding a Tool](docs/adding-a-tool.md)
 - [Tool Responses](specs/hal-engine-tool-responses/spec.md)
 - [Providers](specs/hal-engine-providers/spec.md)
+- [Logging](docs/logging.md)
+- [Contributing](CONTRIBUTING.md)
 - [Coding Practices](docs/coding-practices.md)
+
+## Security
+
+Do not open a public issue for a vulnerability. Report it privately to **security@re-cinq.com**; we aim to acknowledge within 48 hours.
+
+This package terminates WebSocket connections, runs registered tools against caller-supplied input, and forwards conversation state to third-party model APIs, so the reports that matter are the ones that cross a session boundary, escape the tool contract, or move credentials. Full intake, supported versions and scope are in [SECURITY.md](./SECURITY.md).
 
 ## Development
 
@@ -130,4 +194,4 @@ npm run dev          # Dev server with hot reload
 
 ## License
 
-ISC
+Apache-2.0. The full text is in [LICENSE](LICENSE), and the same identifier is the `license` field of `package.json`.

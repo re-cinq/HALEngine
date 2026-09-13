@@ -13,8 +13,12 @@ permissions:
 jobs:
   impact:
     runs-on: ubuntu-latest
+    # A fork PR carries no secrets and a read-only GITHUB_TOKEN whatever the
+    # permissions block says, so this check could only ever post "unavailable"
+    # and would 403 doing it. Skip it rather than fail every outside PR.
+    if: github.event.pull_request.head.repo.full_name == github.repository
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
@@ -46,7 +50,7 @@ jobs:
           # whatever main pointed at when the event fired, so a two-dot diff
           # reports every commit merged to main since the branch point as a
           # reversed change of this PR - which is how a PR touching none of them
-          # got 31 statements blamed on task-queue-pg.ts and friends.
+          # got 31 statements blamed on files it never touched.
           MERGE_BASE=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
           export MERGE_BASE
           echo "diffing $MERGE_BASE..$HEAD_SHA"
@@ -185,7 +189,7 @@ jobs:
 
       - name: Render annotations + sticky comment
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           script: |
             const fs = require('fs');
@@ -198,20 +202,26 @@ jobs:
 
             // The sticky comment is the deliverable — post it first so a denied
             // checks:write scope (GITHUB_TOKEN read-only) can never suppress it.
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.payload.pull_request.number,
-            });
-            const existing = comments.find((c) => c.body && c.body.includes(MARKER));
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body,
+            // Best-effort like the check-run below: pull-requests:write can be
+            // denied too, and an advisory check must not fail the PR over it.
+            try {
+              const { data: comments } = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
               });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner, repo: context.repo.repo, issue_number: context.payload.pull_request.number, body,
-              });
+              const existing = comments.find((c) => c.body && c.body.includes(MARKER));
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body,
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner, repo: context.repo.repo, issue_number: context.payload.pull_request.number, body,
+                });
+              }
+            } catch (err) {
+              core.warning('sticky comment failed (' + err.status + '): grant GITHUB_TOKEN pull-requests:write to enable it.');
             }
 
             // The annotated check-run is a nice-to-have; best-effort so a 401/403

@@ -1,0 +1,5 @@
+name: A composite action
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4

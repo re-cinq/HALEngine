@@ -29,7 +29,7 @@ Pluggable interfaces: `AIProvider`, `SessionStore`, `WsAuthenticator`, `PromptSt
 ## Commands
 
 ```bash
-npm run dev              # Hot-reload dev server: example/server.ts via node --watch
+npm run dev              # Hot-reload dev server: example/server.ts via tsx watch
 npm run typecheck        # Type-check without emitting
 npm test                 # Jest suite
 npm run build            # Compile to dist/
@@ -41,7 +41,7 @@ npm run prettier:check   # Check formatting only
 Pre-commit (run all):
 
 ```bash
-npm run typecheck && npm run eslint && npm run prettier:check && npm test && npm run build
+npm run verify
 ```
 
 ## Code rules
@@ -73,6 +73,7 @@ These rules enforce message ordering and must not be violated when adding provid
 
 Providers must implement **both** methods:
 
+<!-- doc-block: src/types/ai.ts#AIProvider -->
 ```typescript
 interface AIProvider {
   sendMessage(params: SendMessageParams): AsyncGenerator<MessageChunk>;
@@ -94,6 +95,7 @@ interface AIProvider {
 
 ## Adding a tool
 
+<!-- doc-block: none -- the registration call shape, with placeholder fields a reader fills in -->
 ```typescript
 tools.register(
   {
@@ -121,19 +123,20 @@ See `docs/adding-a-tool.md` and `specs/hal-engine-tool-responses/spec.md` for fu
 
 Pass hooks to `createChatOrchestrator` (via `ChatOrchestratorOptions.hooks`) to intercept the message lifecycle:
 
+<!-- doc-block: src/orchestration/chatOrchestrator.ts#OrchestratorHooks -->
 ```typescript
 interface OrchestratorHooks {
-  beforeSession?:       (session: ChatSession) => Promise<void>;
-  beforeUserInput?:     (session: ChatSession, msg: string) => Promise<string>;   // can rewrite user message
-  afterUserInput?:      (session: ChatSession, msg: string) => Promise<void>;
-  beforeModelResponse?: (session: ChatSession, systemPrompt: string) => Promise<string>; // can replace system prompt
-  afterModelResponse?:  (session: ChatSession, text: string, usage?: UsageMetadata) => Promise<void>;
-  afterSession?:        (session: ChatSession) => Promise<void>;   // always fires, even on error
-  onError?:             (session: ChatSession, error: Error) => Promise<void>;
+  beforeSession?: (session: ChatSession) => Promise<void>;
+  afterSession?: (session: ChatSession) => Promise<void>;
+  beforeUserInput?: (session: ChatSession, userMessage: string) => Promise<string>;
+  afterUserInput?: (session: ChatSession, userMessage: string) => Promise<void>;
+  beforeModelResponse?: (session: ChatSession, systemPrompt: string) => Promise<string>;
+  afterModelResponse?: (session: ChatSession, responseText: string, usage?: UsageMetadata) => Promise<void>;
+  onError?: (session: ChatSession, error: Error) => Promise<void>;
 }
 ```
 
-Fire order: `beforeSession → beforeUserInput → afterUserInput → beforeModelResponse → [streaming] → afterModelResponse → afterSession`.
+Fire order: `beforeSession → beforeUserInput → afterUserInput → beforeModelResponse → [streaming] → afterModelResponse → afterSession`. The returned value matters for two of them: `beforeUserInput` rewrites the user message and `beforeModelResponse` replaces the system prompt. `afterSession` always fires, including on error. The block above is generated from the declaration, so the declaration order is not the fire order.
 
 ## Specs and ADRs
 
@@ -160,12 +163,17 @@ Must be discussed in an issue first, include a migration guide in the PR, bump M
 
 `ChatSession` (in `src/types/session.ts`) uses `sessionId`, not `id`:
 
+<!-- doc-block: src/types/session.ts#ChatSession -->
 ```typescript
 interface ChatSession {
   sessionId: string;
   userId: string | number;
   entries: SessionEntry[];
-  authHeaders?: { cookie?: string; authorization?: string; host?: string };
+  authHeaders?: {
+    cookie?: string;
+    authorization?: string;
+    host?: string;
+  };
   workspaceId?: string | number;
 }
 ```

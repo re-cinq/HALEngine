@@ -13,11 +13,9 @@ Create a new file in `src/orchestration/tools/`. Each tool exports two things:
 
 Here is a complete example:
 
+<!-- doc-block: example/weather-tool.ts#weather-tool -->
 ```typescript
-// src/orchestration/tools/weatherTool.ts
-
-import type {ToolDefinition} from '../types/ai';
-import type {ToolExecutor} from './registry';
+import type {ToolDefinition, ToolExecutor} from '@re-cinq/hal-engine';
 
 export const weatherTool: ToolDefinition = {
   name: 'get_weather',
@@ -35,7 +33,6 @@ export const weatherTool: ToolDefinition = {
   inputSchema: {
     type: 'object',
     properties: {
-      /* eslint-disable camelcase */
       location: {
         type: 'string',
         description: 'The city name or location to look up.',
@@ -45,17 +42,16 @@ export const weatherTool: ToolDefinition = {
         enum: ['celsius', 'fahrenheit'],
         description: 'Temperature units. Defaults to celsius.',
       },
-      /* eslint-enable camelcase */
     },
     required: ['location'],
   },
 };
 
-export const executeWeather: ToolExecutor = async (input) => {
+export const executeWeather: ToolExecutor = async input => {
   const location = (input.location as string) || 'Unknown';
   const units = (input.units as string) || 'celsius';
 
-  // Replace with real API call
+  // Replace with a real API call. `input` is untrusted: inputSchema shapes what the model sends, it does not enforce it.
   const result = {
     location,
     temperature: 18,
@@ -84,6 +80,7 @@ The more precise the description, the better the model's judgment about when to 
 
 The optional `promptInstructions` field provides guidance that gets included in the AI's system prompt. Unlike `description` (which is part of the tool schema sent to the AI provider), `promptInstructions` appears in the system prompt text itself, giving higher-level behavioral rules about when and how to use the tool.
 
+<!-- doc-block: none -- one field of a ToolDefinition, quoted to discuss how to word it -->
 ```typescript
 promptInstructions:
   'Use this when users ask about weather at a specific location. ' +
@@ -103,6 +100,7 @@ Don't duplicate what's already in `description` -- keep `promptInstructions` foc
 
 The optional `examplePrompts` field provides example queries that are shown to users in the chat interface as clickable suggestions. These are sent to the client in the WebSocket `connected` message and persist throughout the conversation.
 
+<!-- doc-block: none -- one field of a ToolDefinition, quoted to discuss how to word it -->
 ```typescript
 examplePrompts: ['What is the weather in Berlin?', 'Is it raining in Tokyo?'],
 ```
@@ -127,6 +125,7 @@ The `inputSchema` follows [JSON Schema](https://json-schema.org/) format. The mo
 
 A `ToolExecutor` is an async function that takes the tool input and returns either a string or a `ToolResponse`:
 
+<!-- doc-block: src/orchestration/tools/registry.ts#ToolExecutor -->
 ```typescript
 type ToolExecutor = (input: Record<string, unknown>, context?: ToolContext) => Promise<string | ToolResponse>;
 ```
@@ -143,8 +142,9 @@ For tools that need to send messages directly to the client or suppress the AI's
 
 Open `src/orchestration/tools/index.ts` and add two lines:
 
+<!-- doc-block: example/register-tool.ts#register -->
 ```typescript
-import {weatherTool, executeWeather} from './weatherTool';
+import {weatherTool, executeWeather} from './weather-tool.js';
 
 // ... existing registrations ...
 

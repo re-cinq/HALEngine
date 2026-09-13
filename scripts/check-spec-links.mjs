@@ -1,6 +1,6 @@
-// Local counterpart of the upstream spec-coverage job: a `([validated by](...))`
+// Local counterpart of the Lore spec-coverage job that consumes these links: a `([validated by](...))`
 // link only counts when it sits in its statement's trailing parenthetical, so a
-// link anywhere else is reported here rather than silently dropped upstream.
+// link anywhere else is reported here rather than silently dropped there.
 // Segmentation and link parsing come from the published spec domain
 // of @re-cinq/eslint-plugin-re-lint (AGENTS.md § Spec Test Links).
 

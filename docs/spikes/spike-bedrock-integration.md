@@ -1,5 +1,16 @@
 # Spike: AWS Bedrock Integration with TypeScript
 
+> **Status: spike. Its decision shipped; its code did not.** Reviewed 2026-09-11.
+>
+> **Shipped.** The central question — Converse versus InvokeModel — was decided in favour of Converse and is [ADR-001](../../adrs/ADR-001-bedrock-converse-api.md), accepted 2026-04-02. `src/providers/bedrock/` implements it with `ConverseStream`, and the stream-event handling, tool-config mapping and error mapping below all have shipped counterparts there. Read the provider for how it works now; read this for why Converse was chosen.
+>
+> **Superseded.** Every code snippet here is spike code, not the shipped implementation. The model ids are retired — `anthropic.claude-3-sonnet-20240229-v1:0` is past end-of-life on Bedrock — and the `region` plus bare `anthropic.` model id shape no longer works for current models, which require a geo inference profile prefix. `BEDROCK_MODEL_ID` and `AWS_REGION` are presented as environment variables; in this package both are config fields and neither variable is read. The cost analysis and token-limit tables were priced and measured when this was written and have not been rechecked.
+>
+> **Still open.** Guardrails are proposed and unbuilt — [ADR-004](../../adrs/ADR-004-bedrock-guardrails.md). Nothing here about cost controls or quota handling reached the code.
+>
+> Nothing below this block has been changed, including the retired ids.
+
+
 
 ## Context
 The team needs to integrate with AWS Bedrock to:

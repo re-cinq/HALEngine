@@ -25,10 +25,8 @@ export function validateMessage(payload: unknown): ValidationResult {
     return {valid: false, error: 'Message must have a type field'};
   }
 
-  // eslint-disable-next-line re-lint/prefer-polymorphism -- discriminated-union narrowing on an untrusted frame (adrs/ADR-006-lint-suppressions.md)
   switch (message.type) {
     case 'user_message':
-    case 'send_message':
       return validateUserMessage(message);
     case 'ping':
       return validatePingMessage(message);

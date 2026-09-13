@@ -1,3 +1,4 @@
+// #region quick-start
 import {createHalEngine, ToolRegistry} from '../src/index.js';
 
 const tools = new ToolRegistry();
@@ -30,6 +31,7 @@ const engine = createHalEngine({
   },
   tools,
   auth: {
+    // No `http` middleware here, so the chat routes under /api/chats answer 401 rather than serving anyone.
     ws: async req => {
       const token = req.headers.authorization;
       if (!token) return null;
@@ -42,11 +44,12 @@ const engine = createHalEngine({
   },
 });
 
-engine.start().then(() => {
-  // eslint-disable-next-line no-console
-  console.log('HAL Engine running on http://localhost:8086');
-  // eslint-disable-next-line no-console
-  console.log('Health check: http://localhost:8086/api/health');
-  // eslint-disable-next-line no-console
-  console.log('WebSocket: ws://localhost:8086/api/ws');
-});
+await engine.start();
+// #endregion
+
+// eslint-disable-next-line no-console
+console.log('HAL Engine running on http://localhost:8086');
+// eslint-disable-next-line no-console
+console.log('Health check: http://localhost:8086/api/health');
+// eslint-disable-next-line no-console
+console.log('WebSocket: ws://localhost:8086/api/ws');

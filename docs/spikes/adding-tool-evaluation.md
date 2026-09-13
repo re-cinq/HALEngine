@@ -1,6 +1,19 @@
 # Adding E2E Tests and Evaluation for a Tool
 
-After building a tool (see [adding-a-tool.md](adding-a-tool.md)), you need two things to verify it works end-to-end with the AI:
+> **Status: design note, not a how-to.** Measured against this repository on 2026-09-11: none of the machinery below exists here, and following these steps does not produce a working evaluation harness. It is kept because the design is worth reading - the ground-truth-then-compare shape, the isolated/session split, and bleed detection between questions are all sound. It is not kept as instructions.
+>
+> What does not hold, as of that date:
+>
+> - **`yarn` commands.** This repository is npm — `package-lock.json`, no `yarn.lock`. Every `yarn e2e:…` and `yarn evaluate` below has no counterpart.
+> - **The `scripts/` layout.** `scripts/` here holds repository tooling: gate scripts, spec-anchor tooling and their tests. There is no `scripts/evaluate-agent.ts` to add a config to, and no `e2e-*.ts` convention.
+> - **Three undefined types and one undefined helper.** `ToolEvalConfig`, `GroundTruthEntry` and `SessionSequence` are declared nowhere in this package, and `createToken()` is called with the comment "reuse JWT helper" — there is no JWT helper. This package neither signs nor parses a JWT: `WsAuthenticator` receives the upgrade request and returns a user, and what it reads from that request is the host's business.
+> - **The npm scripts.** `package.json` declares no `e2e:*` script and no `evaluate` script, so there is nothing for the yarn commands above to map onto even after the yarn-to-npm translation. There is no `evaluate-agent.ts` anywhere in this repository either; whether one exists in another project is outside what was checked here.
+> - **The gitignore claim.** `e2e-<tool-name>-results.json` is described as "already gitignored by the `e2e-*-results.json` pattern". No such pattern is in `.gitignore`, so the file would be committed — and it holds whatever the live API returned for each test case, which is the point of a ground-truth file.
+>
+> The evaluation harness this describes is not built in this repository, and the design is not scoped here. Two of the defects the original survey recorded — a JWT payload field and a booking-data example — no longer appear in the text; that wording predates a rewrite of the examples. The body below is unchanged, including its errors.
+
+
+After building a tool (see [adding-a-tool.md](../adding-a-tool.md)), you need two things to verify it works end-to-end with the AI:
 
 1. **Ground truth script** -- calls the backend API directly (no LLM) to record expected results
 2. **Evaluation config** -- sends natural language questions to the AI agent and compares its answers against ground truth
@@ -270,4 +283,4 @@ Add stateless instructions to the tool description:
 
 ## Related docs
 
-- [adding-a-tool.md](adding-a-tool.md) -- how to define, implement, and register a tool
+- [adding-a-tool.md](../adding-a-tool.md) -- how to define, implement, and register a tool

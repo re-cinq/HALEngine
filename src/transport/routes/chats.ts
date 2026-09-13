@@ -1,9 +1,19 @@
-import {Router, Request, Response} from 'express';
+// The demo REST chat API: its whole state is the `chats` Map below, one per router and lost on restart.
+
+// `_sessionStore` is unused by design - this router keeps that Map and builds each ChatSession inline.
+
+// A chat id from POST /chats is not a WebSocket session id: the socket mints its own and stores that.
+
+// Demo only - see specs/hal-engine-chat-routes/spec.md; content sits in process memory, unredacted.
+
+import {Router, Response} from 'express';
 import {randomUUID} from 'crypto';
 import type {ChatOrchestrator} from '../../orchestration/chatOrchestrator.js';
 import type {SessionStore} from '../../types/sessionStore.js';
-import type {HttpAuthMiddleware} from '../../types/auth.js';
+import type {AuthenticatedRequest, HttpAuthMiddleware} from '../../types/auth.js';
+import type {AuthenticatedUser} from '../../types/session.js';
 import {AIError} from '../../types/ai.js';
+import {log} from '../../shared/logger.js';
 import type {ChatSession, SessionEntry} from '../../types/session.js';
 
 interface ChatMessage {
@@ -28,19 +38,24 @@ export function createChatRoutes(
   const router = Router();
   const chats = new Map<string, Chat>();
 
-  const auth = authMiddleware ?? ((_req: Request, _res: Response, next: () => void) => next());
+  // No middleware means no way to identify a caller, so deny rather than serve everyone as one shared user.
+  const auth: HttpAuthMiddleware =
+    authMiddleware ??
+    ((_req, res) => {
+      deny(res, 'no auth middleware is configured');
+    });
 
-  router.post('/', auth, (req: Request, res: Response) => {
+  router.post('/', auth, (req: AuthenticatedRequest, res: Response) => {
+    const user = requireUser(req, res);
+    if (!user) return;
+
     const chatId = randomUUID();
-    const userId =
-      (req as Request & {user?: {id: string | number; workspaceId?: string | number}}).user?.id ?? 'anonymous';
-    const workspaceId = (req as Request & {user?: {workspaceId?: string | number}}).user?.workspaceId;
     const createdAt = new Date().toISOString();
 
     chats.set(chatId, {
       id: chatId,
-      userId,
-      workspaceId,
+      userId: user.id,
+      workspaceId: optionalId(user.workspaceId),
       messages: [],
       createdAt,
     });
@@ -48,18 +63,19 @@ export function createChatRoutes(
     res.status(201).json({id: chatId, createdAt});
   });
 
-  router.get('/:id', auth, (req: Request<{id: string}>, res: Response) => {
+  router.get('/:id', auth, (req: AuthenticatedRequest<{id: string}>, res: Response) => {
     const chat = authorizedChat(req, res, chats);
     if (!chat) return;
 
     res.json({id: chat.id, messages: chat.messages, createdAt: chat.createdAt});
   });
 
-  router.post('/:id/messages', auth, async (req: Request<{id: string}>, res: Response) => {
+  router.post('/:id/messages', auth, async (req: AuthenticatedRequest<{id: string}>, res: Response) => {
     const chat = authorizedChat(req, res, chats);
     if (!chat) return;
 
-    const {content} = req.body as {content: string};
+    // `req.body` is undefined when no parser claimed the content type; destructuring that threw past the guard.
+    const {content} = (req.body ?? {}) as {content?: string};
 
     if (!content || typeof content !== 'string') {
       res.status(400).json({error: 'Message content is required'});
@@ -117,8 +133,11 @@ function chatMessagesToEntries(messages: ChatMessage[]): SessionEntry[] {
   );
 }
 
-// null means this already answered 404 or 403, so the caller must return.
-function authorizedChat(req: Request<{id: string}>, res: Response, chats: Map<string, Chat>): Chat | null {
+// null means this already answered 401, 404 or 403, so the caller must return.
+function authorizedChat(req: AuthenticatedRequest<{id: string}>, res: Response, chats: Map<string, Chat>): Chat | null {
+  const user = requireUser(req, res);
+  if (!user) return null;
+
   const chat = chats.get(req.params.id);
 
   if (!chat) {
@@ -126,11 +145,41 @@ function authorizedChat(req: Request<{id: string}>, res: Response, chats: Map<st
     return null;
   }
 
-  const userId = (req as Request<{id: string}> & {user?: {id: string | number}}).user?.id;
-  if (userId && chat.userId !== userId) {
+  if (chat.userId !== user.id) {
     res.status(403).json({error: 'Forbidden'});
     return null;
   }
 
   return chat;
+}
+
+// null means this already answered 401, so the caller must return.
+function requireUser(
+  req: AuthenticatedRequest | AuthenticatedRequest<{id: string}>,
+  res: Response
+): AuthenticatedUser | null {
+  const {user} = req;
+
+  if (!user || !isUsableId(user.id)) {
+    deny(res, 'the configured middleware attached no usable user id');
+    return null;
+  }
+
+  return user;
+}
+
+// One line per refusal, and `reason` is a fixed string: nothing request-derived reaches the log.
+function deny(res: Response, reason: string): void {
+  log.warn('http', 'chat request refused', {reason});
+  res.status(401).json({error: 'Unauthorized'});
+}
+
+// Middleware is consumer-supplied, so `id` is untrusted here whatever AuthenticatedUser declares.
+function isUsableId(id: unknown): id is string | number {
+  // 0 is a legal id, so only an absent, null or empty id is unauthenticated - never a falsy one.
+  return typeof id === 'number' || (typeof id === 'string' && id !== '');
+}
+
+function optionalId(value: unknown): string | number | undefined {
+  return typeof value === 'string' || typeof value === 'number' ? value : undefined;
 }

@@ -1,0 +1,193 @@
+name: Publish
+
+# Publishes the tagged version to the public registry.
+#
+# Auth is tokenless: npm Trusted Publishing mints a short-lived credential from
+# the GitHub OIDC token, so no NPM_TOKEN secret exists here after the bootstrap.
+# The trusted publisher is registered against THIS file's path - renaming or
+# moving it breaks publishing until it is re-registered.
+#
+# --provenance is carried because ADR-007 makes the repository public. npm
+# refuses an attestation whose source repository an unauthenticated client
+# cannot resolve.
+#
+# Three preconditions, all of which fail closed rather than publishing wrongly:
+#   1. npm >= 11.5.1. Trusted publishing does not exist before it, and Node 22
+#      ships an older npm, so the publish job installs it explicitly.
+#   2. The repository is public. Until it is, --provenance fails here.
+#   3. A trusted publisher exists for this name. It cannot, before the first
+#      publish: npm has nothing to attach one to. The first release therefore
+#      carries a token, by hand, and every release after it is tokenless. That
+#      token is revoked immediately afterwards.
+
+on:
+  push:
+    tags: ['v*']
+
+# Least privilege by default: only the publish job opts into id-token: write,
+# and it does not start until every gate below has passed.
+permissions:
+  contents: read
+
+jobs:
+  # The gates that speak to the artefact, re-run against the tagged commit:
+  # type check, lint, format, tests, build, doc blocks and the tarball itself.
+  # The gates that speak only to the repository - spec anchors, spike status,
+  # regions, citation names - stay on ci.yml. A tag points at whatever its
+  # author chose, so passing on main is not evidence about what is published.
+  verify:
+    name: Verify the release candidate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          # Ancestry needs the graph connecting the tag to main; a tag push
+          # checks out one commit by default.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install (no build)
+        run: npm ci --ignore-scripts
+
+      # main is the trust boundary: it requires a pull request, blocks
+      # force-pushes, and publishing over OIDC makes push access to it the right
+      # to release. A tag can be pushed from any branch, so without this the
+      # boundary is bypassable by whoever can push a tag. Not repeated in the
+      # publish job below - `needs` carries it, and ancestry once true stays
+      # true while force-pushes to main are blocked.
+      # No fetch here either, for the reason ci.yml's changelog step carries:
+      # the checkout's credential does not outlive it. Publishing from a public
+      # repository would have let an anonymous fetch succeed and hidden that.
+      - name: Tagged commit is on main
+        run: |
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+            echo "publish: FAILED - ${GITHUB_SHA} is not an ancestor of origin/main" >&2
+            echo "publish: tag a commit that has been merged to main" >&2
+            exit 1
+          fi
+          echo "publish: tagged commit is on main"
+
+      - name: Tag matches the committed version
+        run: npm run check:version
+
+      # The pre-commit sequence AGENTS.md documents, re-run against the tagged
+      # commit. Not redundant with CI: a tag points at whatever commit its author
+      # chose, so a green run on main is evidence about main rather than about
+      # what is being published. Separate steps so a red release names its gate.
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Type check the example
+        run: npm run typecheck:example
+
+      - name: Lint (--max-warnings 0)
+        run: npm run eslint
+
+      - name: Format check
+        run: npm run prettier:check
+
+      # The gate that catches a README or guide code block drifting from the source being published,
+      # which is the one thing npm renders and the one thing a tarball cannot be re-cut to fix.
+      - name: Documented code blocks
+        run: npm run docs:check
+
+      - name: Test (with coverage floor)
+        run: npm run test:coverage
+
+      - name: Build chain
+        run: npm run check:build-chain
+
+      # Explicit, before the pack: `npm pack` runs `prepare`, so without this a broken build
+      # surfaces as a confusing pack failure inside the smoke script rather than as a named step.
+      - name: Build
+        run: npm run build
+
+      - name: Smoke (packed tarball)
+        run: npm run smoke
+
+      # `files` is ["dist"] and tests live beside their source, so nothing should
+      # reach the tarball - but the pack list is the only place that is a fact
+      # rather than an intention. npm pack runs `prepare`, so this lists what
+      # this commit would actually ship.
+      #
+      # Maps are rejected on the same grounds: with only dist/ published, a map
+      # names a ../src/*.ts nobody receives.
+      #
+      # It asserts what MUST be there as well as what must not: a pure absence
+      # check calls an empty dist/ clean and publishes a package with no entry
+      # point, which is unpublishable for 72 hours and permanent after that.
+      - name: Pack list carries the package and nothing else
+        run: |
+          npm pack --dry-run --json > pack.json
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const files = JSON.parse(readFileSync("pack.json", "utf8"))[0].files.map((f) => f.path);
+            const unwanted = files.filter((p) => /(^|\/)[^/]*\.test\.[^/]*$/.test(p) || p.endsWith(".map"));
+            const required = ["package.json", "README.md", "LICENSE", "dist/index.js", "dist/index.d.ts"];
+            const missing = required.filter((p) => !files.includes(p));
+            const unpublished = files.filter((p) => /^(src|example|smoke|docs|specs|adrs|scripts)\//.test(p));
+            const { filename, name, version } = JSON.parse(readFileSync("pack.json", "utf8"))[0];
+            const expected = name.replace("@", "").replace("/", "-") + "-" + version + ".tgz";
+            if (unwanted.length > 0) {
+              console.error("pack list carries test files or source maps:\n  " + unwanted.join("\n  "));
+              process.exit(1);
+            }
+            if (missing.length > 0) {
+              console.error("pack list is missing:\n  " + missing.join("\n  "));
+              process.exit(1);
+            }
+            if (unpublished.length > 0) {
+              console.error("pack list carries trees that files:[\"dist\"] excludes:\n  " + unpublished.join("\n  "));
+              process.exit(1);
+            }
+            if (filename !== expected) {
+              console.error(`tarball is named ${filename}, expected ${expected}`);
+              process.exit(1);
+            }
+            console.log(`pack list clean: ${files.length} files as ${filename}, entry point present, dist/ only`);
+          '
+
+  publish:
+    name: Publish to npm
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm OIDC trusted publishing
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+          registry-url: 'https://registry.npmjs.org'
+
+      # Trusted publishing needs npm >= 11.5.1 and Node 22 ships an older npm. Pinned to the 11.x
+      # line rather than `latest`: this is the one job holding id-token: write, and `latest` lets a
+      # major nobody here has run decide how the publish behaves.
+      - name: Upgrade npm for OIDC trusted publishing
+        run: npm install -g npm@^11.5.1
+
+      - name: Install (no build)
+        run: npm ci --ignore-scripts
+
+      # Repeated from `verify` deliberately: it is the last gate before the one
+      # step in this repository that cannot be undone.
+      - name: Tag matches the committed version
+        run: npm run check:version
+
+      - name: Build
+        run: npm run build
+
+      # --ignore-scripts so `prepare` does not rebuild: what ships is the tree
+      # the step above produced, not a second build of it.
+      - name: Publish
+        run: npm publish --access public --provenance --ignore-scripts

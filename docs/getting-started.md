@@ -1,54 +1,57 @@
 # Getting Started
 
-This guide shows how to set up hal-engine in your application with `createHalEngine()`.
+This guide shows how to set up HAL Engine in your application with `createHalEngine()`.
 
 ## Installation
 
 ```bash
-npm install hal-engine
+npm install @re-cinq/hal-engine
 ```
 
 ## Minimal Setup
 
 The simplest possible setup requires two things: an AI provider configuration and a WebSocket authenticator.
 
+<!-- doc-block: example/minimal.ts#minimal -->
 ```typescript
-import {createHalEngine} from 'hal-engine';
+import {createHalEngine} from '@re-cinq/hal-engine';
 
 const engine = createHalEngine({
-  provider: {
-    type: 'bedrock',
-    region: 'eu-west-1',
-    modelId: 'anthropic.claude-3-sonnet-20240229-v1:0',
-  },
-  prompt: {
-    identity: 'You are a helpful assistant.',
-  },
+  provider: {type: 'mock'},
+  prompt: {identity: 'You are a helpful assistant.'},
   auth: {
-    ws: async (token) => {
-      const user = await verifyToken(token);
-      return {userId: user.id, workspaceId: user.workspaceId};
+    ws: async req => {
+      const token = req.headers.authorization;
+      if (!token) return null;
+      return {id: 'user-1'};
     },
   },
+  transport: {port: 8086, basePath: '/api'},
 });
 
-engine.listen(3000);
-console.log('hal-engine running on port 3000');
+await engine.start();
 ```
 
+`ws` receives the WebSocket upgrade request, not a token, so pull whatever you authenticate with off `req.headers` yourself. Return an `AuthenticatedUser` — `id` is the only required field, and anything else you put on it reaches tools through `ToolContext`. Returning `null` rejects the upgrade with `401`.
+
 This starts a server with:
-- WebSocket endpoint at `ws://localhost:3000/hal/ws/{chatId}`
-- HTTP endpoint at `POST http://localhost:3000/hal/chats`
+- WebSocket endpoint at `ws://localhost:8086/api/ws`
+- Health check at `GET http://localhost:8086/api/health`
+- Demo chat routes at `POST http://localhost:8086/api/chats`, which answer `401` until `auth.http` is configured
 - In-memory session storage
+- The mock provider, which needs no credentials — see [Providers](../specs/hal-engine-providers/spec.md) for a real one
 - No tools registered (the AI responds from its training data only)
+
+`transport.basePath` defaults to `/hal` and `transport.port` to `8086`, or `PORT` from the environment. The example above sets both explicitly to match [`example/server.ts`](../example/server.ts), which CI type-checks.
 
 ## Adding Tools
 
 Tools let the AI fetch data or perform actions. Register them on the engine's `toolRegistry`:
 
+<!-- doc-block: example/with-tools.ts#with-tools -->
 ```typescript
-import {createHalEngine, ToolRegistry} from 'hal-engine';
-import type {ToolDefinition} from 'hal-engine';
+import {createHalEngine, ToolRegistry} from '@re-cinq/hal-engine';
+import type {ToolDefinition} from '@re-cinq/hal-engine';
 
 const weatherTool: ToolDefinition = {
   name: 'get_weather',
@@ -75,21 +78,17 @@ const engine = createHalEngine({
   provider: {
     type: 'bedrock',
     region: 'eu-west-1',
-    modelId: 'anthropic.claude-3-sonnet-20240229-v1:0',
+    modelId: 'eu.anthropic.claude-sonnet-4-5-20250929-v1:0',
+    maxTokens: 4096,
   },
   prompt: {
     identity: 'You are a helpful weather assistant.',
-    guidelines: [
-      'Always use the get_weather tool when asked about weather.',
-      'Present temperatures in the units the user prefers.',
-    ],
+    responseGuidelines:
+      'Always use the get_weather tool when asked about weather. Present temperatures in the units the user prefers.',
   },
   tools: toolRegistry,
   auth: {
-    ws: async (token) => {
-      const user = await verifyToken(token);
-      return {userId: user.id};
-    },
+    ws: async req => verifyToken(req.headers.authorization),
   },
 });
 ```
@@ -98,86 +97,122 @@ const engine = createHalEngine({
 
 Here is every option available on `HalEngineConfig`:
 
+<!-- doc-block: example/full-config.ts#full-config -->
 ```typescript
+import process from 'node:process';
+import {createHalEngine, InMemorySessionStore, ToolRegistry, log} from '@re-cinq/hal-engine';
+import type {AuthenticatedRequest, HttpAuthMiddleware, Logger, OrchestratorHooks} from '@re-cinq/hal-engine';
+
+const toolRegistry = new ToolRegistry();
+
+// Your own SessionStore goes here; InMemorySessionStore is the default and loses everything on restart.
+const sessionStore = new InMemorySessionStore();
+
+// The chat routes answer 401 until this attaches a user; authenticating without attaching one is the same to them.
+const authMiddleware: HttpAuthMiddleware = (req: AuthenticatedRequest, _res, next) => {
+  req.user = {id: 'user-1'};
+  next();
+};
+
+const hooks: OrchestratorHooks = {
+  beforeSession: async session => log.info('app', 'session opened', {sessionId: session.sessionId}),
+  beforeUserInput: async (_session, userMessage) => userMessage.trim(),
+  afterUserInput: async (_session, userMessage) => log.info('app', 'received', {length: userMessage.length}),
+  beforeModelResponse: async (_session, systemPrompt) => systemPrompt,
+  afterModelResponse: async (_session, _responseText, usage) => log.info('app', 'answered', {usage}),
+  afterSession: async session => log.info('app', 'session closed', {sessionId: session.sessionId}),
+  onError: async (_session, error) => log.error('app', 'orchestration failed', {error: error.message}),
+};
+
+// A Logger of your own; this one writes plain lines to stderr. Passing `log` itself here is treated as passing none.
+const line = (level: string, category: string, message: string) => `${level} ${category}: ${message}\n`;
+const myLogger: Logger = {
+  debug: (category, message) => process.stderr.write(line('debug', category, message)),
+  info: (category, message) => process.stderr.write(line('info', category, message)),
+  warn: (category, message) => process.stderr.write(line('warn', category, message)),
+  error: (category, message) => process.stderr.write(line('error', category, message)),
+};
+
 const engine = createHalEngine({
   // REQUIRED: AI provider settings
   provider: {
-    type: 'bedrock',             // 'bedrock' | 'vertex' | 'openai' | 'anthropic' | 'mock'
+    type: 'bedrock', // 'bedrock' | 'vertex' | 'openai' | 'anthropic' | 'mock'
     region: 'eu-west-1',
-    modelId: 'anthropic.claude-3-sonnet-20240229-v1:0',
+    modelId: 'eu.anthropic.claude-sonnet-4-5-20250929-v1:0',
+    maxTokens: 4096, // REQUIRED for bedrock
   },
 
-  // REQUIRED: System prompt configuration
+  // REQUIRED: System prompt configuration. Every field but `identity` is optional.
   prompt: {
     identity: 'You are a helpful assistant.',
-    context: 'You help users with weather and general questions.',
-    guidelines: ['Be concise.', 'Use tools when available.'],
-    customInstructions: 'Additional free-form instructions for the AI.',
+    domainContext: 'You help users with weather and general questions.',
+    responseGuidelines: 'Be concise. Use tools when available.',
+    toolPreamble: 'Replaces the built-in instructions telling the model when to call a tool.',
   },
 
-  // REQUIRED: Authentication
+  // REQUIRED: Authentication. `ws` receives the upgrade request; return null to reject it.
   auth: {
-    ws: async (token) => ({userId: 'user-1'}),   // WebSocket auth (required)
-    http: authMiddleware,                          // Express middleware for REST (optional)
+    ws: async () => ({id: 'user-1'}),
+    http: authMiddleware,
   },
 
   // OPTIONAL: Tool registry
   tools: toolRegistry,
 
   // OPTIONAL: Session store (defaults to InMemorySessionStore)
-  session: new RedisSessionStore(redisClient),
+  session: sessionStore,
 
   // OPTIONAL: Transport settings
   transport: {
-    port: 3000,
+    port: 8086, // 0 lets the OS choose; unset falls through to PORT, then 8086
     corsOrigin: ['https://example.com'],
-    basePath: '/hal',                // WebSocket path prefix (default '/hal')
-    heartbeatIntervalMs: 30000,      // Ping interval (default 30s)
+    // basePath defaults to '/hal' and the heartbeat to 30s.
+    basePath: '/hal',
+    heartbeatIntervalMs: 30_000,
   },
 
   // OPTIONAL: Orchestrator settings
   orchestrator: {
-    maxToolRounds: 5,                // Max tool execution rounds (default 5)
+    maxToolRounds: 5, // Max tool execution rounds (default 5)
     contextConfig: {
-      maxTokens: 100000,             // Context window limit
+      // How many messages are kept, and how much of each.
+      maxMessages: 50,
+      maxContentLength: 4000,
     },
-    hooks: {
-      beforeSession: async (session) => { /* setup */ },
-      beforeUserInput: async (session, message) => message,
-      afterUserInput: async (session, message) => { /* validate */ },
-      beforeModelResponse: async (session, prompt) => prompt,
-      afterModelResponse: async (session, text, usage) => { /* track usage */ },
-      afterSession: async (session) => { /* cleanup */ },
-      onError: async (session, error) => { /* log errors */ },
-    },
+    hooks,
   },
 
-  // OPTIONAL: Logger
+  // OPTIONAL: Logger. Process-wide, not per engine - see docs/logging.md.
   logger: myLogger,
 
-  // OPTIONAL: Lifecycle hooks
-  onConnect: (session) => console.log(`Connected: ${session.id}`),
-  onDisconnect: (sessionId) => console.log(`Disconnected: ${sessionId}`),
+  // OPTIONAL: Lifecycle hooks. Fire-and-forget: never awaited, and a throw is logged and swallowed.
+  onConnect: session => log.info('app', 'connected', {sessionId: session.sessionId}),
+  onDisconnect: sessionId => log.info('app', 'disconnected', {sessionId}),
 });
+```
+
+### Message lifecycle hooks
+
+`orchestrator.hooks` takes an `OrchestratorHooks`: `beforeSession`, `beforeUserInput`, `afterUserInput`, `beforeModelResponse`, `afterModelResponse`, `afterSession` and `onError`. Every one is optional.
+
+Two of them use their return value — `beforeUserInput` rewrites the user message, and `beforeModelResponse` replaces the system prompt. `afterSession` always fires, including on error.
+
+They fire in this order:
+
+```
+beforeSession → beforeUserInput → afterUserInput → beforeModelResponse → ...streaming... → afterModelResponse → afterSession
 ```
 
 ## Connecting a Client
 
 The WebSocket protocol is documented in [websocket-protocol.md](../specs/hal-engine-websocket-protocol/spec.md). A minimal client connection:
 
-```typescript
-// 1. Create a chat session
-const response = await fetch('http://localhost:3000/hal/chats', {
-  method: 'POST',
-  headers: {Authorization: `Bearer ${token}`},
-});
-const {chatId} = await response.json();
+The demo chat routes are not part of this flow. A `POST /chats` id is not a WebSocket session id -- the socket mints its own and ignores whatever follows `/ws` in the path -- so there is no create-then-connect handshake to perform.
 
-// 2. Connect via WebSocket (token as subprotocol)
-const ws = new WebSocket(
-  `ws://localhost:3000/hal/ws/${chatId}`,
-  [token]
-);
+<!-- doc-block: none -- illustrates assembling the parts by hand, which no single declaration or example region carries -->
+```typescript
+// 1. Connect. The server mints the session id and sends it back in the `connected` frame.
+const ws = new WebSocket('ws://localhost:8086/api/ws', [token]);
 
 ws.onmessage = (event) => {
   const message = JSON.parse(event.data);
@@ -201,10 +236,9 @@ ws.onmessage = (event) => {
   }
 };
 
-// 3. Send a message
+// 2. Send a message
 ws.send(JSON.stringify({
-  type: 'send_message',
-  chatId,
+  type: 'user_message',
   content: 'What is the weather in Berlin?',
 }));
 ```
@@ -213,9 +247,10 @@ ws.send(JSON.stringify({
 
 Implement the `SessionStore` interface to persist sessions beyond in-memory storage:
 
+<!-- doc-block: none -- a Redis store a reader writes, not code this repository ships -->
 ```typescript
-import type {SessionStore} from 'hal-engine';
-import type {ChatSession} from 'hal-engine';
+import type {SessionStore} from '@re-cinq/hal-engine';
+import type {ChatSession} from '@re-cinq/hal-engine';
 
 class RedisSessionStore implements SessionStore {
   constructor(private redis: RedisClient) {}

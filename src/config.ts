@@ -4,10 +4,12 @@ import type {PromptBuilderConfig} from './infrastructure/builders/promptBuilder.
 import type {ContextConfig} from './orchestration/conversationContext.js';
 import type {ProviderConfig} from './providers/providerFactory.js';
 import type {Logger} from './shared/logger.js';
+import {setLogger} from './shared/logger.js';
 import type {ChatSession} from './types/session.js';
 import type {HalServer} from './transport/createServer.js';
 import {PromptBuilder} from './infrastructure/builders/promptBuilder.js';
 import {createChatOrchestrator} from './orchestration/chatOrchestrator.js';
+import type {OrchestratorHooks} from './orchestration/chatOrchestrator.js';
 import {createProvider} from './providers/providerFactory.js';
 import {ToolRegistry} from './orchestration/tools/registry.js';
 import {InMemorySessionStore} from './infrastructure/stores/inMemorySessionStore.js';
@@ -32,10 +34,12 @@ export interface HalEngineConfig {
   orchestrator?: {
     maxToolRounds?: number;
     contextConfig?: Partial<ContextConfig>;
+    hooks?: OrchestratorHooks;
   };
+  // Replaces the package's logger process-wide, not per engine: there is one `log` per process.
   logger?: Logger;
-  onConnect?: (session: ChatSession) => void;
-  onDisconnect?: (sessionId: string) => void;
+  onConnect?: (session: ChatSession) => void | Promise<void>;
+  onDisconnect?: (sessionId: string) => void | Promise<void>;
 }
 
 export interface HalEngine extends HalServer {
@@ -45,6 +49,9 @@ export interface HalEngine extends HalServer {
 }
 
 export function createHalEngine(config: HalEngineConfig): HalEngine {
+  // Before anything else builds, so a supplied logger receives this engine's first line.
+  if (config.logger) setLogger(config.logger);
+
   const toolRegistry = config.tools ?? new ToolRegistry();
   const sessionStore = config.session ?? new InMemorySessionStore();
   const basePath = config.transport?.basePath ?? '/hal';
@@ -54,6 +61,7 @@ export function createHalEngine(config: HalEngineConfig): HalEngine {
   const orchestrator = createChatOrchestrator(provider, promptBuilder, toolRegistry, {
     maxToolRounds: config.orchestrator?.maxToolRounds,
     contextConfig: config.orchestrator?.contextConfig,
+    hooks: config.orchestrator?.hooks,
   });
 
   const app = createApp({
@@ -71,6 +79,7 @@ export function createHalEngine(config: HalEngineConfig): HalEngine {
     orchestrator,
     toolRegistry,
     basePath,
+    port: config.transport?.port,
     heartbeatIntervalMs: config.transport?.heartbeatIntervalMs,
     onConnect: config.onConnect,
     onDisconnect: config.onDisconnect,

@@ -1,1 +1,9 @@
 blank_issues_enabled: true
+contact_links:
+  # The mailto link is first on purpose: a reporter needs somewhere to send it, not somewhere to read.
+  - name: Report a security vulnerability
+    url: mailto:security@re-cinq.com
+    about: Do not open a public issue. Report privately to security@re-cinq.com; see SECURITY.md for scope and timelines.
+  - name: Security policy (scope, timelines, supported versions)
+    url: https://github.com/re-cinq/HALEngine/blob/main/SECURITY.md
+    about: What is in scope, the 48-hour acknowledgement target, and which versions receive fixes.

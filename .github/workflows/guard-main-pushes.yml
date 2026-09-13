@@ -1,0 +1,114 @@
+name: Guard main pushes
+
+# The alarm for a commit that reaches main without a pull request.
+#
+# Branch protection is the lock; this is the detector behind it. A rule can be
+# relaxed, a ruleset can be replaced, and a token with push access is not bound
+# by either - none of which leaves a trace of its own.
+#
+# It matters in this repository specifically because publish.yml fires on a v*
+# tag and authenticates to npm through OIDC trusted publishing, with no stored
+# secret to revoke. Push access to main is transitively the right to publish
+# under the @re-cinq scope.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  guard:
+    name: Flag commits with no pull request
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          # The range below needs the graph on both sides of the push.
+          fetch-depth: 0
+
+      - name: Flag commits on main with no associated pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          # The null sha means main had no previous tip this runner can see (a
+          # first push, or a force-push past it). Judge the new tip alone rather
+          # than walking the whole history and filing an issue per commit.
+          if [ "${BEFORE}" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            echo "::warning::no usable previous tip (${BEFORE}); checking ${AFTER} alone"
+            COMMITS="${AFTER}"
+          else
+            COMMITS=$(git rev-list "${BEFORE}..${AFTER}")
+          fi
+
+          # The repo has no `security` label; create it once rather than let
+          # every issue fall back to none.
+          gh label create security --color B60205 --description "Vulnerability or credential exposure" 2>/dev/null || true
+
+          FLAGGED=0
+          for SHA in ${COMMITS}; do
+            # A PR merge associates every commit it carried, so a normal merge
+            # reports nothing here. An empty array is the whole finding.
+
+            # The association is by sha, so a rewritten commit loses it - this
+            # repo's pre-rewrite history reports 0 for commits that did have a
+            # PR. Harmless: the range above only judges what this push added.
+            COUNT=$(gh api "repos/${REPO}/commits/${SHA}/pulls" --jq 'length' 2>/dev/null || echo "error")
+            if [ "${COUNT}" = "error" ]; then
+              echo "::warning::could not resolve pull requests for ${SHA}; not flagging it"
+              continue
+            fi
+            if [ "${COUNT}" != "0" ]; then
+              echo "ok ${SHA} (${COUNT} pull request(s))"
+              continue
+            fi
+
+            TITLE="Commit ${SHA} reached main with no pull request"
+            # Re-running this workflow on the same push must not file it twice.
+            if [ -n "$(gh issue list --state all --search "${SHA} in:title" --json number --jq '.[0].number' 2>/dev/null)" ]; then
+              echo "already filed for ${SHA}"
+              continue
+            fi
+
+            # Commit metadata reaches the body through a file, never through the
+            # shell: a subject line is attacker-controlled text.
+            {
+              echo "\`${SHA}\` is on \`main\` and the pull requests API associates it with none."
+              echo
+              echo "| Field | Value |"
+              echo "| --- | --- |"
+              printf '| Author | %s |\n' "$(git log -1 --format='%an <%ae>' "${SHA}" | tr -d '|')"
+              printf '| Committer | %s |\n' "$(git log -1 --format='%cn <%ce>' "${SHA}" | tr -d '|')"
+              printf '| Committed | %s |\n' "$(git log -1 --format='%cI' "${SHA}")"
+              echo
+              echo "Subject:"
+              echo
+              echo '```'
+              git log -1 --format='%s' "${SHA}"
+              echo '```'
+              echo
+              echo "Branch protection requires a pull request, so this is either a protection change, a"
+              echo "bypass, or a token pushing directly. Push access to \`main\` is transitively the right"
+              echo "to publish this package, so treat it as a credential question until shown otherwise."
+              echo
+              echo "Detected by [this run](${RUN_URL})."
+            } > body.md
+
+            gh issue create --title "${TITLE}" --body-file body.md --label security >/dev/null \
+              || gh issue create --title "${TITLE}" --body-file body.md >/dev/null
+            echo "::error::${TITLE}"
+            FLAGGED=$((FLAGGED + 1))
+          done
+
+          echo "checked $(echo "${COMMITS}" | wc -w) commit(s), flagged ${FLAGGED}"
+          # The issue is the deliverable, not a red run: failing here would also
+          # fail the push that merged a legitimate pull request.
+          exit 0

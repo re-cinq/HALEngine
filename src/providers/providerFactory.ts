@@ -1,8 +1,13 @@
 import type {AIProvider} from '../types/ai.js';
+import {createBedrockProvider} from './bedrock/index.js';
 import type {BedrockConfig} from './bedrock/index.js';
+import {createVertexProvider} from './vertex/index.js';
 import type {VertexConfig} from './vertex/index.js';
+import {createOpenAIProvider} from './openai/index.js';
 import type {OpenAIConfig} from './openai/index.js';
+import {createAnthropicProvider} from './anthropic/index.js';
 import type {AnthropicConfig} from './anthropic/index.js';
+import {createMockProvider} from './mock/index.js';
 import type {MockConfig} from './mock/index.js';
 
 export type ProviderType = 'bedrock' | 'vertex' | 'openai' | 'anthropic' | 'mock';
@@ -10,27 +15,17 @@ export type ProviderType = 'bedrock' | 'vertex' | 'openai' | 'anthropic' | 'mock
 export type ProviderConfig = BedrockConfig | VertexConfig | OpenAIConfig | AnthropicConfig | MockConfig;
 
 export function createProvider(config: ProviderConfig): AIProvider {
-  // eslint-disable-next-line re-lint/prefer-polymorphism -- the arms lazy-require their SDK; a value table loads all five (adrs/ADR-006-lint-suppressions.md)
+  // eslint-disable-next-line re-lint/prefer-polymorphism -- the switch narrows a discriminated union onto five differently-typed factories (adrs/ADR-006-lint-suppressions.md)
   switch (config.type) {
-    case 'bedrock': {
-      const {createBedrockProvider} = require('./bedrock/index.js') as typeof import('./bedrock/index.js');
+    case 'bedrock':
       return createBedrockProvider(config);
-    }
-    case 'vertex': {
-      const {createVertexProvider} = require('./vertex/index.js') as typeof import('./vertex/index.js');
+    case 'vertex':
       return createVertexProvider(config);
-    }
-    case 'openai': {
-      const {createOpenAIProvider} = require('./openai/index.js') as typeof import('./openai/index.js');
+    case 'openai':
       return createOpenAIProvider(config);
-    }
-    case 'anthropic': {
-      const {createAnthropicProvider} = require('./anthropic/index.js') as typeof import('./anthropic/index.js');
+    case 'anthropic':
       return createAnthropicProvider(config);
-    }
-    case 'mock': {
-      const {createMockProvider} = require('./mock/index.js') as typeof import('./mock/index.js');
-      return createMockProvider();
-    }
+    case 'mock':
+      return createMockProvider(config);
   }
 }

@@ -16,8 +16,9 @@ These are opt-in. Tools that return a plain string continue to work exactly as b
 
 ## The ToolResponse Interface
 
+<!-- doc-block: src/orchestration/tools/registry.ts#ToolResponse -->
 ```typescript
-export interface ToolResponse {
+interface ToolResponse {
   result: string;
   clientMessages?: OutgoingMessage[];
   suppressAssistantResponse?: boolean;
@@ -32,6 +33,7 @@ export interface ToolResponse {
 
 A `ToolExecutor` can return either a plain `string` or a `ToolResponse`:
 
+<!-- doc-block: src/orchestration/tools/registry.ts#ToolExecutor -->
 ```typescript
 type ToolExecutor = (input: Record<string, unknown>, context?: ToolContext) => Promise<string | ToolResponse>;
 ```
@@ -75,6 +77,7 @@ The key insight: suppressed entries are invisible to the client but visible to t
 
 The `convert_units` tool demonstrates all three features: client messages, suppression, and index assignment. A conversion like "100 miles to kilometers" has a definitive answer -- the AI does not need to elaborate.
 
+<!-- doc-block: none -- a simplified tool, marked simplified in its own first line -->
 ```typescript
 // src/orchestration/tools/unitConverterTool.ts (simplified)
 
@@ -116,6 +119,7 @@ Notice three things:
 
 If the tool wants to send a custom message to the client, use `clientMessages`. Any valid `OutgoingMessage` type works -- `entry_upsert`, `entry_delta`, `entry_commit`, or `error`.
 
+<!-- doc-block: none -- a worked executor showing one return shape, not code this package exports -->
 ```typescript
 export const executeMyTool: ToolExecutor = async (input) => {
   const data = await fetchSomething(input);
@@ -148,6 +152,7 @@ This means the entry also becomes part of the session's `entries` array, maintai
 
 After executing tool calls, `chatOrchestrator.ts` checks each `ToolResponse` for client messages and suppression flags:
 
+<!-- doc-block: none -- the orchestrator fragment that normalises responses, quoted out of its function -->
 ```typescript
 const responses = await Promise.all(
   pendingToolCalls.map(async (tc) => {
@@ -195,13 +200,10 @@ Without `stream_end`, suppression would cause the tool spinner to hang forever. 
 
 The `MessageChunk` type gained two variants:
 
+<!-- doc-block: src/types/ai.ts#MessageChunk -->
 ```typescript
-export type MessageChunk =
+type MessageChunk =
   | {type: 'text'; text: string}
-  | {type: 'tool_use'; toolCall: ToolCall}
-  | {type: 'tool_result'; clientMessages: OutgoingMessage[]}
-  | {type: 'suppress_output'}
-  | {type: 'stop'; stopReason: string; usage?: UsageMetadata};
 ```
 
 These two variants are internal plumbing -- they never leave the server. The client only sees standard `OutgoingMessage` types over the WebSocket.

@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "//": "example/ is excluded from tsconfig.json (rootDir is src/), so nothing checked it and it drifted from the API it demonstrates. rootDir widens to the repo so example/ may import ../src; noEmit because this config exists to fail, not to build.",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": ["example/**/*", "src/**/*"],
+  "exclude": ["node_modules", "dist", "smoke", "**/*.test.ts"]
+}

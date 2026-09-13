@@ -16,9 +16,10 @@ export interface HalServerOptions {
   orchestrator: ChatOrchestrator;
   toolRegistry?: ToolRegistry;
   basePath?: string;
+  port?: number;
   heartbeatIntervalMs?: number;
-  onConnect?: (session: import('../types/session.js').ChatSession) => void;
-  onDisconnect?: (sessionId: string) => void;
+  onConnect?: (session: import('../types/session.js').ChatSession) => void | Promise<void>;
+  onDisconnect?: (sessionId: string) => void | Promise<void>;
 }
 
 export interface HalServer {
@@ -47,6 +48,7 @@ export function createServer(options: HalServerOptions): HalServer {
     sessionStore: options.sessionStore,
     handleMessage,
     basePath,
+    onConnect: options.onConnect,
     onDisconnect: options.onDisconnect,
   };
 
@@ -77,16 +79,40 @@ export function createServer(options: HalServerOptions): HalServer {
     });
   }, heartbeatMs);
 
+  // The listening socket should hold the process open, not the heartbeat: an engine never started must not.
+  heartbeatInterval.unref();
+
   wss.on('close', () => clearInterval(heartbeatInterval));
 
   return {
     server,
     wss,
     start: (port?: number) =>
-      new Promise<void>(resolve => {
-        const p = port ?? (Number(process.env.PORT) || 8086);
+      new Promise<void>((resolve, reject) => {
+        // Refused before the handlers are touched: `listen` throws on a running server, and the swap below stripped its handler.
+        if (server.listening) {
+          reject(new Error('HAL Engine is already started'));
+          return;
+        }
+
+        // ?? not ||, so a configured port 0 means "let the OS choose" rather than 8086.
+        const p = port ?? options.port ?? (Number(process.env.PORT) || 8086);
+
+        // Without this an EADDRINUSE settles nothing and takes the process down as an unhandled event.
+        const onError = (error: Error) => reject(error);
+        server.once('error', onError);
+
+        // A listener left from a previous start would report this bind failure as a running server breaking.
+        server.removeListener('error', logLateError);
+
         server.listen(p, () => {
-          log.info('server', 'HAL Engine started', {port: p});
+          server.removeListener('error', onError);
+
+          // Past the listen window nothing is listening, and an 'error' with no handler ends the process.
+          server.on('error', logLateError);
+
+          // The bound port, not the requested one: a configured 0 means the OS chose it.
+          log.info('server', 'HAL Engine started', {port: boundPort(server, p)});
           resolve();
         });
       }),
@@ -95,7 +121,23 @@ export function createServer(options: HalServerOptions): HalServer {
         wss.clients.forEach(ws => ws.close(1001, 'Server shutting down'));
         wss.close();
         clearInterval(heartbeatInterval);
+
+        // Nothing to close after a refused start or a second stop: `close` would reject for a server that never ran.
+        if (!server.listening) {
+          resolve();
+          return;
+        }
         server.close(err => (err ? reject(err) : resolve()));
       }),
   };
+}
+
+// A running server's error is a condition to report, not a reason to exit; the consumer decides what to do.
+function logLateError(error: Error): void {
+  log.error('server', 'server error after start', {error: error.message});
+}
+
+function boundPort(server: http.Server, requested: number): number {
+  const address = server.address();
+  return typeof address === 'object' && address !== null ? address.port : requested;
 }

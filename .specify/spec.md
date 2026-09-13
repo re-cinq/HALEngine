@@ -6,7 +6,6 @@ HAL Engine is a generic, production-ready AI chat server framework designed to a
 
 The system handles core patterns including streaming responses, tool execution loops, WebSocket connections, session persistence, and message orchestration. It is structured as a layered application with clear separation of concerns from core types through infrastructure and transport.
 
-**Version**: 0.1.0  
 **Primary Language**: TypeScript (ES2022, strict mode)  
 **Entry Point**: `src/config.ts` (`createHalEngine()` factory function)  
 
@@ -15,13 +14,13 @@ The system handles core patterns including streaming responses, tool execution l
 ## Key Capabilities
 
 ### 1. Multi-Provider Support
-- **AWS Bedrock** (fully implemented) - supports Amazon Nova and other Bedrock models
-- **Google Vertex AI** (fully implemented)
+- **AWS Bedrock** - `sendMessage` implemented, supporting Amazon Nova and other Bedrock models; `generateStructured` throws
+- **Google Vertex AI** - both `AIProvider` methods implemented
 - **OpenAI / ChatGPT** (stub with guidance for implementation)
 - **Anthropic / Claude** (stub with guidance for implementation)
 - **Mock Provider** (built-in for testing)
 
-Providers are abstractly defined via the `AIProvider` interface and instantiated through the `createProvider()` factory. Stub providers throw descriptive errors with implementation guidance.
+Providers are abstractly defined via the `AIProvider` interface and instantiated through the `createProvider()` factory. A method that is not implemented throws a descriptive error carrying implementation guidance. Status is per method rather than per provider, and `README.md` carries the only matrix - a second copy would drift.
 
 ### 2. Tool System
 - Dynamic tool registration via `ToolRegistry`
@@ -40,7 +39,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 
 ### 4. Pluggable Authentication
 - Custom WebSocket authentication via `WsAuthenticator` function
-- Optional Express middleware-based HTTP authentication via `HttpAuthMiddleware`
+- Express middleware-based HTTP authentication via `HttpAuthMiddleware`, which must attach a `user` to the `AuthenticatedRequest`
 - Session binding to authenticated users
 - User context propagated throughout request lifecycle
 
@@ -48,7 +47,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 - In-memory default session store (`InMemorySessionStore`)
 - Pluggable interface for custom stores (Redis, database, etc.)
 - Automatic session lifecycle (creation, retrieval, cleanup)
-- Hooks for `onConnect` and `onDisconnect` events
+- Fire-and-forget `onConnect` and `onDisconnect` hooks, neither awaited and neither able to fail a connection
 - Session persistence across WebSocket reconnections
 
 ### 6. Configurable Prompts
@@ -108,6 +107,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 - `ToolResultContent`: Structured tool result representation
 
 **ToolDefinition**:
+<!-- doc-block: none -- a JSON message payload, not a TypeScript declaration -->
 ```typescript
 {
   name: string;
@@ -139,7 +139,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 - Registers domain-specific tools via `ToolRegistry`
 - Defines prompt templates and system instructions
 - Implements custom `SessionStore` if needed
-- Handles `onConnect`/`onDisconnect` lifecycle hooks
+- Handles `onConnect`/`onDisconnect` lifecycle hooks, both returning `void | Promise<void>`
 - Consumes published API from `createHalEngine()`
 
 ### 3. **End User**
@@ -179,7 +179,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 - Invalid tokens result in connection rejection
 - Each session is bound to exactly one authenticated user
 - User context is available to tools and infrastructure components
-- HTTP endpoints optionally require `HttpAuthMiddleware` validation
+- The chat routes require an identified user: with no middleware configured, or middleware that attaches no usable `user.id`, they answer `401`
 
 ### 4. Session Lifecycle
 - Sessions are created on first successful WebSocket connection
@@ -269,13 +269,14 @@ Each layer depends only on layers below it, ensuring clean separation of concern
 - `transport`: Port, CORS, base path, heartbeat interval
 - `auth.http`: Express middleware for HTTP endpoints
 - `orchestrator`: Max tool rounds, context config
-- `onConnect`/`onDisconnect`: Lifecycle hooks
+- `onConnect`/`onDisconnect`: Lifecycle hooks, fire-and-forget
 - `logger`: Custom logger instance
 
 ### Deployment Artifacts
-- Builds to `dist/` directory (ES2022, CommonJS only - no `type: module` and no `exports` map)
+- Builds to `dist/` directory (ES2022, ESM only - `type: module`, resolved through the `exports` map)
 - Type definitions included (`dist/index.d.ts`)
-- Published as npm package `hal-engine`
+- Published as npm package `@re-cinq/hal-engine`, Apache-2.0, `engines: node >=22`
+- `@types/express`, `@types/node` and `@types/ws` are runtime `dependencies`, not dev: the emitted `.d.ts` files import `express`, `http`, `stream` and `ws`, so a consumer cannot type-check without them
 
 ---
 
@@ -285,5 +286,5 @@ Each layer depends only on layers below it, ensuring clean separation of concern
 - **Testing Framework**: Jest with ts-jest
 - **Linting**: ESLint with flat config
 - **Formatting**: Prettier
-- **Development**: `node --watch` with `ts-node/register`, hot-reloading `example/server.ts`
-- **Build**: TypeScript compiler with declaration maps
+- **Development**: `tsx watch`, hot-reloading `example/server.ts`
+- **Build**: TypeScript compiler, declarations only - the published build emits no source or declaration maps

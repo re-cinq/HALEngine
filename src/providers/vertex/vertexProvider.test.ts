@@ -1,30 +1,38 @@
+import {jest} from '@jest/globals';
 import type {ResponseSchema} from '../../types/ai.js';
 import {collectChunks, userMessage} from '../providerTestSupport.js';
 
-const mockGenerateContentStream = jest.fn();
-const mockGenerateContent = jest.fn();
-const mockGetGenerativeModel = jest.fn();
+// @jest/globals types a bare jest.fn() as taking no arguments; these name what the assertions read back.
+interface VertexRequest {
+  contents: {role: string}[];
+}
+interface VertexModelConfig {
+  generationConfig?: Record<string, unknown>;
+}
 
-jest.mock('@google-cloud/vertexai', () => ({
-  VertexAI: jest.fn().mockImplementation(() => ({
-    getGenerativeModel: mockGetGenerativeModel,
-  })),
-  SchemaType: {
-    STRING: 'STRING',
-    NUMBER: 'NUMBER',
-    BOOLEAN: 'BOOLEAN',
-    OBJECT: 'OBJECT',
-    ARRAY: 'ARRAY',
-  },
+const mockGenerateContentStream = jest.fn<(request: VertexRequest) => Promise<unknown>>();
+const mockGenerateContent = jest.fn<(request: VertexRequest) => Promise<unknown>>();
+const mockGetGenerativeModel = jest.fn<(config: VertexModelConfig) => unknown>();
+
+const callMock = () => jest.fn<(request: VertexRequest) => Promise<unknown>>();
+
+// createRequire never reaches jest's ESM registry, so the helper is the seam, not the package.
+jest.unstable_mockModule('../requireOptionalPeer.js', () => ({
+  requireOptionalPeer: () => ({
+    VertexAI: jest.fn().mockImplementation(() => ({
+      getGenerativeModel: mockGetGenerativeModel,
+    })),
+  }),
 }));
 
-import {createVertexProvider, VertexConfig} from './vertexProvider.js';
+const {createVertexProvider} = await import('./vertexProvider.js');
+type VertexConfig = import('./vertexProvider.js').VertexConfig;
 
 const defaultConfig: VertexConfig = {
   type: 'vertex',
   projectId: 'test-project',
-  location: 'us-central1',
-  modelId: 'gemini-1.5-flash',
+  location: 'europe-west4',
+  modelId: 'gemini-2.5-flash',
   maxTokens: 1024,
 };
 
@@ -200,7 +208,7 @@ describe('createVertexProvider', () => {
     it('returns parsed JSON from Vertex response', async () => {
       const expected = {followUpQuestion: 'Tell me more?', confidenceScore: 85};
       mockGetGenerativeModel.mockReturnValue({
-        generateContent: jest.fn().mockResolvedValue({
+        generateContent: callMock().mockResolvedValue({
           response: {
             candidates: [{content: {parts: [{text: JSON.stringify(expected)}]}}],
           },
@@ -219,7 +227,7 @@ describe('createVertexProvider', () => {
 
     it('configures model with responseMimeType and responseSchema', async () => {
       mockGetGenerativeModel.mockReturnValue({
-        generateContent: jest.fn().mockResolvedValue({
+        generateContent: callMock().mockResolvedValue({
           response: {candidates: [{content: {parts: [{text: '{}'}]}}]},
         }),
       });
@@ -254,7 +262,7 @@ describe('createVertexProvider', () => {
 
     it('throws AIError with PARSE_ERROR on invalid JSON', async () => {
       mockGetGenerativeModel.mockReturnValue({
-        generateContent: jest.fn().mockResolvedValue({
+        generateContent: callMock().mockResolvedValue({
           response: {candidates: [{content: {parts: [{text: 'not json'}]}}]},
         }),
       });
@@ -268,7 +276,7 @@ describe('createVertexProvider', () => {
 
     it('throws mapped AIError on Vertex API failure', async () => {
       mockGetGenerativeModel.mockReturnValue({
-        generateContent: jest.fn().mockRejectedValue(new Error('RESOURCE_EXHAUSTED')),
+        generateContent: callMock().mockRejectedValue(new Error('RESOURCE_EXHAUSTED')),
       });
 
       await expect(requestEvaluation()).rejects.toMatchObject({

@@ -1,3 +1,4 @@
+import {jest} from '@jest/globals';
 import type {WebSocket} from 'ws';
 import {createMessageHandler} from './messageHandler.js';
 import type {ChatOrchestrator} from '../../orchestration/chatOrchestrator.js';
@@ -111,6 +112,31 @@ describe('the websocket message handler', () => {
         'upsert 2 assistant ""',
         'delta 2 "answer"',
         'commit 2',
+        'stream_end',
+      ]);
+    });
+
+    it('commits the thinking entry when text resumes, not when a tool entry appears', async () => {
+      const h = harness([
+        text('<thinking>I should look up the weather for Berlin.</thinking>'),
+        {type: 'tool_use', toolCall: {id: 'c1', name: 'get_weather', input: {location: 'Berlin'}}} as MessageChunk,
+        text('Berlin currently has '),
+        text('a temperature of 18 degrees Celsius with clear skies.'),
+        STOP,
+      ]);
+
+      await h.send();
+
+      expect(h.frames()).toEqual([
+        'upsert 0 user "hello"',
+        'upsert 1 thinking ""',
+        'delta 1 "I should look up the weather for Berlin."',
+        'upsert 2 tool ""',
+        'commit 1',
+        'upsert 3 assistant ""',
+        'delta 3 "Berlin currently has "',
+        'delta 3 "a temperature of 18 degrees Celsius with clear skies."',
+        'commit 3',
         'stream_end',
       ]);
     });

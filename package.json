@@ -1,27 +1,68 @@
 {
-  "name": "hal-engine",
-  "version": "0.1.0",
+  "name": "@re-cinq/hal-engine",
+  "version": "0.2.0",
+  "type": "module",
   "description": "A generic AI chat server framework with pluggable providers, tools, and transport",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/re-cinq/HALEngine.git"
+  },
+  "bugs": {
+    "url": "https://github.com/re-cinq/HALEngine/issues",
+    "email": "security@re-cinq.com"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "files": [
     "dist"
   ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "dev": "node --watch -r ts-node/register/transpile-only example/server.ts",
-    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
+    "dev": "tsx watch example/server.ts",
+    "build": "node --input-type=module -e \"import {rmSync} from 'node:fs'; rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
     "prepare": "npm run build",
     "start": "node dist/index.js",
-    "test": "jest",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
+    "smoke": "bash scripts/smoke.sh",
     "typecheck": "tsc --noEmit",
+    "typecheck:example": "tsc -p tsconfig.example.json",
     "eslint": "eslint --max-warnings 0 .",
     "lint:backlog": "eslint -c eslint.config.backlog.mjs .",
     "check:spec-links": "node scripts/check-spec-links.mjs",
+    "spec:names": "node scripts/check-spec-anchor-names.mjs",
+    "spec:names:fix": "node scripts/check-spec-anchor-names.mjs --fix",
     "check:spec-status": "node scripts/check-spec-status.mjs",
-    "prettier": "prettier --write \"src/**/*.ts\"",
-    "prettier:check": "prettier --check \"src/**/*.ts\""
+    "check:audit": "node scripts/check-audit.mjs",
+    "check:action-pins": "node scripts/check-action-pins.mjs",
+    "check:version": "bash scripts/check-version.sh",
+    "docs:check": "node scripts/check-doc-blocks.mjs",
+    "docs:check-paths": "node scripts/check-doc-paths.mjs",
+    "docs:check-spikes": "node scripts/check-spike-status.mjs",
+    "check:regions": "node scripts/check-doc-regions.mjs",
+    "docs:fix": "node scripts/check-doc-blocks.mjs --fix",
+    "verify": "npm run typecheck && npm run typecheck:example && npm run eslint && npm run lint:backlog && npm run prettier:check && npm run test:coverage && npm run build && npm run docs:check && npm run docs:check-paths && npm run docs:check-spikes && npm run check:regions && npm run spec:names && npm run check:spec-links && npm run check:spec-status",
+    "lint": "npm run eslint",
+    "check:build-chain": "npm run check:audit && npm run check:action-pins",
+    "prettier": "prettier --write \"{src,scripts,smoke}/**/*.ts\"",
+    "prettier:check": "prettier --check \"{src,scripts,smoke}/**/*.ts\""
   },
   "dependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.5.0",
+    "@types/ws": "^8.5.10",
     "cookie": "^0.6.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
@@ -50,19 +91,16 @@
     "@types/cookie": "^0.6.0",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
-    "@types/express": "^5.0.0",
     "@types/jest": "^29.5.12",
-    "@types/node": "^22.5.0",
     "@types/supertest": "^6.0.2",
     "@types/uuid": "^9.0.7",
-    "@types/ws": "^8.5.10",
     "eslint": "^9.9.0",
     "jest": "^29.7.0",
     "jscpd": "^5.2.0",
     "prettier": "^3.3.3",
     "supertest": "^7.0.0",
     "ts-jest": "^29.2.4",
-    "ts-node": "^10.9.2",
+    "tsx": "^4.23.13",
     "typescript": "^5.5.4",
     "typescript-eslint": "^8.2.0",
     "yaml": "^2.9.0"

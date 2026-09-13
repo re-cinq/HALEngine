@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 // Re-points specs' [validated by](../../src/X.test.ts#Lnn) anchors after
-// edits to the cited file (the drift class of issue 36) - any cited
+// edits to the cited file - any cited
 // repository file, whatever its kind: each anchor's line number is
 // resolved to the content it cited in the base ref's copy of that file,
-// that content is found in the working copy, and the anchor is rewritten to
-// the match whose surrounding lines agree with the baseline's. When the cited
+// that content is found in the working copy (compared with quotes and
+// whitespace dropped, so a formatter pass is not drift), and the anchor is
+// rewritten to the match whose surrounding lines agree with the baseline's. When the cited
 // content occurs on several working lines, each candidate is scored by how
 // many of the baseline's neighbouring lines it reproduces at the same offsets;
 // a candidate whose context uniquely wins is chosen, and a tie is reported as
@@ -30,7 +31,7 @@
 // Independent of any baseline, every anchor must land on a line that exists
 // and carries content: an anchor whose target file is missing, whose line is
 // beyond the end of the file, or whose line is blank or closing punctuation
-// is reported as rotten and fails the run in both modes (issue 46). An anchor
+// is reported as rotten and fails the run in both modes. An anchor
 // into a test file must additionally land on the it/test/describe declaration
 // itself, because a line inside a test body names no case a reader can check.
 // Non-test targets - a workflow, a config, package.json - are exempt from that
@@ -39,7 +40,7 @@
 // Also independent of any baseline, a short-form [Lnnn](...#Lmmm) label must
 // name the line its own href points at. Labels are re-synced to their href
 // after the anchor rewrite, so a repointed href carries its label with it;
-// --check reports label/href disagreement as mislabelled and fails (issue 18).
+// --check reports label/href disagreement as mislabelled and fails.
 // --check rewrites nothing, so it judges each label against its current
 // (un-repointed) href: a stale href is reported as stale, and once a plain run
 // repoints it the label follows, so the two runs still converge in one pass.
@@ -177,13 +178,19 @@ const contextScore = (baseLines, workingLines, baselineLine, candidateLine) => {
       continue;
     }
 
-    if (baseLines[baselineLine - 1 + offset] === workingLines[candidateLine - 1 + offset]) {
+    if (shape(baseLines[baselineLine - 1 + offset]) === shape(workingLines[candidateLine - 1 + offset])) {
       score += 1;
     }
   }
 
   return score;
 };
+
+// Lines are compared by shape, not text: a formatter changes quotes and
+// spacing without moving anything, and that must not read as drift. An
+// out-of-range line stays undefined so it never matches a real one.
+const shape = (line) =>
+  line === undefined ? undefined : line.replace(/["`]/g, "'").replace(/\s+/g, "");
 
 // Resolves one anchor: the content its baseline line held at the base ref,
 // located in the working copy of the same test file. Duplicate matches are
@@ -209,7 +216,8 @@ const resolveAnchor = (anchor, baselineLine, specDir) => {
   if (target === undefined) {
     return { failure: `#L${baselineLine} is beyond the end of ${testPath} at ${baseRef}` };
   }
-  const candidates = workingLines.flatMap((line, index) => (line === target ? [index + 1] : []));
+  const wanted = shape(target);
+  const candidates = workingLines.flatMap((line, index) => (shape(line) === wanted ? [index + 1] : []));
 
   if (candidates.length === 0) {
     return { failure: `"${target.trim().slice(0, 70)}" no longer exists in ${testPath}` };

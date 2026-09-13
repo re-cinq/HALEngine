@@ -8,7 +8,7 @@ function makeRecord(sessionId: string, inputTokens: number): UsageRecord {
   return {
     sessionId,
     provider: 'vertex',
-    model: 'gemini-1.5-flash',
+    model: 'gemini-2.5-flash',
     usage: {inputTokens, outputTokens: 20, totalTokens: inputTokens + 20},
     timestamp: RECORDED_AT,
   };
