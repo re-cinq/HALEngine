@@ -3,6 +3,7 @@ adr_number: 7
 title: The source repository is public so releases carry provenance
 status: accepted
 date: 2026-09-11
+deciders: ["Vaclav Vondruska"]
 domains:
   - release
   - packaging
