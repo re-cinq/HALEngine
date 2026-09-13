@@ -22,14 +22,12 @@ function mapToolResultBlock(block: ToolResultContent) {
 
 export function mapToolConfig(tools: ToolDefinition[]): ToolConfiguration {
   return {
-    tools: tools.map(
-      (t): Tool.ToolSpecMember => ({
-        toolSpec: {
-          name: t.name,
-          description: t.description,
-          inputSchema: {json: t.inputSchema as DocumentType},
-        },
-      })
-    ),
+    tools: tools.map((t): Tool.ToolSpecMember => ({
+      toolSpec: {
+        name: t.name,
+        description: t.description,
+        inputSchema: {json: t.inputSchema as DocumentType},
+      },
+    })),
   };
 }
