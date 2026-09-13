@@ -3,6 +3,8 @@ export default {
   testEnvironment: 'node',
   roots: ['<rootDir>/src', '<rootDir>/scripts'],
   testMatch: ['**/*.test.ts'],
+  // Fixture suites are inputs to the gate tests, not tests; one of them is deliberately skipped.
+  testPathIgnorePatterns: ['/node_modules/', '/scripts/fixtures/'],
   extensionsToTreatAsEsm: ['.ts'],
   moduleFileExtensions: ['ts', 'js', 'json'],
   // NodeNext source writes `./x.js` for `./x.ts`; jest resolves the real file.

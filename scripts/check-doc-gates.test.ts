@@ -44,6 +44,10 @@ describe('check-spike-status', () => {
   it('names the file it refused', () => {
     expect(spikes.run(`${fixtures}/spikes/without-status.md`).stderr).toContain('without-status.md');
   });
+
+  it('fails a status block that says nothing after the label', () => {
+    expect(spikes.run(`${fixtures}/spikes/empty-status.md`)).toMatchObject({status: 1});
+  });
 });
 
 describe('check-doc-regions', () => {
@@ -73,5 +77,13 @@ describe('check-doc-regions', () => {
 
   it('reads an indented fence and a tilde fence, which a guide writes as a step', () => {
     expect(regions.run(`${fixtures}/region-indented.md`)).toMatchObject({status: 1});
+  });
+
+  it('catches every spelling a reader copies: any quote or none, any case, an env fallback, any region variable, an indented block', () => {
+    expect(regions.run(`${fixtures}/region-spellings.md`).stderr).toContain('9 non-EU region literal(s)');
+  });
+
+  it('does not read a type annotation or a bare env reference as a region', () => {
+    expect(regions.run(`${fixtures}/region-not-literal.md`).stdout).toContain('0 region literal(s)');
   });
 });

@@ -80,4 +80,20 @@ describe('check-spec-anchor-names', () => {
 
     expect(after).toBe(before);
   });
+
+  it('reports a citation of a test declared with xit, which never runs', () => {
+    expect(run(spec('skipped')).stderr).toContain('which is skipped and validates nothing');
+  });
+
+  it('reports a citation of a test declared with .skip the same way', () => {
+    expect(run(spec('skipped-dot'))).toMatchObject({status: 1});
+  });
+
+  it('reports a root-relative href, which the drift check would never read', () => {
+    expect(run(spec('rooted')).stderr).toContain('must be relative and start with ../');
+  });
+
+  it('reports an href starting ./, which this gate would otherwise have skipped', () => {
+    expect(run(spec('dotted'))).toMatchObject({status: 1});
+  });
 });

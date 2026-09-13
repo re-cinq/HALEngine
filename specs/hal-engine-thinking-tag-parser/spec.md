@@ -11,6 +11,7 @@ A model wraps its internal reasoning in `<thinking>...</thinking>`, and that tex
 
 `push` takes a chunk and returns the segments that became certain during it.
 
+<!-- doc-block: src/infrastructure/parsers/thinkingTagParser.ts#ParsedSegment -->
 ```ts
 interface ParsedSegment {
   type: 'text' | 'thinking';

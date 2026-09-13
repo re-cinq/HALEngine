@@ -5,6 +5,7 @@
 // comes from; --fix rewrites the block from there.
 
 import {readFileSync, writeFileSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
 import {join} from 'node:path';
 import process from 'node:process';
 import {root} from './lib/repo-root.mjs';
@@ -23,6 +24,7 @@ const DOCS = [
   'specs/hal-engine-architecture/spec.md',
   'specs/hal-engine-providers/spec.md',
   'specs/hal-engine-tool-responses/spec.md',
+  'specs/hal-engine-thinking-tag-parser/spec.md',
 ];
 
 // A spike records what was believed when it was written, and its status block says which claims no
@@ -42,9 +44,16 @@ const SPIKES = [
 const IMPORT_REWRITES = [[/from '\.\.\/src\/index\.js'/g, "from '@re-cinq/hal-engine'"]];
 
 // Every spelling a renderer treats as TypeScript, plus any info string after it: accepting only one
-// spelling let a block keep its marker, stop being compared, and still render as code.
-const TYPESCRIPT_FENCE = /^```[ \t]*(typescript|ts|tsx)\b[^`]*$/i;
-const CLOSING_FENCE = /^```[ \t]*$/;
+// spelling let a block keep its marker, stop being compared, and still render as code. The fence is
+// read as CommonMark writes it - three or more backticks or tildes, up to three spaces of indent,
+// closed only by the same character at least as long - because four backticks, a tilde fence and a
+// fence indented inside a list all render as code and all passed a gate that saw only ```.
+const OPEN_FENCE = /^( {0,3})(`{3,}|~{3,})[ \t]*(typescript|ts|tsx)\b[^`]*$/i;
+const ANY_CLOSE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/;
+const closes = (line, marker) => {
+  const match = ANY_CLOSE.exec(line);
+  return match !== null && match[1][0] === marker[0] && match[1].length >= marker.length;
+};
 const MARKER = /^<!-- doc-block: (.+?) -->$/;
 
 const args = process.argv.slice(2);
@@ -115,7 +124,7 @@ for (const doc of SPIKES) {
   const lines = read(doc).split('\n');
 
   for (let i = 0; i < lines.length; i += 1) {
-    if (!TYPESCRIPT_FENCE.test(lines[i])) continue;
+    if (!OPEN_FENCE.test(lines[i])) continue;
     spikeBlocks += 1;
 
     const marker = (lines[i - 1] ?? '').trim().match(MARKER);
@@ -133,14 +142,16 @@ for (const doc of DOCS) {
   // because relabelling a block ```js keeps the marker, stops the comparison, and still renders as code.
   for (let i = 0; i < lines.length; i += 1) {
     if (!MARKER.test(lines[i].trim())) continue;
-    if (TYPESCRIPT_FENCE.test(lines[i + 1] ?? '')) continue;
+    if (OPEN_FENCE.test(lines[i + 1] ?? '')) continue;
     findings.push(`${doc}:${i + 1} doc-block marker is not followed by a typescript fence`);
   }
 
   for (let i = 0; i < lines.length; i += 1) {
-    if (!TYPESCRIPT_FENCE.test(lines[i])) continue;
+    const fence = OPEN_FENCE.exec(lines[i]);
+    if (!fence) continue;
+    const [, indent, marker] = fence;
 
-    const close = lines.findIndex((l, j) => j > i && CLOSING_FENCE.test(l));
+    const close = lines.findIndex((l, j) => j > i && closes(l, marker));
     if (close < 0) {
       findings.push(`${doc}:${i + 1} typescript block is never closed`);
       continue;
@@ -165,7 +176,14 @@ for (const doc of DOCS) {
       continue;
     }
 
-    const actual = trimEnd(lines.slice(i + 1, close).join('\n'));
+    // A fence indented inside a list indents its content too; CommonMark strips up to that indent.
+    const dedent = new RegExp(`^ {0,${indent.length}}`);
+    const actual = trimEnd(
+      lines
+        .slice(i + 1, close)
+        .map(l => l.replace(dedent, ''))
+        .join('\n')
+    );
     if (actual === trimEnd(text)) continue;
 
     if (!fix) {
@@ -173,12 +191,25 @@ for (const doc of DOCS) {
       continue;
     }
 
-    lines.splice(i + 1, close - i - 1, ...trimEnd(text).split('\n'));
+    const generated = trimEnd(text)
+      .split('\n')
+      .map(l => (l ? indent + l : l));
+    lines.splice(i + 1, close - i - 1, ...generated);
     changed = true;
     rewritten += 1;
   }
 
   if (changed) writeFileSync(join(root, doc), lines.join('\n'));
+}
+
+// A document in neither list is ungated, whatever it holds: the lists are hand-maintained, so a new
+// guide with a typescript block was covered only if somebody remembered. Fixture documents are the
+// other gates' inputs and say nothing about this package.
+const covered = new Set([...DOCS, ...SPIKES]);
+for (const doc of trackedMarkdown()) {
+  if (covered.has(doc)) continue;
+  if (!read(doc).split('\n').some(line => OPEN_FENCE.test(line))) continue;
+  findings.push(`${doc} holds a typescript block but is in neither DOCS nor SPIKES of check-doc-blocks.mjs`);
 }
 
 if (fix) {
@@ -190,3 +221,17 @@ process.stdout.write(
   `check-doc-blocks: ${findings.length} finding(s) across ${DOCS.length} documents, plus ${spikeBlocks} block(s) in ${SPIKES.length} spikes\n`
 );
 process.exit(findings.length > 0 ? 1 : 0);
+
+// Outside a repository there is nothing tracked, and so nothing ungated; the tests run in one.
+function trackedMarkdown() {
+  try {
+    const out = execFileSync('git', ['ls-files', '*.md', ':!scripts/fixtures/**'], {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return out.trim().split('\n').filter(Boolean);
+  } catch {
+    return [];
+  }
+}

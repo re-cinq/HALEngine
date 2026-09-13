@@ -17,7 +17,12 @@ import {dirname, join, normalize} from 'node:path';
 import {root} from './lib/repo-root.mjs';
 
 const CITATION = /\[validated by(?<label>: [^\]]*)?\]\((?<path>(?:\.\.\/)+[\w./-]+?)#L(?<line>\d+)\)/g;
-const DECLARATION = /^\s*(?:[fx])?(?:it|test|describe)\(\s*(['"`])((?:\\.|(?!\1).)*)\1/;
+// Any other href shape is refused rather than ignored: the coverage job resolves `./../x` and `/x`
+// to the same file and counts them, while this gate and the drift check would never have read them.
+const ANY_HREF = /\[validated by(?:: [^\]]*)?\]\((?<path>[^)#\s]+)#L\d+\)/g;
+// `xit`, `xdescribe` and `.skip` declare a test that never runs, which validates nothing.
+const DECLARATION = /^\s*(?:f?it|f?describe|test)\(\s*(['"`])((?:\\.|(?!\1).)*)\1/;
+const SKIPPED = /^\s*(?:x(?:it|describe|test)|(?:it|describe|test)\.skip)\(\s*(['"`])((?:\\.|(?!\1).)*)\1/;
 const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
 
 const cache = new Map();
@@ -33,6 +38,12 @@ for (const spec of named.length > 0 ? named : specs()) {
   const specDir = dirname(spec);
   let changed = false;
 
+  for (const match of source.matchAll(ANY_HREF)) {
+    if (!match.groups.path.startsWith('../')) {
+      findings.push(`${spec}: href "${match.groups.path}" must be relative and start with ../`);
+    }
+  }
+
   const rewritten = source.replace(CITATION, (whole, label, path, line, ...rest) => {
     const groups = rest[rest.length - 1];
     const target = normalize(join(specDir, groups.path));
@@ -47,6 +58,12 @@ for (const spec of named.length > 0 ? named : specs()) {
 
     const named = groups.label ? groups.label.slice(2) : null;
     const atLine = declarations.find(declaration => declaration.line === Number(groups.line));
+
+    const skipped = declarations.find(d => d.skipped && (d.name === named || d.line === Number(groups.line)));
+    if (skipped) {
+      findings.push(`${spec}: cites "${skipped.name}" at ${groups.path}#L${skipped.line}, which is skipped and validates nothing`);
+      return whole;
+    }
 
     if (named === null) {
       if (!atLine) {
@@ -112,7 +129,7 @@ const verb = fix ? `repointed ${repaired},` : '';
 process.stdout.write(`check-spec-anchor-names: ${verb} ${checked} citation(s) name the test they point at\n`);
 
 function nameIsAmbiguous(declarations, name) {
-  return declarations.filter(declaration => declaration.name === name).length > 1;
+  return declarations.filter(declaration => declaration.name === name && !declaration.skipped).length > 1;
 }
 
 function ambiguity(spec, path, name, declarations) {
@@ -136,7 +153,9 @@ function declarationsIn(path) {
   }
   const found = lines.flatMap((text, index) => {
     const match = DECLARATION.exec(text);
-    return match ? [{line: index + 1, name: match[2]}] : [];
+    if (match) return [{line: index + 1, name: match[2], skipped: false}];
+    const skipped = SKIPPED.exec(text);
+    return skipped ? [{line: index + 1, name: skipped[2], skipped: true}] : [];
   });
 
   cache.set(path, found);

@@ -19,10 +19,16 @@ import {root} from './lib/repo-root.mjs';
 // and rewriting its regions would falsify what was measured rather than repair anything.
 const DEFAULT_GLOBS = ['README.md', 'docs/*.md', 'specs/**/*.md', 'example/*.ts', ':!docs/spikes/**'];
 
-const REGION_FIELD = /\b(?:location|region)\s*:\s*['"]([a-z0-9-]+)['"]/g;
-const REGION_ENV = /\b(?:AWS_REGION|GOOGLE_CLOUD_REGION|CLOUDSDK_COMPUTE_REGION)\s*=\s*([a-z0-9-]+)/g;
-const EU = /^(?:eu-|europe-)/;
+// A region literal has the shape `letters-alphanumerics`, which is what keeps `region: string` in an
+// interface out of this. Any quote or none, any case, and a literal behind an env fallback all count,
+// because every one of them is copied as written; so does any variable ending _REGION, _LOCATION or _ZONE.
+const LITERAL = String.raw`['"\x60]?([A-Za-z]+-[A-Za-z0-9-]+)`;
+const FALLBACK = String.raw`(?:process\.env\.\w+\s*(?:\?\?|\|\|)\s*)?`;
+const REGION_FIELD = new RegExp(String.raw`\b(?:location|region)\s*:\s*${FALLBACK}${LITERAL}`, 'gi');
+const REGION_ENV = new RegExp(String.raw`\b[A-Z][A-Z0-9_]*_(?:REGION|LOCATION|ZONE)\s*=\s*${LITERAL}`, 'g');
+const EU = /^(?:eu-|europe-)/i;
 const FENCE = /^( {0,3})(`{3,}|~{3,})/;
+const INDENTED_CODE = /^(?: {4,}|\t)\S/;
 
 const files = process.argv.slice(2);
 const documents = files.length > 0 ? files : tracked();
@@ -36,11 +42,12 @@ for (const doc of documents) {
   // prose quoting an old value - a spec recording the defect it fixed - is a record, not a snippet.
   const markdown = doc.endsWith('.md');
   let open = markdown ? null : {marker: '', indent: ''};
+  let indentedCode = false;
 
   lines.forEach((line, index) => {
     const fence = FENCE.exec(line);
 
-    if (markdown && fence) {
+    if (markdown && fence && !indentedCode) {
       // CommonMark allows ~~~ as well as ```, up to three spaces of indent, and closes only on the
       // same character: a fence in a numbered list is indented, which is how a guide writes a step.
       const [, indent, marker] = fence;
@@ -48,12 +55,20 @@ for (const doc of documents) {
       else if (marker[0] === open.marker && marker.length >= open.marker.length) open = null;
       return;
     }
-    if (open === null) return;
+
+    // An indented code block has no fence: four spaces after a blank line open it, and it runs until
+    // a non-blank line that is not indented. It renders as code, so a reader copies from it.
+    if (markdown && open === null) {
+      const afterBlank = index === 0 || lines[index - 1].trim() === '';
+      if (!indentedCode && afterBlank && INDENTED_CODE.test(line)) indentedCode = true;
+      else if (indentedCode && line.trim() !== '' && !INDENTED_CODE.test(line)) indentedCode = false;
+      if (!indentedCode) return;
+    }
 
     for (const pattern of [REGION_FIELD, REGION_ENV]) {
       for (const match of line.matchAll(pattern)) {
         checked += 1;
-        if (EU.test(match[1])) continue;
+        if (EU.test(match[1].toLowerCase())) continue;
 
         findings.push(`${doc}:${index + 1} names the region ${match[1]}`);
       }

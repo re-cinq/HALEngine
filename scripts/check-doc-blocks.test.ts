@@ -1,7 +1,7 @@
 import {mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
-import {spawnSync} from 'node:child_process';
+import {execFileSync, spawnSync} from 'node:child_process';
 
 // A fence the gate does not recognise keeps its marker and stops being compared - the failure it exists to prevent.
 
@@ -102,6 +102,48 @@ describe('check-doc-blocks fence recognition', () => {
     const body = `# Fixture\n\n<!-- doc-block: src/types/sample.ts#Sample -->\n\`\`\`ts\n${BODY}\n\`\`\`   \n`;
 
     expect(run(workspace(body, SOURCE))).toMatchObject({status: 0});
+  });
+});
+
+describe('check-doc-blocks fence shapes', () => {
+  const DRIFTED = `interface Sample {\n  id: number;\n}`;
+  const fenced = (open: string, close: string, body = DRIFTED, indent = '') =>
+    `# Fixture\n\n${indent}<!-- doc-block: src/types/sample.ts#Sample -->\n${indent}${open}\n${body}\n${indent}${close}\n`;
+
+  it('compares a block under a four-backtick fence, which renders as code', () => {
+    expect(run(workspace(fenced('````ts', '````'), SOURCE))).toMatchObject({status: 1});
+  });
+
+  it('compares a block under a tilde fence', () => {
+    expect(run(workspace(fenced('~~~typescript', '~~~'), SOURCE))).toMatchObject({status: 1});
+  });
+
+  it('compares a block whose fence is indented inside a list, and reads its content dedented', () => {
+    const body = `   interface Sample {\n     id: string;\n   }`;
+
+    expect(run(workspace(fenced('```ts', '```', body, '   '), SOURCE))).toMatchObject({status: 0});
+  });
+
+  it('keeps the indent when --fix rewrites an indented block', () => {
+    const dir = workspace(fenced('```ts', '```', `   ${DRIFTED}`, '   '), SOURCE);
+    run(dir, '--fix');
+
+    expect(readFileSync(join(dir, 'README.md'), 'utf8')).toContain('   interface Sample {\n     id: string;\n   }');
+  });
+
+  it('does not close a four-backtick fence on three backticks', () => {
+    const body = `${BODY}\n\`\`\`\nstill inside`;
+
+    expect(run(workspace(fenced('````ts', '````', body), SOURCE)).stdout).toContain('does not match');
+  });
+
+  it('reports a tracked document that holds a typescript block but is in neither list', () => {
+    const dir = workspace(doc('```ts'), SOURCE);
+    write(dir, 'docs/extra.md', `# Extra\n\n\`\`\`ts\n${BODY}\n\`\`\`\n`);
+    execFileSync('git', ['init', '-q'], {cwd: dir});
+    execFileSync('git', ['add', 'docs/extra.md'], {cwd: dir});
+
+    expect(run(dir).stdout).toContain('docs/extra.md holds a typescript block but is in neither DOCS nor SPIKES');
   });
 });
 

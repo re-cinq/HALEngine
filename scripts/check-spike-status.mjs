@@ -14,7 +14,8 @@ import {join} from 'node:path';
 import {root} from './lib/repo-root.mjs';
 
 const HEAD_LINES = 12;
-const STATUS = /^>\s*\*\*Status:/;
+// The text after the label is the point: an empty block is the marker with nothing behind it.
+const STATUS = /^>\s*\*\*Status:(?:\*\*)?\s*[^\s*]/;
 
 const files = process.argv.slice(2);
 const documents = files.length > 0 ? files : tracked();
