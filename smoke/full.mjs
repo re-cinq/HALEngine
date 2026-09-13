@@ -2,7 +2,18 @@
 // who actually calls Bedrock or Vertex is in. The bare fixture proves an absent peer fails well;
 // this one proves a present peer is reached, so neither provider is dead on arrival.
 import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
 import {createProvider} from '@re-cinq/hal-engine';
+
+// The static import above has already run by the time this body does, so this counts what importing
+// the package root loaded - the measurement the bare variant cannot make, because there both peers
+// are absent and a count of zero proves nothing about whether anything tried to load them.
+const require = createRequire(import.meta.url);
+const loaded = peer => Object.keys(require.cache).filter(path => path.includes(`node_modules/${peer}/`)).length;
+
+for (const peer of ['@google-cloud/vertexai', '@aws-sdk/client-bedrock-runtime']) {
+  assert.equal(loaded(peer), 0, `${peer}: importing the package root loaded ${loaded(peer)} of its modules`);
+}
 
 for (const [config, peer] of [
   [{type: 'vertex', projectId: 'smoke', location: 'europe-west4', modelId: 'gemini-2.5-flash'}, '@google-cloud/vertexai'],
@@ -14,6 +25,9 @@ for (const [config, peer] of [
 
   assert.equal(typeof provider.sendMessage, 'function', `${peer}: no sendMessage`);
   assert.equal(typeof provider.generateStructured, 'function', `${peer}: no generateStructured`);
+
+  // The other half of the count: lazy must still mean loaded when the provider is actually built.
+  assert.ok(loaded(peer) > 0, `${peer}: constructing the provider loaded none of its modules`);
 }
 
-console.log('smoke: full OK — both optional peers load and both providers construct');
+console.log('smoke: full OK — neither peer loads on import, both load on construction');

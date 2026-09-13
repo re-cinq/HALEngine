@@ -1,7 +1,7 @@
 // Runtime half of the smoke test: what a consumer gets from a bare install with
 // no optional peer present. Any throw here fails the check.
 import assert from 'node:assert/strict';
-import {createProvider, createHalEngine, ToolRegistry} from '@re-cinq/hal-engine';
+import {createProvider, createMockProvider, createHalEngine, ToolRegistry} from '@re-cinq/hal-engine';
 
 const exported = await import('@re-cinq/hal-engine');
 assert.ok(Object.keys(exported).length > 0, 'package root exported nothing');
@@ -34,6 +34,10 @@ for (const [config, peer] of [
 }
 
 assert.ok(new ToolRegistry(), 'ToolRegistry is not constructible');
+
+// The named factory as well as the switch: it is the one provider a consumer with no cloud account
+// can reach, and nothing above would notice if that export stopped resolving from the tarball.
+assert.equal(typeof createMockProvider({}).sendMessage, 'function', 'createMockProvider built no provider');
 
 // Everything above exercises the package without starting it. The engine is where a consumer's
 // install is really tested: express, ws, cors, cookie-parser and uuid all have to resolve from the
