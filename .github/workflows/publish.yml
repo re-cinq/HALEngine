@@ -89,6 +89,11 @@ jobs:
       - name: Build chain
         run: npm run check:build-chain
 
+      # Explicit, before the pack: `npm pack` runs `prepare`, so without this a broken build
+      # surfaces as a confusing pack failure inside the smoke script rather than as a named step.
+      - name: Build
+        run: npm run build
+
       - name: Smoke (packed tarball)
         run: npm run smoke
 
@@ -112,6 +117,9 @@ jobs:
             const unwanted = files.filter((p) => /(^|\/)[^/]*\.test\.[^/]*$/.test(p) || p.endsWith(".map"));
             const required = ["package.json", "README.md", "LICENSE", "dist/index.js", "dist/index.d.ts"];
             const missing = required.filter((p) => !files.includes(p));
+            const unpublished = files.filter((p) => /^(src|example|smoke|docs|specs|adrs|scripts)\//.test(p));
+            const { filename, name, version } = JSON.parse(readFileSync("pack.json", "utf8"))[0];
+            const expected = name.replace("@", "").replace("/", "-") + "-" + version + ".tgz";
             if (unwanted.length > 0) {
               console.error("pack list carries test files or source maps:\n  " + unwanted.join("\n  "));
               process.exit(1);
@@ -120,7 +128,15 @@ jobs:
               console.error("pack list is missing:\n  " + missing.join("\n  "));
               process.exit(1);
             }
-            console.log(`pack list clean: ${files.length} files, entry point present, no *.test.* or *.map entry`);
+            if (unpublished.length > 0) {
+              console.error("pack list carries trees that files:[\"dist\"] excludes:\n  " + unpublished.join("\n  "));
+              process.exit(1);
+            }
+            if (filename !== expected) {
+              console.error(`tarball is named ${filename}, expected ${expected}`);
+              process.exit(1);
+            }
+            console.log(`pack list clean: ${files.length} files as ${filename}, entry point present, dist/ only`);
           '
 
   publish:
