@@ -381,27 +381,30 @@ For new provider support:
 
 ### Releasing
 - Five human steps: bump `version` in `package.json` inside the pull request,
-  merge it, tag `vX.Y.Z` on `main`, push the tag, approve the staged version.
-  Everything between the tag and the approval is CI
+  merge it, draft a GitHub Release on `main` tagged `vX.Y.Z`, publish it, approve
+  the staged version. Everything between the release and the approval is CI
 - Release notes are hand-written on Keep a Changelog 1.1.0, not generated from
   commit subjects. The audience is somebody installing the package, who cannot
   act on `refactor(transport):` and needs to know what changed for them
 - Rename `CHANGELOG.md`'s `## [Unreleased]` heading to the version being
   released in that same pull request, and open a fresh `## [Unreleased]` above it.
   `npm run check:version -- vX.Y.Z` fails if the heading does not name the version
-- Run `npm run check:version -- vX.Y.Z` before pushing the tag. A tag can be
-  deleted; a published version cannot be replaced, and after 72 hours cannot be
-  withdrawn
+- Run `npm run check:version -- vX.Y.Z` before publishing the release. A release
+  and its tag can be deleted; an approved version cannot be replaced, and after
+  72 hours cannot be withdrawn
 - The tag must be `vMAJOR.MINOR.PATCH` and match `package.json` exactly.
   Prerelease tags are rejected because nothing passes `--tag`, so one would
-  publish as `latest` and every plain `npm install` would resolve to it
-- Tag a commit that is already merged to `main`. The workflow refuses a tag whose
-  commit is not an ancestor of `origin/main`: a tag is pushable from any branch,
-  so without that check the protection on `main` is not the boundary the release
-  rests on
-- `.github/workflows/publish.yml` re-runs the version guard, the build-chain
-  checks and the packed-tarball smoke test against the tagged commit, and
-  refuses a pack list carrying any `*.test.*` entry, before anything is
+  publish as `latest` and every plain `npm install` would resolve to it. A
+  release ticked as a pre-release is refused before a runner starts
+- Cut the release from a commit already merged to `main`. The workflow refuses a
+  tag whose commit is not an ancestor of `origin/main`: a release can be drafted
+  against any branch or commit, so without that check the protection on `main` is
+  not the boundary the release rests on
+- `.github/workflows/publish.yml` runs on a published release. A draft fires
+  nothing, and `workflow_dispatch` on the release's tag is how a publish that
+  failed after the release exists is re-run. It re-runs the version guard, the
+  build-chain checks and the packed-tarball smoke test against the tagged commit,
+  and refuses a pack list carrying any `*.test.*` entry, before anything is
   published. A tag points wherever its author chose, so a green run on `main` is
   not evidence about what is being released
 - Authentication is npm Trusted Publishing over OIDC. There is no `NPM_TOKEN`

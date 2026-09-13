@@ -18,6 +18,14 @@ name: Publish
 # makes a version installable on its own, which is the only brake there is on
 # the one step here that cannot be undone.
 #
+# Publishing a GitHub Release is what starts this file. The release carries the
+# `vX.Y.Z` tag and the notes; the version itself is the one already committed in
+# `package.json`, and the guard below refuses a tag that disagrees with it - so a
+# release names a version the repository agreed to in a pull request rather than
+# minting one at the point of no return. Draft releases fire nothing. Editing a
+# release that is already published fires this again and the second run fails at
+# the registry against a version that exists, which publishes nothing.
+#
 # Three preconditions, all of which fail closed rather than publishing wrongly:
 #   1. npm >= 11.15.0. Trusted publishing needs 11.5.1 and `npm stage` needs
 #      11.15.0, and Node 22 ships an older npm, so the job installs it.
@@ -28,8 +36,12 @@ name: Publish
 #      token is revoked immediately afterwards.
 
 on:
-  push:
-    tags: ['v*']
+  release:
+    types: [published]
+  # The way back in when a publish fails after the release already exists.
+  # Select the release's tag, not a branch: the version guard below refuses
+  # anything that is not a vMAJOR.MINOR.PATCH tag, so a branch fails closed.
+  workflow_dispatch:
 
 # Least privilege by default: only the publish job opts into id-token: write,
 # and it does not start until every gate below has passed.
@@ -44,13 +56,16 @@ jobs:
   # author chose, so passing on main is not evidence about what is published.
   verify:
     name: Verify the release candidate
+    # Refused before a runner starts, as well as by the version guard: nothing
+    # here passes --tag, so a prerelease would reach the registry as `latest`.
+    if: ${{ !github.event.release.prerelease }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # Ancestry needs the graph connecting the tag to main; a tag push
-          # checks out one commit by default.
+          # Ancestry needs the graph connecting the tag to main; a release
+          # event checks out one commit by default.
           fetch-depth: 0
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -63,8 +78,8 @@ jobs:
 
       # main is the trust boundary: it requires a pull request, blocks
       # force-pushes, and publishing over OIDC makes push access to it the right
-      # to release. A tag can be pushed from any branch, so without this the
-      # boundary is bypassable by whoever can push a tag. Not repeated in the
+      # to release. A release can be cut against any branch or commit, so
+      # without this the boundary is bypassable by whoever can draft one. Not repeated in the
       # publish job below - `needs` carries it, and ancestry once true stays
       # true while force-pushes to main are blocked.
       # No fetch here either, for the reason ci.yml's changelog step carries:
@@ -74,7 +89,7 @@ jobs:
         run: |
           if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
             echo "publish: FAILED - ${GITHUB_SHA} is not an ancestor of origin/main" >&2
-            echo "publish: tag a commit that has been merged to main" >&2
+            echo "publish: cut the release from a commit merged to main" >&2
             exit 1
           fi
           echo "publish: tagged commit is on main"
