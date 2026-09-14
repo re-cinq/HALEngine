@@ -8,6 +8,13 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-14
+
+Identical to `0.2.0` — same files, same code. It exists to prove that a release publishes with no
+credential stored in the repository: `0.2.0` had to be published with a token, because the registry
+cannot hold a trusted publisher for a name that has never been published, and this is the first version
+released through that publisher instead. There is nothing here to upgrade for.
+
 ## [0.2.0] - 2026-09-14
 
 The first release under the `@re-cinq` scope. Nothing has been published before it, so there is no upgrade
@@ -191,5 +198,6 @@ path from `0.1.0` on the registry — only from the git specifier.
 - Resolved a high-severity advisory in `ws`, a direct runtime dependency. The full dependency audit went
   from 18 advisories (1 critical, 6 high) to 3 (2 moderate, 1 low), none at high or above.
 
-[Unreleased]: https://github.com/re-cinq/HALEngine/compare/v0.2.0...main
+[Unreleased]: https://github.com/re-cinq/HALEngine/compare/v0.2.1...main
+[0.2.1]: https://github.com/re-cinq/HALEngine/releases/tag/v0.2.1
 [0.2.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.2.0
