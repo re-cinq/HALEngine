@@ -14,11 +14,16 @@ name: Bootstrap publish (single use)
 # and removes the secret. See specs/hal-engine-npm-release/spec.md § First
 # publish for the order those steps run in.
 #
-# It stages rather than publishes, like publish.yml: the version reaches the
-# registry uninstallable and a maintainer approves it with 2FA. If staging
-# refuses a token-authenticated publish - which cannot be established before
-# this runs once - the fallback is `npm publish` with the same flags, and the
-# approval moves from the registry to whoever runs it.
+# It publishes directly, unlike publish.yml, because staging a first version is
+# not possible: `npm stage publish` answered 404 "Package not found" against a
+# name the registry has never seen, on a token that authenticates. A stage is
+# approved from the package's Versions tab, and there is no package. So 0.2.0 is
+# the one version that reaches the registry without an approval; from 0.2.1 the
+# package exists and every release stages.
+#
+# Which makes running this the point of no return. A published version cannot be
+# replaced, and after 72 hours cannot be withdrawn - so the gates below run in
+# full first, and the operator dispatching it is the approval.
 
 on:
   workflow_dispatch:
@@ -101,18 +106,18 @@ jobs:
             console.log(`pack list clean: ${paths.length} files for ${name}@${version}`);
           '
 
-      - name: Stage 0.2.0 on npm
+      - name: Publish 0.2.0 on npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -o pipefail
-          npm stage publish --access public --provenance --ignore-scripts 2>&1 | tee stage.log
+          npm publish --access public --provenance --ignore-scripts 2>&1 | tee publish.log
           {
-            echo "## 0.2.0 staged - approve it before registering the trusted publisher"
+            echo "## 0.2.0 is published and installable"
             echo
-            echo "The package page's Versions tab -> Approve, with 2FA. Or: \`npm stage list\`, then \`npm stage approve <id>\`."
+            echo "Next: register the trusted publisher against .github/workflows/publish.yml with staged publishing required, then revoke the token, delete NPM_TOKEN and delete this workflow."
             echo
             echo '```'
-            cat stage.log
+            cat publish.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
