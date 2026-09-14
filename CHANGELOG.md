@@ -8,8 +8,9 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
-The first release under the `@re-cinq` scope, and not published yet: this heading becomes `## [0.2.0]`
-in the pull request that releases it. Nothing has been published before it, so there is no upgrade
+## [0.2.0] - 2026-09-14
+
+The first release under the `@re-cinq` scope. Nothing has been published before it, so there is no upgrade
 path from `0.1.0` on the registry — only from the git specifier.
 
 ### Changed
@@ -190,4 +191,5 @@ path from `0.1.0` on the registry — only from the git specifier.
 - Resolved a high-severity advisory in `ws`, a direct runtime dependency. The full dependency audit went
   from 18 advisories (1 critical, 6 high) to 3 (2 moderate, 1 low), none at high or above.
 
-[Unreleased]: https://github.com/re-cinq/HALEngine/commits/main
+[Unreleased]: https://github.com/re-cinq/HALEngine/compare/v0.2.0...main
+[0.2.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.2.0
