@@ -33,12 +33,18 @@ export default {
   // cover the remainder - the provider adapters and ws helpers with no suite - and are lower for that
   // reason rather than because coverage fell. Raise any of these with the measurement; never lower one
   // to go green (specs/hal-engine-npm-release/spec.md).
+  // Only `branches` was re-measured on jest 30, which instruments branch points jest 29 never saw.
+  // Across src/ the branch count went 240/350 covered to 332/473 while statements (665/842), functions
+  // (180/226) and lines (601/756) are identical to the unit - the same 385 tests, none added, none
+  // removed. No branch that was covered became uncovered, so a group whose percentage fell did so
+  // because its denominator grew: vertex, mock and global rose, orchestration and its tools fell.
+  // That is a finer instrument reading the same suite, which is why these two moved down.
   coverageThreshold: {
-    'src/orchestration/': {statements: 88.3, branches: 85.91, functions: 92, lines: 87.91},
-    'src/orchestration/tools/': {statements: 66.66, branches: 57.14, functions: 71.42, lines: 70.83},
+    'src/orchestration/': {statements: 88.3, branches: 80.85, functions: 92, lines: 87.91},
+    'src/orchestration/tools/': {statements: 66.66, branches: 56.25, functions: 71.42, lines: 70.83},
     'src/infrastructure/stores/': {statements: 100, branches: 100, functions: 100, lines: 100},
-    'src/providers/vertex/': {statements: 87.95, branches: 69.23, functions: 93.33, lines: 91.78},
-    'src/providers/mock/': {statements: 100, branches: 75, functions: 100, lines: 100},
-    global: {statements: 71.48, branches: 59.42, functions: 68.57, lines: 71.9},
+    'src/providers/vertex/': {statements: 87.95, branches: 74.64, functions: 93.33, lines: 91.78},
+    'src/providers/mock/': {statements: 100, branches: 78.57, functions: 100, lines: 100},
+    global: {statements: 71.48, branches: 64.82, functions: 68.57, lines: 71.9},
   },
 };

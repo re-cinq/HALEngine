@@ -329,6 +329,10 @@ For new provider support:
   than to a flat 70, which had handed four groups an 18-30 point regression budget
 - The floors ratchet: raise one when coverage rises, never lower one to make a
   change pass. A floor that moves down is a regression with the alarm switched off
+- The exception is a change of instrument. An upgrade that counts branch points the
+  old version never saw re-reads every floor at once, and a group whose denominator
+  grew can fall while nothing about the suite changed. Settle it on covered/total
+  absolutes rather than percentages, and record them where the floors live
 - All public APIs require at least one test
 - Async code must have proper await/done handling
 
