@@ -118,6 +118,9 @@ interface HalEngineConfig {
     corsOrigin?: string | string[];
     basePath?: string;             // URL prefix (default: '/hal')
     heartbeatIntervalMs?: number;  // WS heartbeat (default: 30000)
+    additionalRoutes?: (router: Router) => void; // mounted under basePath, no auth gate
+    rootRoutes?: (router: Router) => void;       // mounted at /, after basePath router
+    errorHandler?: express.ErrorRequestHandler;  // replaces Express default HTML errors
   };
   auth: {
     ws: WsAuthenticator;          // WebSocket auth function

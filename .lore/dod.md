@@ -22,8 +22,8 @@
 - [x] Forward all three from `createHalEngine` to `createApp`.
 - [x] Remove the `as any` cast in `src/config.test.ts` once the type exists.
 - [x] Add spec statements (Engine Lifecycle section) for the six config.test.ts tests that lacked spec links (CI repair: re-lint/require-spec-link).
-- [ ] Update `docs/getting-started.md`, `README.md`, `example/full-config.ts` per ticket, regenerate doc blocks with `npm run docs:fix`.
-- [ ] Add `CHANGELOG.md` entry.
+- [x] Update `docs/getting-started.md`, `README.md`, `example/full-config.ts` per ticket, regenerate doc blocks with `npm run docs:fix`.
+- [x] Add `CHANGELOG.md` entry.
 
 ## Out of scope
 
