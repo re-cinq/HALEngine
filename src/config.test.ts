@@ -1,4 +1,5 @@
 import net from 'node:net';
+import request from 'supertest';
 import {createHalEngine} from './config.js';
 import {log, setLogger} from './shared/logger.js';
 import type {Logger} from './shared/logger.js';
@@ -100,5 +101,22 @@ describe('createHalEngine on a port it cannot bind', () => {
     await expect(engine.start()).rejects.toMatchObject({code: 'EADDRINUSE'});
 
     await new Promise<void>(resolve => blocker.close(() => resolve()));
+  });
+});
+
+// transport.additionalRoutes and transport.rootRoutes were declared but never forwarded to createApp.
+describe('createHalEngine transport extension forwarding', () => {
+  it('forwards transport.additionalRoutes to createApp so the route mounts under basePath', async () => {
+    const engine = createHalEngine({
+      ...base,
+      /* eslint-disable-next-line @typescript-eslint/no-explicit-any -- additionalRoutes not yet on HalEngineConfig['transport'] */
+      transport: {
+        additionalRoutes: (r: import('express').Router) => r.get('/ping', (_req, res) => res.json({ok: true})),
+      } as any,
+    });
+
+    const response = await request(engine.app).get('/hal/ping');
+
+    expect({status: response.status, body: response.body}).toEqual({status: 200, body: {ok: true}});
   });
 });
