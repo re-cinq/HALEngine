@@ -120,7 +120,6 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 
 **ToolDefinition**:
 <!-- doc-block: none -- a JSON message payload, not a TypeScript declaration -->
-
 ```typescript
 {
   name: string;
