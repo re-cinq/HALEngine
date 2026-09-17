@@ -78,6 +78,7 @@ hal-engine is designed around pluggable interfaces that let consumers customize 
 Controls where session data is stored: the default `InMemorySessionStore` keeps sessions in a `Map` ([validated by: creates and retrieves a session](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L10)). Implement this interface to persist sessions in Redis, a database, or any other backing store. The store is generic -- pass your own session type extending `BaseSession`.
 
 <!-- doc-block: src/types/sessionStore.ts#SessionStore -->
+
 ```typescript
 interface SessionStore<T extends BaseSession = ChatSession> {
   create(sessionId: string, userId: string | number, options?: SessionCreateOptions): T;
@@ -100,11 +101,13 @@ interface SessionStore<T extends BaseSession = ChatSession> {
 Authenticates WebSocket connections during the handshake. It receives the whole Node `IncomingMessage`, not a pre-extracted token, so it can read credentials from wherever the client put them. Return the authenticated user to accept the connection, or `null` to reject it with HTTP 401 -- a rejection is a returned `null`, not a thrown error.
 
 <!-- doc-block: src/types/auth.ts#WsAuthenticator -->
+
 ```typescript
 type WsAuthenticator = (req: IncomingMessage) => Promise<AuthenticatedUser | null>;
 ```
 
 <!-- doc-block: src/types/session.ts#AuthenticatedUser -->
+
 ```typescript
 interface AuthenticatedUser {
   id: string | number;
@@ -119,6 +122,7 @@ The connection handler takes `id` as the session's `userId` and picks up `worksp
 The core abstraction for AI model communication. Each provider (Bedrock, Vertex, OpenAI, Anthropic) implements this interface. The orchestrator depends only on this interface, never on provider-specific code.
 
 <!-- doc-block: src/types/ai.ts#AIProvider -->
+
 ```typescript
 interface AIProvider {
   sendMessage(params: SendMessageParams): AsyncGenerator<MessageChunk>;
@@ -134,6 +138,7 @@ interface AIProvider {
 Loads prompt templates by name with variable substitution ([validated by: returns prompt template when found](../../src/infrastructure/stores/inMemoryPromptStore.test.ts#L11), [resolve](../../src/infrastructure/stores/inMemoryPromptStore.test.ts#L28)). Use this for database-driven prompts instead of static `PromptBuilder` configuration.
 
 <!-- doc-block: src/types/promptStore.ts#PromptStore -->
+
 ```typescript
 interface PromptStore {
   findByName(name: string): Promise<PromptTemplate | undefined>;
@@ -153,6 +158,7 @@ interface PromptStore {
 Tracks AI call metadata such as token counts and model version, for cost monitoring ([validated by: records and retrieves usage by session](../../src/infrastructure/stores/inMemoryUsageStore.test.ts#L24)).
 
 <!-- doc-block: src/types/usageStore.ts#UsageStore -->
+
 ```typescript
 interface UsageStore {
   record(entry: UsageRecord): Promise<void>;
@@ -168,6 +174,7 @@ interface UsageStore {
 Configures static system prompt assembly. Provide your AI identity, domain context, response guidelines, and custom instructions. The `PromptBuilder` combines these with tool instructions from the registry into the final system prompt.
 
 <!-- doc-block: src/infrastructure/builders/promptBuilder.ts#PromptBuilderConfig -->
+
 ```typescript
 interface PromptBuilderConfig {
   identity: string;
@@ -184,6 +191,7 @@ interface PromptBuilderConfig {
 Async lifecycle hooks for customizing the orchestration flow. Every hook is optional and receives the current session, and an orchestrator built with none behaves exactly as one built with an empty set ([validated by: works without any hooks configured](../../src/orchestration/chatOrchestrator.test.ts#L359)). Install hooks through `HalEngineConfig.orchestrator.hooks`; `createHalEngine` forwards the set to the orchestrator ([validated by: forwards an orchestrator hook, so one passed through the config actually fires](../../src/config.test.ts#L17)).
 
 <!-- doc-block: src/orchestration/chatOrchestrator.ts#OrchestratorHooks -->
+
 ```typescript
 interface OrchestratorHooks {
   beforeSession?: (session: ChatSession) => Promise<void>;
@@ -395,6 +403,25 @@ When a connection drops, the frontend reconnects automatically:
 - On unmount, the client closes the socket and clears all timers
 - On disconnect, the server deletes the session from the session store
 - On `SIGTERM`, nothing happens: no signal handler is installed. `createServer` exposes `stop()`, which closes every socket with code 1001 and clears the heartbeat, but the engine never calls it (websocket-protocol spec, Section 11.2)
+
+## App Extension Points
+
+### App extension points
+
+`createApp` exposes two callbacks that let a consumer mount routes alongside the engine's own routes without hand-building an Express application.
+
+- `HalAppOptions.rootRoutes?: (router: Router) => void` — a callback invoked with a fresh `Router` and mounted at the root of the app, after the `basePath` router and before the catch-all `404`, so a handler registered there can serve `GET /` while `GET {basePath}/health` still answers. ([validated by: mounts a rootRoutes handler at / before the catch-all 404](../../src/transport/createApp.test.ts#L128))
+- A `rootRoutes` route at a path that also appears under the `basePath` prefix answers independently: `GET /health` goes to the root handler and `GET {basePath}/health` goes to the engine's health route. ([validated by: lets rootRoutes at /health and the basePath health answer independently](../../src/transport/createApp.test.ts#L143))
+- `HalEngineConfig.transport.additionalRoutes` is forwarded to `createApp`, so a route registered there mounts under `basePath` in the server the engine builds. ([validated by: forwards transport.additionalRoutes to createApp so the route mounts under basePath](../../src/config.test.ts#L109))
+- Neither `additionalRoutes` nor `rootRoutes` is covered by `auth.http`; both receive requests before any authentication middleware the engine installs, so a consumer applies its own middleware inside the callback.
+- Both callbacks inherit the CORS, JSON body-parsing, and cookie-parsing middleware that `createApp` mounts unconditionally.
+- `engine.app` cannot be extended after `createHalEngine` returns: `createApp` registers a terminal `404` catch-all before returning, and Express matches routes in registration order, so a route added afterwards always returns `404`.
+
+The default error behaviour: with no `errorHandler` supplied and `NODE_ENV` unset or not `production`, an unhandled error in any route returns `500 text/html` containing the stack trace (`finalhandler` default). Supply `errorHandler` or set `NODE_ENV=production` to avoid leaking stack content.
+
+**GDPR.** Anything a forwarded route logs or returns is outside every control the engine applies to conversation content. The default HTML error page can leak request content into a response body and into `stderr`; the one-line mitigation is `NODE_ENV=production` or supplying `errorHandler`.
+
+**NIS-2 (Art. 21), access controls.** A route added through either option is unauthenticated by default. The consumer applies its own middleware inside the callback.
 
 ## Source Files
 
