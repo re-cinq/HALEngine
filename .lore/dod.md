@@ -6,22 +6,22 @@
 
 ## Done when these pass
 
-- [ ] **returns a ToolResponse naming the missing required field and does not invoke the executor** — validates that a missing required field produces a rejection ToolResponse and the executor call count is 0
+- [x] **returns a ToolResponse naming the missing required field and does not invoke the executor** — validates that a missing required field produces a rejection ToolResponse and the executor call count is 0
       `src/orchestration/tools/registry.test.ts`
 
-- [ ] **rejects a call whose field type is wrong, naming the field path and expected type but not the value** — validates type-mismatch rejection including PII redaction of the offending value
+- [x] **rejects a call whose field type is wrong, naming the field path and expected type but not the value** — validates type-mismatch rejection including PII redaction of the offending value
       `src/orchestration/tools/registry.test.ts`
 
-- [ ] **throws at register time when the inputSchema is uncompilable and the message names the tool** — validates compile-at-register behaviour
+- [x] **throws at register time when the inputSchema is uncompilable and the message names the tool** — validates compile-at-register behaviour
       `src/orchestration/tools/registry.test.ts`
 
-- [ ] **validates each call against the schema the definition function returns at that call** — validates that function-valued sources are resolved per call, not cached from register
+- [x] **validates each call against the schema the definition function returns at that call** — validates that function-valued sources are resolved per call, not cached from register
       `src/orchestration/tools/registry.test.ts`
 
-- [ ] **does not include the rejected field value in the returned text or any log line** — validates PII redaction in both the returned text and captured log lines
+- [x] **does not include the rejected field value in the returned text or any log line** — validates PII redaction in both the returned text and captured log lines
       `src/orchestration/tools/registry.test.ts`
 
-- [ ] **resolves processMessage and makes the validation-rejection text visible to the provider on the next round** — validates the orchestrator delivers rejection as a tool result rather than throwing
+- [x] **resolves processMessage and makes the validation-rejection text visible to the provider on the next round** — validates the orchestrator delivers rejection as a tool result rather than throwing
       `src/orchestration/chatOrchestrator.test.ts`
 
 - [x] **passes valid input with an extra property through to the executor unchanged** — passes today; guards against future over-validation stripping extra properties
@@ -32,11 +32,11 @@
 
 ## Facets
 
-- [ ] Add `ajv` to `dependencies` in `package.json`
-- [ ] Compile static schemas at `register` time; throw naming the tool on failure
-- [ ] In `execute`, resolve the definition source and validate input against its schema; on failure return a `ToolResponse` with a message naming the failing path and constraint (no values)
-- [ ] Cache compiled validators for function-valued sources by resolved schema object identity (not by registration)
-- [ ] Add one-line doc comment to `execute` pointing at this spec
+- [x] Add `ajv` to `dependencies` in `package.json`
+- [x] Compile static schemas at `register` time; throw naming the tool on failure
+- [x] In `execute`, resolve the definition source and validate input against its schema; on failure return a `ToolResponse` with a message naming the failing path and constraint (no values)
+- [x] Cache compiled validators for function-valued sources by resolved schema object identity (not by registration)
+- [x] Add one-line doc comment to `execute` pointing at this spec
 - [ ] Update `docs/adding-a-tool.md`, `README.md`, `.specify/spec.md`
 - [ ] Add CHANGELOG entry
 - [ ] Run `node scripts/repoint-spec-anchors.mjs` after any edits that shift line numbers in cited files
