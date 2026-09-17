@@ -41,7 +41,10 @@ const engine = createHalEngine({
   orchestrator: {
     hooks: {
       afterModelResponse: async (_session, _responseText, usage) => {
-        log.info('model response complete', {inputTokens: usage?.inputTokens, outputTokens: usage?.outputTokens});
+        log.info('hooks', 'model response complete', {
+          inputTokens: usage?.inputTokens,
+          outputTokens: usage?.outputTokens,
+        });
       },
     },
   },
