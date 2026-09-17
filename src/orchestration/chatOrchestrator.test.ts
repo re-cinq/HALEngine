@@ -519,4 +519,45 @@ describe('ChatOrchestrator tool loop', () => {
 
     expect(seen).toEqual(usage);
   });
+
+  it('resolves processMessage and makes the validation-rejection text visible to the provider on the next round', async () => {
+    let round = 0;
+    let round2Messages: unknown[] = [];
+    const validatingRegistry = new ToolRegistry();
+    validatingRegistry.register(
+      {
+        name: 'weather',
+        description: 'get weather',
+        inputSchema: {type: 'object', required: ['location'], properties: {location: {type: 'string'}}},
+      },
+      async () => 'sunny in London'
+    );
+    const provider: AIProvider = {
+      async *sendMessage(params: SendMessageParams): AsyncGenerator<MessageChunk> {
+        round++;
+        if (round === 2) round2Messages = params.messages;
+        if (round === 1) {
+          yield {type: 'tool_use', toolCall: {id: 'c1', name: 'weather', input: {}}};
+          yield STOP_FOR_TOOL;
+          return;
+        }
+        yield {type: 'text', text: 'all done'};
+        yield STOP_DONE;
+      },
+      async generateStructured<T>(): Promise<T> {
+        return {} as T;
+      },
+    };
+
+    const orchestrationResult = await createChatOrchestrator(
+      provider,
+      promptBuilder,
+      validatingRegistry
+    ).processMessage(createSession('what is the weather?'));
+
+    expect({
+      resolved: orchestrationResult,
+      hasRejectionText: /location/.test(JSON.stringify(round2Messages)),
+    }).toEqual({resolved: 'all done', hasRejectionText: true});
+  });
 });
