@@ -71,6 +71,9 @@ const engine = createHalEngine({
     // basePath defaults to '/hal' and the heartbeat to 30s.
     basePath: '/hal',
     heartbeatIntervalMs: 30_000,
+    additionalRoutes: router => router.get('/ping', (_req, res) => res.json({ok: true})),
+    rootRoutes: router => router.get('/', (_req, res) => res.send('<h1>Hello</h1>')),
+    errorHandler: (err, _req, res, _next) => res.status(500).json({error: String(err)}), // replaces Express's default HTML error page
   },
 
   // OPTIONAL: Orchestrator settings

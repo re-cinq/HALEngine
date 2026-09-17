@@ -14,6 +14,7 @@ export interface HalAppOptions {
   /** Gates whether the demo chat routes mount; those routes keep their own Map and never read it. */
   sessionStore?: SessionStore;
   additionalRoutes?: (router: Router) => void;
+  rootRoutes?: (router: Router) => void;
   errorHandler?: express.ErrorRequestHandler;
 }
 
@@ -48,6 +49,12 @@ export function createApp(options: HalAppOptions = {}) {
     const router = Router();
     options.additionalRoutes(router);
     app.use(basePath, router);
+  }
+
+  if (options.rootRoutes) {
+    const router = Router();
+    options.rootRoutes(router);
+    app.use(router);
   }
 
   app.use((_req: Request, res: Response) => {

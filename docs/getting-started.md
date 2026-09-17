@@ -35,6 +35,7 @@ await engine.start();
 `ws` receives the WebSocket upgrade request, not a token, so pull whatever you authenticate with off `req.headers` yourself. Return an `AuthenticatedUser` — `id` is the only required field, and anything else you put on it reaches tools through `ToolContext`. Returning `null` rejects the upgrade with `401`.
 
 This starts a server with:
+
 - WebSocket endpoint at `ws://localhost:8086/api/ws`
 - Health check at `GET http://localhost:8086/api/health`
 - Demo chat routes at `POST http://localhost:8086/api/chats`, which answer `401` until `auth.http` is configured
@@ -169,6 +170,9 @@ const engine = createHalEngine({
     // basePath defaults to '/hal' and the heartbeat to 30s.
     basePath: '/hal',
     heartbeatIntervalMs: 30_000,
+    additionalRoutes: router => router.get('/ping', (_req, res) => res.json({ok: true})),
+    rootRoutes: router => router.get('/', (_req, res) => res.send('<h1>Hello</h1>')),
+    errorHandler: (err, _req, res, _next) => res.status(500).json({error: String(err)}), // replaces Express's default HTML error page
   },
 
   // OPTIONAL: Orchestrator settings
@@ -214,7 +218,7 @@ The demo chat routes are not part of this flow. A `POST /chats` id is not a WebS
 // 1. Connect. The server mints the session id and sends it back in the `connected` frame.
 const ws = new WebSocket('ws://localhost:8086/api/ws', [token]);
 
-ws.onmessage = (event) => {
+ws.onmessage = event => {
   const message = JSON.parse(event.data);
 
   switch (message.type) {
@@ -237,10 +241,12 @@ ws.onmessage = (event) => {
 };
 
 // 2. Send a message
-ws.send(JSON.stringify({
-  type: 'user_message',
-  content: 'What is the weather in Berlin?',
-}));
+ws.send(
+  JSON.stringify({
+    type: 'user_message',
+    content: 'What is the weather in Berlin?',
+  })
+);
 ```
 
 ## Custom Session Store

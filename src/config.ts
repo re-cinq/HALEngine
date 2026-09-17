@@ -14,6 +14,7 @@ import {createProvider} from './providers/providerFactory.js';
 import {ToolRegistry} from './orchestration/tools/registry.js';
 import {InMemorySessionStore} from './infrastructure/stores/inMemorySessionStore.js';
 import {createApp} from './transport/createApp.js';
+import type {HalAppOptions} from './transport/createApp.js';
 import {createServer} from './transport/createServer.js';
 
 export interface HalEngineConfig {
@@ -26,6 +27,9 @@ export interface HalEngineConfig {
     corsOrigin?: string | string[];
     basePath?: string;
     heartbeatIntervalMs?: number;
+    additionalRoutes?: HalAppOptions['additionalRoutes'];
+    rootRoutes?: HalAppOptions['rootRoutes'];
+    errorHandler?: HalAppOptions['errorHandler'];
   };
   auth: {
     ws: WsAuthenticator;
@@ -70,6 +74,9 @@ export function createHalEngine(config: HalEngineConfig): HalEngine {
     authMiddleware: config.auth.http,
     orchestrator,
     sessionStore,
+    additionalRoutes: config.transport?.additionalRoutes,
+    rootRoutes: config.transport?.rootRoutes,
+    errorHandler: config.transport?.errorHandler,
   });
 
   const halServer = createServer({
