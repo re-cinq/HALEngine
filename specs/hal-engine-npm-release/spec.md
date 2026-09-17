@@ -322,8 +322,8 @@ A log call must not be able to take down the call site it observes. `JSON.string
 
 `logger` is declared on `HalEngineConfig`, is documented in five places, and was read by nothing: every line went through the module singleton regardless. It is the fifth instance of the seam this spec records above, and the one with a migration instruction resting on it - the release notes told consumers to supply a logger to keep the old line format. Seven modules import `log` at module scope, so the swap is a module-level one and is process-wide rather than per engine; `docs/logging.md` states that limit.
 
-- A logger passed to `createHalEngine` receives the package's own log lines ([validated by: delivers the package's own log lines to a supplied logger](../../src/config.test.ts#L63)).
-- Supplying none leaves the built-in console logger in place ([validated by: leaves an already-supplied logger in place when the config names none](../../src/config.test.ts#L76)).
+- A logger passed to `createHalEngine` receives the package's own log lines ([validated by: delivers the package's own log lines to a supplied logger](../../src/config.test.ts#L64)).
+- Supplying none leaves the built-in console logger in place ([validated by: leaves an already-supplied logger in place when the config names none](../../src/config.test.ts#L77)).
 - `setLogger` sends lines to the supplied implementation instead of the console, and the console receives nothing ([validated by: sends lines to a supplied logger instead of the console](../../src/shared/logger.test.ts#L158)).
 - Calling `setLogger` with nothing restores the built-in one ([validated by: restores the built-in console logger when called with nothing](../../src/shared/logger.test.ts#L177)).
 - Handing it the package's own `log` object is the same as handing it nothing. `log` delegates to whatever is active, so making it active would have it call itself until the stack ran out, and because that overflow was caught by the same guard that protects the call site, nothing was written and nothing failed; the full configuration example did exactly this ([validated by: treats being handed its own log object as nothing, rather than recursing until no line is written](../../src/shared/logger.test.ts#L188)).
@@ -337,7 +337,7 @@ Delegating to a supplied logger initially bypassed both of the built-in emitter'
 - A logger missing one of the four methods fails the same way rather than at an arbitrary later call ([validated by: survives a partially implemented logger rather than failing at an arbitrary later call](../../src/shared/logger.test.ts#L250)).
 - A value whose `toString` throws still produces a line ([validated by: still writes a line rather than throwing out of the emitter](../../src/shared/logger.test.ts#L264)).
 - `setLogger` is exported from `src/index.ts`, so a consumer can put the built-in logger back; without it the process-global swap had no documented way out.
-- `createHalEngine` installs a logger only when the config names one, so a second engine naming none keeps the first one's logger ([validated by: leaves an already-supplied logger in place when the config names none](../../src/config.test.ts#L76)).
+- `createHalEngine` installs a logger only when the config names one, so a second engine naming none keeps the first one's logger ([validated by: leaves an already-supplied logger in place when the config names none](../../src/config.test.ts#L77)).
 - No call site changes: every `log.*` call under `src/` kept its category, message, level and data. There were 28 when this was written and 29 once T015 added the hook-failure line; later work added more, so the number is a record of the change rather than a count of the tree.
 - A new `docs/logging.md` covers the key set, the level mapping, the stream split, and which fields can identify a person.
 
@@ -369,11 +369,11 @@ The alias is removed. `user_message` is the only wire name, which is what the ex
 
 `createHalEngine` forwarded `maxToolRounds` and `contextConfig` to the orchestrator it builds and stopped there, and passed no port to the server at all. Both options are declared on `HalEngineConfig`, both are documented, and neither did anything - the third and fourth instances of the same seam after `onConnect` and the `send_message` alias.
 
-- `orchestrator.hooks` is declared and forwarded, so a hook passed through the factory fires ([validated by: forwards an orchestrator hook, so one passed through the config actually fires](../../src/config.test.ts#L17)).
-- `transport.port` reaches the server, and the resolution order is the `start(port)` argument, then `transport.port`, then `PORT`, then `8086` ([validated by: forwards transport.port, so the server listens where the config said](../../src/config.test.ts#L34)).
-- An explicit `start(port)` still wins over the configured one ([validated by: lets an explicit start(port) win over the configured one](../../src/config.test.ts#L45)).
+- `orchestrator.hooks` is declared and forwarded, so a hook passed through the factory fires ([validated by: forwards an orchestrator hook, so one passed through the config actually fires](../../src/config.test.ts#L18)).
+- `transport.port` reaches the server, and the resolution order is the `start(port)` argument, then `transport.port`, then `PORT`, then `8086` ([validated by: forwards transport.port, so the server listens where the config said](../../src/config.test.ts#L35)).
+- An explicit `start(port)` still wins over the configured one ([validated by: lets an explicit start(port) win over the configured one](../../src/config.test.ts#L46)).
 - The started line logs the bound port rather than the requested one, which is what a configured `0` makes visible.
-- A port that cannot be bound rejects the promise `start()` returned, rather than surfacing as an unhandled `error` event that ends the process ([validated by: rejects instead of taking the process down with an unhandled error event](../../src/config.test.ts#L94)).
+- A port that cannot be bound rejects the promise `start()` returned, rather than surfacing as an unhandled `error` event that ends the process ([validated by: rejects instead of taking the process down with an unhandled error event](../../src/config.test.ts#L95)).
 
 Removing that listener once `listen` succeeded left the running server with none, and an `EventEmitter` with no `error` listener throws - so a socket error on a started server ended the process. A persistent listener replaces it, and its lifetime is the part worth stating: it is removed before each bind attempt, and never on `stop()`.
 
