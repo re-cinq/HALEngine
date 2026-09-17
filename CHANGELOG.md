@@ -8,6 +8,14 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-17
+
+### Changed
+
+- `HalEngineConfig.orchestrator.hooks` now carries a JSDoc comment. The field already shipped
+  in `0.2.x`; the comment makes the lifecycle-hook seam discoverable from the published type
+  declarations so editors surface it on hover without a trip to the README.
+
 ## [0.2.1] - 2026-09-14
 
 Identical to `0.2.0` — same files, same code. It exists to prove that a release publishes with no
