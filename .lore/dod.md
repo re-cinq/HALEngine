@@ -37,9 +37,9 @@
 - [x] In `execute`, resolve the definition source and validate input against its schema; on failure return a `ToolResponse` with a message naming the failing path and constraint (no values)
 - [x] Cache compiled validators for function-valued sources by resolved schema object identity (not by registration)
 - [x] Add one-line doc comment to `execute` pointing at this spec
-- [ ] Update `docs/adding-a-tool.md`, `README.md`, `.specify/spec.md`
-- [ ] Add CHANGELOG entry
-- [ ] Run `node scripts/repoint-spec-anchors.mjs` after any edits that shift line numbers in cited files
+- [x] Update `docs/adding-a-tool.md`, `README.md`, `.specify/spec.md`
+- [x] Add CHANGELOG entry
+- [x] Run `node scripts/repoint-spec-anchors.mjs` after any edits that shift line numbers in cited files (script not present in repo; no line-number shifts in the spec — statement text was changed, not inserted/deleted)
 
 ## Out of scope
 

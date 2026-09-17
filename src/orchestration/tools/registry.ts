@@ -1,4 +1,4 @@
-import Ajv from 'ajv';
+import {Ajv} from 'ajv';
 import type {ValidateFunction} from 'ajv';
 import type {ToolDefinition} from '../../types/ai.js';
 import type {OutgoingMessage} from '../../types/messages.js';
