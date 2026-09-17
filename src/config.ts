@@ -34,6 +34,7 @@ export interface HalEngineConfig {
   orchestrator?: {
     maxToolRounds?: number;
     contextConfig?: Partial<ContextConfig>;
+    // Lifecycle hooks: called before and after each phase of processing a user message.
     hooks?: OrchestratorHooks;
   };
   // Replaces the package's logger process-wide, not per engine: there is one `log` per process.

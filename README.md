@@ -30,7 +30,7 @@ That last one has a trap in it. An existing `"hal-engine": "github:…"` entry k
 
 <!-- doc-block: example/server.ts#quick-start -->
 ```typescript
-import {createHalEngine, ToolRegistry} from '@re-cinq/hal-engine';
+import {createHalEngine, log, ToolRegistry} from '@re-cinq/hal-engine';
 
 const tools = new ToolRegistry();
 
@@ -69,6 +69,16 @@ const engine = createHalEngine({
       return {id: 'user-1'};
     },
   },
+  orchestrator: {
+    hooks: {
+      afterModelResponse: async (_session, _responseText, usage) => {
+        log.info('hooks', 'model response complete', {
+          inputTokens: usage?.inputTokens,
+          outputTokens: usage?.outputTokens,
+        });
+      },
+    },
+  },
   transport: {
     port: 8086,
     basePath: '/api',
@@ -86,13 +96,13 @@ This is [`example/server.ts`](example/server.ts) apart from the import specifier
 
 `AIProvider` has two methods and a provider can implement one without the other, so status is scored per method. Bedrock streams but cannot produce structured output; Vertex does both. This is the only implementation-status matrix in the repository — npm renders `README.md` and nothing else, and a second copy would drift from it.
 
-| Provider | `type` | `sendMessage` | `generateStructured` | Package |
-|---|---|---|---|---|
-| AWS Bedrock | `'bedrock'` | Implemented | throws `Bedrock structured output is not yet implemented.` | `@aws-sdk/client-bedrock-runtime` |
-| Google Vertex AI | `'vertex'` | Implemented | Implemented | `@google-cloud/vertexai` |
-| Mock | `'mock'` | Implemented | Implemented | (built-in) |
-| OpenAI / ChatGPT | `'openai'` | throws `OpenAI provider is not yet implemented.` | throws `OpenAI provider is not yet implemented.` | `openai` |
-| Anthropic / Claude | `'anthropic'` | throws `Anthropic provider is not yet implemented.` | throws `Anthropic provider is not yet implemented.` | `@anthropic-ai/sdk` |
+| Provider           | `type`        | `sendMessage`                                       | `generateStructured`                                       | Package                           |
+| ------------------ | ------------- | --------------------------------------------------- | ---------------------------------------------------------- | --------------------------------- |
+| AWS Bedrock        | `'bedrock'`   | Implemented                                         | throws `Bedrock structured output is not yet implemented.` | `@aws-sdk/client-bedrock-runtime` |
+| Google Vertex AI   | `'vertex'`    | Implemented                                         | Implemented                                                | `@google-cloud/vertexai`          |
+| Mock               | `'mock'`      | Implemented                                         | Implemented                                                | (built-in)                        |
+| OpenAI / ChatGPT   | `'openai'`    | throws `OpenAI provider is not yet implemented.`    | throws `OpenAI provider is not yet implemented.`           | `openai`                          |
+| Anthropic / Claude | `'anthropic'` | throws `Anthropic provider is not yet implemented.` | throws `Anthropic provider is not yet implemented.`        | `@anthropic-ai/sdk`               |
 
 A stub's message continues past the sentence in the table, naming the SDK to install and a provider to copy — for example `OpenAI provider is not yet implemented. Install openai and implement the streaming logic. See src/providers/bedrock/ for a reference implementation.`
 
@@ -109,26 +119,26 @@ The `createHalEngine()` function accepts a single config object:
 <!-- doc-block: none -- annotated for the npm front page; the unannotated interface is HalEngineConfig in src/config.ts, which typecheck covers -->
 ```typescript
 interface HalEngineConfig {
-  provider: ProviderConfig;        // Which AI provider to use
-  prompt: PromptBuilderConfig;     // System prompt configuration
-  tools?: ToolRegistry;            // Registered tools (optional)
-  session?: SessionStore;          // Custom session store (default: in-memory)
+  provider: ProviderConfig; // Which AI provider to use
+  prompt: PromptBuilderConfig; // System prompt configuration
+  tools?: ToolRegistry; // Registered tools (optional)
+  session?: SessionStore; // Custom session store (default: in-memory)
   transport?: {
-    port?: number;                 // Server port (default: 8086)
+    port?: number; // Server port (default: 8086)
     corsOrigin?: string | string[];
-    basePath?: string;             // URL prefix (default: '/hal')
-    heartbeatIntervalMs?: number;  // WS heartbeat (default: 30000)
+    basePath?: string; // URL prefix (default: '/hal')
+    heartbeatIntervalMs?: number; // WS heartbeat (default: 30000)
   };
   auth: {
-    ws: WsAuthenticator;          // WebSocket auth function
-    http?: HttpAuthMiddleware;     // Express auth middleware
+    ws: WsAuthenticator; // WebSocket auth function
+    http?: HttpAuthMiddleware; // Express auth middleware
   };
   orchestrator?: {
-    maxToolRounds?: number;        // Max tool loop iterations (default: 5)
+    maxToolRounds?: number; // Max tool loop iterations (default: 5)
     contextConfig?: Partial<ContextConfig>;
   };
-  onConnect?: (session) => void | Promise<void>;      // Fire-and-forget; never awaited
-  onDisconnect?: (sessionId) => void | Promise<void>;  // Fire-and-forget; never awaited
+  onConnect?: (session) => void | Promise<void>; // Fire-and-forget; never awaited
+  onDisconnect?: (sessionId) => void | Promise<void>; // Fire-and-forget; never awaited
 }
 ```
 
@@ -136,11 +146,11 @@ interface HalEngineConfig {
 
 Three, and only three. Everything else is a config field.
 
-| Variable | Read at | Overridden by | Default |
-|---|---|---|---|
-| `CORS_ORIGIN` | `src/transport/createApp.ts` | `transport.corsOrigin` | `http://localhost:3000` |
-| `PORT` | `src/transport/createServer.ts` | `transport.port`, or the argument to `engine.start(port)` | `8086` |
-| `LOG_LEVEL` | `src/shared/logger.ts` | nothing — there is no config field | `info` |
+| Variable      | Read at                         | Overridden by                                             | Default                 |
+| ------------- | ------------------------------- | --------------------------------------------------------- | ----------------------- |
+| `CORS_ORIGIN` | `src/transport/createApp.ts`    | `transport.corsOrigin`                                    | `http://localhost:3000` |
+| `PORT`        | `src/transport/createServer.ts` | `transport.port`, or the argument to `engine.start(port)` | `8086`                  |
+| `LOG_LEVEL`   | `src/shared/logger.ts`          | nothing — there is no config field                        | `info`                  |
 
 `CORS_ORIGIN` carries **one origin**. The value reaches `cors({origin})` unsplit, so a comma-separated list is a single literal string that matches no browser origin. Pass an array to `transport.corsOrigin` for several.
 
