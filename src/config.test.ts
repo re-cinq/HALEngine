@@ -187,10 +187,9 @@ describe('createHalEngine transport extension forwarding', () => {
   it('forwards transport.additionalRoutes to createApp so the route mounts under basePath', async () => {
     const engine = createHalEngine({
       ...base,
-      /* eslint-disable-next-line @typescript-eslint/no-explicit-any -- additionalRoutes not yet on HalEngineConfig['transport'] */
       transport: {
         additionalRoutes: (r: import('express').Router) => r.get('/ping', (_req, res) => res.json({ok: true})),
-      } as any,
+      },
     });
 
     const response = await request(engine.app).get('/hal/ping');
