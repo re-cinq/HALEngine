@@ -39,7 +39,7 @@ All three pass now (green bar); see the run output in the delivery message.
   test-file rules).
 - [x] New spec `specs/hal-engine-config-hooks/spec.md` citing each new test, the existing
   forwarding test, and the three measured semantics against `chatOrchestrator.ts` source lines.
-- [ ] Implementation round: doc comment on the `hooks` field in `src/config.ts`; add "lifecycle
+- [x] Implementation round: doc comment on the `hooks` field in `src/config.ts`; add "lifecycle
   hooks" to `.specify/spec.md` line 271; name `orchestrator.hooks` in
   `specs/hal-engine-architecture/spec.md`; add the bearer-token/verbatim-message retention lines
   there; add an `orchestrator.hooks` block with `afterModelResponse` to `example/server.ts`;

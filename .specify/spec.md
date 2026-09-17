@@ -268,7 +268,7 @@ Each layer depends only on layers below it, ensuring clean separation of concern
 - `session`: Custom session store (defaults to in-memory)
 - `transport`: Port, CORS, base path, heartbeat interval
 - `auth.http`: Express middleware for HTTP endpoints
-- `orchestrator`: Max tool rounds, context config
+- `orchestrator`: Max tool rounds, context config, lifecycle hooks
 - `onConnect`/`onDisconnect`: Lifecycle hooks, fire-and-forget
 - `logger`: Custom logger instance
 

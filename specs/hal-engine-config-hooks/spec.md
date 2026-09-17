@@ -3,7 +3,7 @@
 | Field  | Value                |
 | ------ | -------------------- |
 | Issue  | re-cinq/HALEngine#36 |
-| Status | In Progress          |
+| Status | Shipped              |
 
 `OrchestratorHooks` is the engine's only lifecycle seam, and `HalEngineConfig.orchestrator.hooks` is the supported way to install it: `createHalEngine` forwards the set to `createChatOrchestrator`, so a hook a deployer passes through the factory reaches the running orchestrator rather than sitting unread on the config object. This spec pins that forwarding and the measured semantics the seam already carries, so the hook-based features that follow in this epic — transparency disclosure, audit and usage recording, human oversight, provider failover — specify against real behaviour rather than against what the hook names suggest.
 

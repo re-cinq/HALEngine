@@ -1,5 +1,5 @@
 // #region quick-start
-import {createHalEngine, ToolRegistry} from '../src/index.js';
+import {createHalEngine, log, ToolRegistry} from '../src/index.js';
 
 const tools = new ToolRegistry();
 
@@ -36,6 +36,13 @@ const engine = createHalEngine({
       const token = req.headers.authorization;
       if (!token) return null;
       return {id: 'user-1'};
+    },
+  },
+  orchestrator: {
+    hooks: {
+      afterModelResponse: async (_session, _responseText, usage) => {
+        log.info('model response complete', {inputTokens: usage?.inputTokens, outputTokens: usage?.outputTokens});
+      },
     },
   },
   transport: {
