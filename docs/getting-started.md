@@ -13,7 +13,6 @@ npm install @re-cinq/hal-engine
 The simplest possible setup requires two things: an AI provider configuration and a WebSocket authenticator.
 
 <!-- doc-block: example/minimal.ts#minimal -->
-
 ```typescript
 import {createHalEngine} from '@re-cinq/hal-engine';
 
@@ -51,7 +50,6 @@ This starts a server with:
 Tools let the AI fetch data or perform actions. Register them on the engine's `toolRegistry`:
 
 <!-- doc-block: example/with-tools.ts#with-tools -->
-
 ```typescript
 import {createHalEngine, ToolRegistry} from '@re-cinq/hal-engine';
 import type {ToolDefinition} from '@re-cinq/hal-engine';
@@ -101,7 +99,6 @@ const engine = createHalEngine({
 Here is every option available on `HalEngineConfig`:
 
 <!-- doc-block: example/full-config.ts#full-config -->
-
 ```typescript
 import process from 'node:process';
 import {createHalEngine, InMemorySessionStore, ToolRegistry, log} from '@re-cinq/hal-engine';
@@ -217,7 +214,6 @@ The WebSocket protocol is documented in [websocket-protocol.md](../specs/hal-eng
 The demo chat routes are not part of this flow. A `POST /chats` id is not a WebSocket session id -- the socket mints its own and ignores whatever follows `/ws` in the path -- so there is no create-then-connect handshake to perform.
 
 <!-- doc-block: none -- illustrates assembling the parts by hand, which no single declaration or example region carries -->
-
 ```typescript
 // 1. Connect. The server mints the session id and sends it back in the `connected` frame.
 const ws = new WebSocket('ws://localhost:8086/api/ws', [token]);
@@ -258,7 +254,6 @@ ws.send(
 Implement the `SessionStore` interface to persist sessions beyond in-memory storage:
 
 <!-- doc-block: none -- a Redis store a reader writes, not code this repository ships -->
-
 ```typescript
 import type {SessionStore} from '@re-cinq/hal-engine';
 import type {ChatSession} from '@re-cinq/hal-engine';
