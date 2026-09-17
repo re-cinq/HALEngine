@@ -53,8 +53,21 @@ export class ToolRegistry {
     try {
       return this.ajv.compile(schema);
     } catch (err) {
-      throw new Error(`Tool '${toolName}' has an uncompilable inputSchema: ${(err as Error).message}`);
+      throw new Error(`Tool '${toolName}' has an uncompilable inputSchema: ${(err as Error).message}`, {cause: err});
     }
+  }
+
+  private getValidator(name: string, tool: StoredTool): ValidateFunction {
+    if (typeof tool.definitionSource !== 'function') {
+      return this.staticValidators.get(name)!;
+    }
+    const definition = tool.definitionSource();
+    const schema = definition.inputSchema;
+    const cached = this.dynamicValidatorCache.get(schema);
+    if (cached) return cached;
+    const compiled = this.compileSchema(schema, name);
+    this.dynamicValidatorCache.set(schema, compiled);
+    return compiled;
   }
 
   register(definition: ToolDefinitionSource, execute: ToolExecutor): void {
@@ -97,19 +110,7 @@ export class ToolRegistry {
       throw new Error(`Unknown tool: ${name}`);
     }
 
-    let validate: ValidateFunction;
-    if (typeof tool.definitionSource !== 'function') {
-      validate = this.staticValidators.get(name)!;
-    } else {
-      const definition = tool.definitionSource();
-      const schema = definition.inputSchema;
-      let cached = this.dynamicValidatorCache.get(schema);
-      if (!cached) {
-        cached = this.compileSchema(schema, name);
-        this.dynamicValidatorCache.set(schema, cached);
-      }
-      validate = cached;
-    }
+    const validate = this.getValidator(name, tool);
 
     const valid = validate(input);
     if (!valid) {
