@@ -24,7 +24,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 
 ### 2. Tool System
 - Dynamic tool registration via `ToolRegistry`
-- JSON Schema tool definitions, declared per tool and forwarded to the model; the schema describes the input the model should produce and is NOT enforced before the executor runs
+- JSON Schema tool definitions, declared per tool and forwarded to the model; `ToolRegistry.execute` validates input against the declared schema before the executor runs — a schema-invalid call returns a `ToolResponse` describing the failure to the model rather than throwing, extra properties pass through to the executor unmodified, and `DEFAULT_MAX_TOOL_ROUNDS = 5` bounds the retry cycle
 - Parallel tool execution within configurable tool loops
 - Tool response normalization (supports both simple strings and structured content)
 - Context-aware tool execution: the executor receives the caller's identity (`userId`, `sessionId`, `workspaceId`) and the auth headers the session carries, forwarded from the WebSocket upgrade or the HTTP chat request, not the conversation history

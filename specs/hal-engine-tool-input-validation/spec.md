@@ -3,7 +3,7 @@
 | Field  | Value                |
 | ------ | -------------------- |
 | Issue  | re-cinq/HALEngine#37 |
-| Status | In Progress          |
+| Status | Implemented          |
 
 `ToolRegistry.execute` validates the caller-supplied `input` against the tool's declared `inputSchema` before invoking the executor. A failure returns a `ToolResponse` describing the constraint violation so the model can read it and attempt a corrected call within the existing tool-round budget; it never throws, because a throw propagates out of the orchestrator's `Promise.all` and ends the whole conversation with a transport error rather than giving the model a chance to recover.
 
