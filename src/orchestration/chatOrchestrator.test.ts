@@ -539,10 +539,10 @@ describe('ChatOrchestrator tool loop', () => {
         if (round === 1) {
           yield {type: 'tool_use', toolCall: {id: 'c1', name: 'weather', input: {}}};
           yield STOP_FOR_TOOL;
-        } else {
-          yield {type: 'text', text: 'all done'};
-          yield STOP_DONE;
+          return;
         }
+        yield {type: 'text', text: 'all done'};
+        yield STOP_DONE;
       },
       async generateStructured<T>(): Promise<T> {
         return {} as T;
