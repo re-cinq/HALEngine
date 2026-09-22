@@ -13,13 +13,13 @@ the real entry point `createVertexProvider` is driven unchanged.
 
 ## Done when these pass
 
-- [ ] **forwards apiEndpoint to the VertexAI constructor for the eu multi-region and omits it when unset** —
-  drives `createVertexProvider({location: 'eu', apiEndpoint: 'aiplatform.eu.rep.googleapis.com', ...})`
-  and asserts the init object reaching `new VertexAI(...)` carries
-  `apiEndpoint` verbatim (no rewriting) alongside `location: 'eu'`; a second
-  call with no `apiEndpoint` must reach the constructor with no endpoint
-  override, so single-region deployments stay byte-for-byte unchanged.
-  `src/providers/vertex/vertexProvider.test.ts`
+- [x] **forwards apiEndpoint to the VertexAI constructor for the eu multi-region and omits it when unset** —
+      drives `createVertexProvider({location: 'eu', apiEndpoint: 'aiplatform.eu.rep.googleapis.com', ...})`
+      and asserts the init object reaching `new VertexAI(...)` carries
+      `apiEndpoint` verbatim (no rewriting) alongside `location: 'eu'`; a second
+      call with no `apiEndpoint` must reach the constructor with no endpoint
+      override, so single-region deployments stay byte-for-byte unchanged.
+      Split into two tests at `src/providers/vertex/vertexProvider.test.ts#L297` and `#L309`.
 
 ## Facets
 
@@ -27,7 +27,7 @@ the real entry point `createVertexProvider` is driven unchanged.
 - [x] Red acceptance test: EU config passes `apiEndpoint` through; absent config passes no override.
 - [x] Add `apiEndpoint?: string` to `VertexConfig` with a JSDoc line naming the EU multi-region host.
 - [x] Pass `apiEndpoint` to `new VertexAI({...})` only when set (conditional spread keeps the default byte-for-byte).
-- [ ] `docs`/README/changelog + MINOR version bump (prose; not test-owed).
+- [x] `docs`/README/changelog + MINOR version bump (prose; not test-owed).
 
 ## Out of scope
 

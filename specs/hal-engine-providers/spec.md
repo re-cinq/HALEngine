@@ -11,22 +11,22 @@ hal-engine ships with built-in support for multiple AI providers. All providers 
 
 Model ids below were checked against vendor sources on 2026-09-11, by documentation and by a live publisher-model listing for Vertex. Ids are vendor-controlled and retire on the vendor's schedule, not this package's: `modelId` is a bare unvalidated string on both working providers, so a retired id reaches a consumer as an error that looks like their credentials are wrong. Re-check before trusting a snippet that is older than a few months.
 
-
 Implementation status is scored per method in `README.md`, which carries the only such matrix.
 
-| Provider | Type string | Package |
-|----------|-------------|---------|
-| AWS Bedrock | `'bedrock'` | `@aws-sdk/client-bedrock-runtime` |
-| Google Vertex AI | `'vertex'` | `@google-cloud/vertexai` |
-| OpenAI | `'openai'` | `openai` |
-| Anthropic (Direct) | `'anthropic'` | `@anthropic-ai/sdk` |
-| Mock | `'mock'` | (built-in) |
+| Provider           | Type string   | Package                           |
+| ------------------ | ------------- | --------------------------------- |
+| AWS Bedrock        | `'bedrock'`   | `@aws-sdk/client-bedrock-runtime` |
+| Google Vertex AI   | `'vertex'`    | `@google-cloud/vertexai`          |
+| OpenAI             | `'openai'`    | `openai`                          |
+| Anthropic (Direct) | `'anthropic'` | `@anthropic-ai/sdk`               |
+| Mock               | `'mock'`      | (built-in)                        |
 
 ## Configuring a Provider
 
 Pass the provider config to `createHalEngine()` or use `createProvider()` directly:
 
 <!-- doc-block: none -- a composed provider configuration; its fields are checked through src/config.ts by typecheck -->
+
 ```typescript
 import {createHalEngine} from '@re-cinq/hal-engine';
 
@@ -54,6 +54,7 @@ const provider = createProvider({
 `apiKey` is a `string`, and `process.env.X` is `string | undefined`, so reading one straight into the config does not compile under `strict: true`. `requireEnv` stands in for whatever your project does about that, and the shape matters more than the name: fail at startup on a missing credential rather than at the first model call, where it arrives as an authentication error from the vendor.
 
 <!-- doc-block: none -- the guard a reader writes in their own project, not something this package exports -->
+
 ```typescript
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -68,6 +69,7 @@ function requireEnv(name: string): string {
 Uses the Converse API for a unified interface across all Bedrock-hosted models.
 
 <!-- doc-block: none -- a composed provider configuration; its fields are checked through src/config.ts by typecheck -->
+
 ```typescript
 const engine = createHalEngine({
   provider: {
@@ -83,6 +85,7 @@ const engine = createHalEngine({
 The `eu.` prefix is not decoration. Claude Sonnet 4.5 supports no in-region inference in any region, so the bare `anthropic.claude-sonnet-4-5-20250929-v1:0` fails and a geo inference profile is required: `eu.` from an EU region, `us.` from a US one. The profile keeps requests inside that geography, which is why the EU form pairs with `region: 'eu-west-1'` here. `modelId` is an unvalidated string, so getting this wrong surfaces as a vendor error on the first message, not at startup.
 
 **Credentials:**
+
 ```bash
 AWS_ACCESS_KEY_ID=<from-environment>
 AWS_SECRET_ACCESS_KEY=<from-environment>
@@ -91,6 +94,7 @@ AWS_SECRET_ACCESS_KEY=<from-environment>
 This package reads neither. `src/providers/bedrock/bedrockProvider.ts:28` constructs `new BedrockRuntimeClient({region: config.region})` and the AWS SDK resolves credentials itself, from the environment, a shared profile, or an instance role. `region` is the config field above, not `AWS_REGION`: setting the variable and passing a different `region` gives you the config value with no warning.
 
 **IAM permissions required:**
+
 - `bedrock:InvokeModel`
 - `bedrock:InvokeModelWithResponseStream`
 
@@ -101,6 +105,7 @@ See [spike-bedrock-integration.md](../../docs/spikes/spike-bedrock-integration.m
 Supports streaming through `sendMessage` and structured JSON output through `generateStructured` ([validated by: streams text chunks from Vertex AI response](../../src/providers/vertex/vertexProvider.test.ts#L60), [structured](../../src/providers/vertex/vertexProvider.test.ts#L213)).
 
 <!-- doc-block: none -- a composed provider configuration; its fields are checked through src/config.ts by typecheck -->
+
 ```typescript
 const engine = createHalEngine({
   provider: {
@@ -112,6 +117,8 @@ const engine = createHalEngine({
     googleAuthOptions: {
       keyFilename: '/path/to/service-account.json',
     },
+    // EU multi-region only — location alone cannot reach it:
+    // apiEndpoint: 'aiplatform.eu.rep.googleapis.com',
   },
   // ...
 });
@@ -119,9 +126,10 @@ const engine = createHalEngine({
 
 `location` selects the regional endpoint, so it decides where the request is processed and which jurisdiction the data stays in - not merely which datacentre is nearest. It is passed straight to `new VertexAI({location})` and the engine does not validate it: a region that does not serve the model surfaces as a vendor error on the first call, not at construction. The examples here use `europe-west4`.
 
-The `eu` multi-region is a distinct host (`aiplatform.eu.rep.googleapis.com`) rather than a `location` value, and `@google-cloud/vertexai` derives its endpoint from `location` unless given one, so `location` alone cannot reach it. The optional `apiEndpoint` on `VertexConfig` is forwarded verbatim to `new VertexAI({apiEndpoint})`, and when it is absent no endpoint override is passed, so single-region deployments are byte-for-byte unchanged ([validated by: forwards apiEndpoint to the VertexAI constructor for the eu multi-region and omits it when unset](../../src/providers/vertex/vertexProvider.test.ts#L297)).
+The `eu` multi-region is a distinct host (`aiplatform.eu.rep.googleapis.com`) rather than a `location` value, and `@google-cloud/vertexai` derives its endpoint from `location` unless given one, so `location` alone cannot reach it. The optional `apiEndpoint` on `VertexConfig` is forwarded verbatim to `new VertexAI({apiEndpoint})`, and when it is absent no endpoint override is passed, so single-region deployments are byte-for-byte unchanged ([validated by: forwards apiEndpoint to the VertexAI constructor for the eu multi-region](../../src/providers/vertex/vertexProvider.test.ts#L297), [omits apiEndpoint when unset so single-region deployments are unchanged](../../src/providers/vertex/vertexProvider.test.ts#L309)).
 
 **Credentials:**
+
 ```bash
 GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 ```
@@ -130,6 +138,7 @@ This package reads neither. `src/providers/vertex/vertexProvider.ts:33` construc
 
 **Structured output example:**
 <!-- doc-block: none -- a structured-output call against a live model, which CI cannot make -->
+
 ```typescript
 import {createVertexProvider} from '@re-cinq/hal-engine';
 
@@ -176,6 +185,7 @@ const result = await provider.generateStructured<{score: number; feedback: strin
 ## OpenAI
 
 <!-- doc-block: none -- a composed provider configuration; its fields are checked through src/config.ts by typecheck -->
+
 ```typescript
 const engine = createHalEngine({
   provider: {
@@ -189,6 +199,7 @@ const engine = createHalEngine({
 ```
 
 **Credentials:**
+
 ```bash
 OPENAI_API_KEY=sk-...
 ```
@@ -200,6 +211,7 @@ This package reads it nowhere. The configuration example above passes it, so it 
 Connects to Anthropic's API directly, bypassing Bedrock.
 
 <!-- doc-block: none -- a composed provider configuration; its fields are checked through src/config.ts by typecheck -->
+
 ```typescript
 const engine = createHalEngine({
   provider: {
@@ -213,6 +225,7 @@ const engine = createHalEngine({
 ```
 
 **Credentials:**
+
 ```bash
 ANTHROPIC_API_KEY=sk-ant-...
 ```
@@ -224,6 +237,7 @@ This package reads it nowhere, for the same reason: the example above passes it 
 Echoes the user back instead of calling a model. Use for testing, development, and CI -- it needs no credentials, which is why `example/server.ts` runs on it.
 
 <!-- doc-block: none -- a composed provider configuration; its fields are checked through src/config.ts by typecheck -->
+
 ```typescript
 const engine = createHalEngine({
   provider: {type: 'mock'},
@@ -238,6 +252,7 @@ const engine = createHalEngine({
 `generateStructured` is the configurable half. `structuredResponses` maps a user message to the exact object to return for it; anything unmatched gets a value built from the response schema's shape.
 
 <!-- doc-block: none -- a standalone createProvider call, shown beside the createHalEngine form above it -->
+
 ```typescript
 const provider = createProvider({
   type: 'mock',
@@ -266,6 +281,7 @@ To add a new provider, implement the `AIProvider` interface and wire it into the
 Create a new file under `src/providers/<name>/`:
 
 <!-- doc-block: none -- a custom provider a reader writes, deliberately outside this package -->
+
 ```typescript
 // src/providers/custom/customProvider.ts
 
@@ -337,6 +353,7 @@ export function createCustomProvider(config: CustomConfig): AIProvider {
 ### Step 2: Export from an index file
 
 <!-- doc-block: none -- the barrel file for the custom provider a reader writes -->
+
 ```typescript
 // src/providers/custom/index.ts
 export {createCustomProvider} from './customProvider.js';
@@ -348,17 +365,12 @@ export type {CustomConfig} from './customProvider.js';
 Open `src/providers/providerFactory.ts` and add your provider:
 
 <!-- doc-block: none -- a factory arm a reader adds for their own provider -->
+
 ```typescript
 import {createCustomProvider} from './custom/index.js';
 import type {CustomConfig} from './custom/index.js';
 
-export type ProviderConfig =
-  | BedrockConfig
-  | VertexConfig
-  | OpenAIConfig
-  | AnthropicConfig
-  | MockConfig
-  | CustomConfig;   // add here
+export type ProviderConfig = BedrockConfig | VertexConfig | OpenAIConfig | AnthropicConfig | MockConfig | CustomConfig; // add here
 
 // Each config carries its own `type` literal, which is what the switch narrows on.
 
@@ -376,6 +388,7 @@ export function createProvider(config: ProviderConfig): AIProvider {
 Open `src/index.ts` and add:
 
 <!-- doc-block: none -- a re-export a reader adds for their own provider -->
+
 ```typescript
 export {createCustomProvider} from './providers/custom/index.js';
 export type {CustomConfig} from './providers/custom/index.js';
@@ -385,11 +398,11 @@ export type {CustomConfig} from './providers/custom/index.js';
 
 Your provider must yield these chunk types:
 
-| Chunk type | When to yield | Required fields |
-|------------|---------------|-----------------|
-| `{type: 'text', text: string}` | For each text token/fragment | `text` |
-| `{type: 'tool_use', toolCall: ToolCall}` | When the model requests a tool call | `toolCall.id`, `toolCall.name`, `toolCall.input` |
-| `{type: 'stop', stopReason: string, usage?: UsageMetadata}` | When the model finishes | `stopReason` (`'end_turn'` or `'tool_use'`), optional `usage` |
+| Chunk type                                                  | When to yield                       | Required fields                                               |
+| ----------------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------- |
+| `{type: 'text', text: string}`                              | For each text token/fragment        | `text`                                                        |
+| `{type: 'tool_use', toolCall: ToolCall}`                    | When the model requests a tool call | `toolCall.id`, `toolCall.name`, `toolCall.input`              |
+| `{type: 'stop', stopReason: string, usage?: UsageMetadata}` | When the model finishes             | `stopReason` (`'end_turn'` or `'tool_use'`), optional `usage` |
 
 The orchestrator handles `tool_use` stop reasons by executing tools and re-calling your provider with the results appended to messages. Your provider does not need to implement the tool loop -- just yield the chunks and the orchestrator handles the rest.
 
@@ -398,6 +411,7 @@ The orchestrator handles `tool_use` stop reasons by executing tools and re-calli
 Because all providers implement the same interface, switching is a config-only change - for `sendMessage`. It is not, for `generateStructured`: Bedrock's throws and Vertex's does not, so an application calling it can move Bedrock to Vertex but not the reverse. Nothing catches that at compile time, because a provider satisfies `AIProvider` by throwing. `README.md` scores each provider per method.
 
 <!-- doc-block: none -- three configurations contrasted to show what switching provider costs -->
+
 ```typescript
 // Development: use mock
 const devEngine = createHalEngine({
@@ -413,7 +427,12 @@ const stagingEngine = createHalEngine({
 
 // Production: use Bedrock
 const prodEngine = createHalEngine({
-  provider: {type: 'bedrock', region: 'eu-west-1', modelId: 'eu.anthropic.claude-sonnet-4-5-20250929-v1:0', maxTokens: 4096},
+  provider: {
+    type: 'bedrock',
+    region: 'eu-west-1',
+    modelId: 'eu.anthropic.claude-sonnet-4-5-20250929-v1:0',
+    maxTokens: 4096,
+  },
   // ...
 });
 ```

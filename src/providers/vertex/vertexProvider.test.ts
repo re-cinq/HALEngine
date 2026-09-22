@@ -294,7 +294,7 @@ describe('createVertexProvider', () => {
   });
 
   describe('endpoint selection', () => {
-    it('forwards apiEndpoint to the VertexAI constructor for the eu multi-region and omits it when unset', () => {
+    it('forwards apiEndpoint to the VertexAI constructor for the eu multi-region', () => {
       createVertexProvider({
         type: 'vertex',
         projectId: 'test-project',
@@ -302,10 +302,13 @@ describe('createVertexProvider', () => {
         apiEndpoint: 'aiplatform.eu.rep.googleapis.com',
         modelId: 'gemini-3-pro',
       });
-      createVertexProvider(defaultConfig);
-
-      const [[euInit], [defaultInit]] = mockVertexAI.mock.calls;
+      const [[euInit]] = mockVertexAI.mock.calls;
       expect(euInit).toMatchObject({location: 'eu', apiEndpoint: 'aiplatform.eu.rep.googleapis.com'});
+    });
+
+    it('omits apiEndpoint when unset so single-region deployments are unchanged', () => {
+      createVertexProvider(defaultConfig);
+      const [[defaultInit]] = mockVertexAI.mock.calls;
       expect(defaultInit).not.toHaveProperty('apiEndpoint');
     });
   });
