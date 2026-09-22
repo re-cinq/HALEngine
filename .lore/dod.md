@@ -25,8 +25,8 @@ the real entry point `createVertexProvider` is driven unchanged.
 
 - [x] Capture the `VertexAI` constructor mock at module scope so its call args are readable.
 - [x] Red acceptance test: EU config passes `apiEndpoint` through; absent config passes no override.
-- [ ] Add `apiEndpoint?: string` to `VertexConfig` with a JSDoc line naming the EU multi-region host.
-- [ ] Pass `apiEndpoint` to `new VertexAI({...})` only when set (conditional spread keeps the default byte-for-byte).
+- [x] Add `apiEndpoint?: string` to `VertexConfig` with a JSDoc line naming the EU multi-region host.
+- [x] Pass `apiEndpoint` to `new VertexAI({...})` only when set (conditional spread keeps the default byte-for-byte).
 - [ ] `docs`/README/changelog + MINOR version bump (prose; not test-owed).
 
 ## Out of scope
