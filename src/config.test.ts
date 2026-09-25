@@ -89,6 +89,84 @@ describe('createHalEngine logger forwarding', () => {
   });
 });
 
+describe('createHalEngine orchestrator hooks reach the orchestrator', () => {
+  it('processes a message when the config declares no orchestrator key at all', async () => {
+    const engine = createHalEngine({...base});
+    const session: ChatSession = {
+      sessionId: 's-noorch',
+      userId: 'u1',
+      entries: [{role: 'user', content: 'ping', timestamp: ''}],
+    };
+
+    const reply = await engine.orchestrator.processMessage(session);
+
+    expect(reply).toContain('ping');
+  });
+
+  it('hands a config-installed beforeModelResponse hook the built base system prompt, not merely storing it', async () => {
+    let received = 'never called';
+    const engine = createHalEngine({
+      ...base,
+      orchestrator: {
+        hooks: {
+          beforeModelResponse: async (_session, systemPrompt) => {
+            received = systemPrompt;
+            return systemPrompt;
+          },
+        },
+      },
+    });
+    const session: ChatSession = {
+      sessionId: 's-prompt',
+      userId: 'u1',
+      entries: [{role: 'user', content: 'hi', timestamp: ''}],
+    };
+
+    await engine.orchestrator.processMessage(session);
+
+    expect(received).toBe('test');
+  });
+
+  it('fires the lifecycle hooks in documented order for a session that completes without error', async () => {
+    const order: string[] = [];
+    const engine = createHalEngine({
+      ...base,
+      orchestrator: {
+        hooks: {
+          beforeSession: async () => void order.push('beforeSession'),
+          beforeUserInput: async (_session, message) => {
+            order.push('beforeUserInput');
+            return message;
+          },
+          afterUserInput: async () => void order.push('afterUserInput'),
+          beforeModelResponse: async (_session, systemPrompt) => {
+            order.push('beforeModelResponse');
+            return systemPrompt;
+          },
+          afterModelResponse: async () => void order.push('afterModelResponse'),
+          afterSession: async () => void order.push('afterSession'),
+        },
+      },
+    });
+    const session: ChatSession = {
+      sessionId: 's-order',
+      userId: 'u1',
+      entries: [{role: 'user', content: 'hello', timestamp: ''}],
+    };
+
+    await engine.orchestrator.processMessage(session);
+
+    expect(order).toEqual([
+      'beforeSession',
+      'beforeUserInput',
+      'afterUserInput',
+      'beforeModelResponse',
+      'afterModelResponse',
+      'afterSession',
+    ]);
+  });
+});
+
 // An unavailable port is a condition a consumer can handle, but only if start() lets them see it.
 describe('createHalEngine on a port it cannot bind', () => {
   it('rejects instead of taking the process down with an unhandled error event', async () => {

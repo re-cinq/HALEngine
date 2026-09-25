@@ -48,10 +48,10 @@ export const weatherTool: ToolDefinition = {
 };
 
 export const executeWeather: ToolExecutor = async input => {
-  const location = (input.location as string) || 'Unknown';
-  const units = (input.units as string) || 'celsius';
+  const location = input.location as string;
+  const units = (input.units as string) ?? 'celsius';
 
-  // Replace with a real API call. `input` is untrusted: inputSchema shapes what the model sends, it does not enforce it.
+  // Replace with a real API call. `location` has already passed the declared inputSchema.
   const result = {
     location,
     temperature: 18,
@@ -133,8 +133,9 @@ type ToolExecutor = (input: Record<string, unknown>, context?: ToolContext) => P
 The optional `context` provides `userId`, `sessionId`, `workspaceId`, and `authHeaders` for tools that need to make authenticated API calls.
 
 - Return `JSON.stringify(result)` for most tools -- the result gets added to the conversation as a tool result message
-- Cast input fields from `unknown` to their expected types
-- Handle missing or unknown input gracefully (return a reasonable default or error message)
+- Cast input fields from `unknown` to their declared types — the registry has already validated that required fields are present, types match, and enum values are in range, so a cast is safe
+- Unknown keys may still be present in `input`; ignore them or use them as needed, but do not assume they have been stripped
+- A schema-invalid call never reaches the executor: the registry returns a descriptive rejection to the model, which can retry within the tool-round budget (`DEFAULT_MAX_TOOL_ROUNDS = 5`)
 
 For tools that need to send messages directly to the client or suppress the AI's echo, return a `ToolResponse` object instead of a plain string. See [tool-responses.md](../specs/hal-engine-tool-responses/spec.md) for a full walkthrough.
 

@@ -1,9 +1,9 @@
 # HAL Engine on npm
 
-| Field  | Value           |
-| ------ | --------------- |
-| Issue  | n/a             |
-| Status | In Progress     |
+| Field  | Value       |
+| ------ | ----------- |
+| Issue  | n/a         |
+| Status | In Progress |
 
 This package has never been published. It is `hal-engine@0.1.0`, CommonJS, unlicensed, and reachable only through a git specifier that clones the repository and builds from source. This spec describes what has to become true for `npm install @re-cinq/hal-engine` to resolve from the public registry: the module format it ships, the manifest that describes it, the pipeline that releases it from a published GitHub release without a stored token, and the handful of defects a first public release must not carry — an authentication fallback that opens a chat API, a hook that is declared and never called, a factory arm that drops its configuration, and an optional peer that is not optional. It also covers the documentation, because npm renders `README.md` and nothing else.
 
@@ -17,11 +17,11 @@ The package is ESM-only. `package.json` carries `"type": "module"`, and `tsconfi
 
 Three ways to keep that lazy load were available, and the third is what shipped:
 
-| | Approach | Cost |
-|---|---|---|
-| A | `await import()`, making `createProvider` async | `createHalEngine` becomes async too, and every consumer's construction site changes. A breaking change to the one function the README opens with |
-| B | Static imports, dropping laziness | Importing the package root pulls in every provider SDK, which is the defect T002 exists to fix |
-| C | `createRequire(import.meta.url)` at the call site | Keeps `createProvider` and `createHalEngine` synchronous, keeps the load lazy, and confines the CommonJS interop to one helper |
+|     | Approach                                          | Cost                                                                                                                                             |
+| --- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| A   | `await import()`, making `createProvider` async   | `createHalEngine` becomes async too, and every consumer's construction site changes. A breaking change to the one function the README opens with |
+| B   | Static imports, dropping laziness                 | Importing the package root pulls in every provider SDK, which is the defect T002 exists to fix                                                   |
+| C   | `createRequire(import.meta.url)` at the call site | Keeps `createProvider` and `createHalEngine` synchronous, keeps the load lazy, and confines the CommonJS interop to one helper                   |
 
 C. `createHalEngine` stays synchronous - that is the point of the choice, not a side effect of it - and the interop lives in `src/providers/requireOptionalPeer.ts` rather than being spread across `providerFactory.ts` and `bedrockProvider.ts:24`.
 
@@ -51,18 +51,18 @@ This is a breaking change under AGENTS.md § Breaking Changes and inherits that 
 
 ### Manifest
 
-| Field | Today | After |
-|---|---|---|
-| `name` | `hal-engine` | `@re-cinq/hal-engine` |
-| `version` | `0.1.0` | `0.2.0` |
-| `type` | absent | `module` |
-| `license` | absent | `Apache-2.0`, with a matching `LICENSE` file |
-| `repository` | absent | `git+https://github.com/re-cinq/HALEngine.git` |
-| `exports` | absent | a single `.` entry resolving `types` then `default` |
-| `publishConfig` | absent | `{"access": "public"}` |
-| `engines` | absent | `{"node": ">=22"}` |
-| `bugs` | absent | the vulnerability-disclosure intake address |
-| `files` | `["dist"]` | unchanged |
+| Field           | Today        | After                                               |
+| --------------- | ------------ | --------------------------------------------------- |
+| `name`          | `hal-engine` | `@re-cinq/hal-engine`                               |
+| `version`       | `0.1.0`      | `0.2.0`                                             |
+| `type`          | absent       | `module`                                            |
+| `license`       | absent       | `Apache-2.0`, with a matching `LICENSE` file        |
+| `repository`    | absent       | `git+https://github.com/re-cinq/HALEngine.git`      |
+| `exports`       | absent       | a single `.` entry resolving `types` then `default` |
+| `publishConfig` | absent       | `{"access": "public"}`                              |
+| `engines`       | absent       | `{"node": ">=22"}`                                  |
+| `bugs`          | absent       | the vulnerability-disclosure intake address         |
+| `files`         | `["dist"]`   | unchanged                                           |
 
 `main` and `types` are kept alongside `exports`, matching the reference implementation. `prepare: "npm run build"` is kept, which means npm runs it on both `npm ci` and `npm publish` — every CI install in this repository therefore uses `--ignore-scripts`.
 
@@ -78,12 +78,12 @@ The `@aws-sdk/client-bedrock-runtime` reference in the emitted types is not the 
 
 The list itself, rather than a count that drifts unnoticed: `npm pack --dry-run` prints 101 entries, and every one falls in four groups.
 
-| Group | Entries | What it is |
-|---|---|---|
-| `dist/` | 98 | the compiled package - `.js` and `.d.ts` only, no maps and no `*.test.*` |
-| `package.json` | 1 | the manifest, which `files: ["dist"]` cannot exclude |
-| `README.md` | 1 | what npm renders on the package page |
-| `LICENSE` | 1 | Apache-2.0, which npm includes whether or not `files` names it |
+| Group          | Entries | What it is                                                               |
+| -------------- | ------- | ------------------------------------------------------------------------ |
+| `dist/`        | 98      | the compiled package - `.js` and `.d.ts` only, no maps and no `*.test.*` |
+| `package.json` | 1       | the manifest, which `files: ["dist"]` cannot exclude                     |
+| `README.md`    | 1       | what npm renders on the package page                                     |
+| `LICENSE`      | 1       | Apache-2.0, which npm includes whether or not `files` names it           |
 
 Nothing from `src/`, `example/`, `smoke/`, `docs/`, `specs/`, `adrs/` or `scripts/` appears, and the publish workflow fails the job if one does. Sizes move with every source change and are not pinned here; the group table is what a reviewer checks. The publish workflow's pack-list check MUST fail on a `*.map` entry for the same reason it fails on a `*.test.*` one.
 
@@ -131,7 +131,6 @@ The gate runs immediately before `npm publish`, so the two ways it can report a 
 - An expired acceptance fails the check ([validated by: fails on an acceptance whose expiry has passed](../../scripts/check-audit.test.ts#L143)).
 - An expired acceptance is named by advisory and package ([validated by: names the expired acceptance by advisory and package](../../scripts/check-audit.test.ts#L150)).
 - A clean report with no acceptances passes ([validated by: passes a clean report with no acceptances](../../scripts/check-audit.test.ts#L169)).
-
 
 A `uses:` reference is pinned to a commit SHA because a tag is a mutable pointer its owner can repoint under a job holding repository credentials. The scan covers the whole of `.github/`, not `workflows/` alone: a composite action carries its own `uses:` lines and runs inside whichever job calls it, so scanning only workflows leaves it unpinnable with nothing to notice.
 
@@ -373,7 +372,7 @@ The alias is removed. `user_message` is the only wire name, which is what the ex
 - `transport.port` reaches the server, and the resolution order is the `start(port)` argument, then `transport.port`, then `PORT`, then `8086` ([validated by: forwards transport.port, so the server listens where the config said](../../src/config.test.ts#L34)).
 - An explicit `start(port)` still wins over the configured one ([validated by: lets an explicit start(port) win over the configured one](../../src/config.test.ts#L45)).
 - The started line logs the bound port rather than the requested one, which is what a configured `0` makes visible.
-- A port that cannot be bound rejects the promise `start()` returned, rather than surfacing as an unhandled `error` event that ends the process ([validated by: rejects instead of taking the process down with an unhandled error event](../../src/config.test.ts#L94)).
+- A port that cannot be bound rejects the promise `start()` returned, rather than surfacing as an unhandled `error` event that ends the process ([validated by: rejects instead of taking the process down with an unhandled error event](../../src/config.test.ts#L172)).
 
 Removing that listener once `listen` succeeded left the running server with none, and an `EventEmitter` with no `error` listener throws - so a socket error on a started server ended the process. A persistent listener replaces it, and its lifetime is the part worth stating: it is removed before each bind attempt, and never on `stop()`.
 

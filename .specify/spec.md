@@ -7,13 +7,14 @@ HAL Engine is a generic, production-ready AI chat server framework designed to a
 The system handles core patterns including streaming responses, tool execution loops, WebSocket connections, session persistence, and message orchestration. It is structured as a layered application with clear separation of concerns from core types through infrastructure and transport.
 
 **Primary Language**: TypeScript (ES2022, strict mode)  
-**Entry Point**: `src/config.ts` (`createHalEngine()` factory function)  
+**Entry Point**: `src/config.ts` (`createHalEngine()` factory function)
 
 ---
 
 ## Key Capabilities
 
 ### 1. Multi-Provider Support
+
 - **AWS Bedrock** - `sendMessage` implemented, supporting Amazon Nova and other Bedrock models; `generateStructured` throws
 - **Google Vertex AI** - both `AIProvider` methods implemented
 - **OpenAI / ChatGPT** (stub with guidance for implementation)
@@ -23,14 +24,16 @@ The system handles core patterns including streaming responses, tool execution l
 Providers are abstractly defined via the `AIProvider` interface and instantiated through the `createProvider()` factory. A method that is not implemented throws a descriptive error carrying implementation guidance. Status is per method rather than per provider, and `README.md` carries the only matrix - a second copy would drift.
 
 ### 2. Tool System
+
 - Dynamic tool registration via `ToolRegistry`
-- JSON Schema tool definitions, declared per tool and forwarded to the model; the schema describes the input the model should produce and is NOT enforced before the executor runs
+- JSON Schema tool definitions, declared per tool and forwarded to the model; `ToolRegistry.execute` validates input against the declared schema before the executor runs — a schema-invalid call returns a `ToolResponse` describing the failure to the model rather than throwing, extra properties pass through to the executor unmodified, and `DEFAULT_MAX_TOOL_ROUNDS = 5` bounds the retry cycle
 - Parallel tool execution within configurable tool loops
 - Tool response normalization (supports both simple strings and structured content)
 - Context-aware tool execution: the executor receives the caller's identity (`userId`, `sessionId`, `workspaceId`) and the auth headers the session carries, forwarded from the WebSocket upgrade or the HTTP chat request, not the conversation history
 - Configurable maximum tool loop iterations (default: 5)
 
 ### 3. Real-Time Streaming
+
 - WebSocket-based bi-directional communication
 - Entry-based protocol (supports User, Assistant, Thinking, Tool, and error entries)
 - Thinking tag parsing for handling model reasoning artifacts
@@ -38,12 +41,14 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 - Automatic heartbeat mechanism (default: 30-second interval)
 
 ### 4. Pluggable Authentication
+
 - Custom WebSocket authentication via `WsAuthenticator` function
 - Express middleware-based HTTP authentication via `HttpAuthMiddleware`, which must attach a `user` to the `AuthenticatedRequest`
 - Session binding to authenticated users
 - User context propagated throughout request lifecycle
 
 ### 5. Session Management
+
 - In-memory default session store (`InMemorySessionStore`)
 - Pluggable interface for custom stores (Redis, database, etc.)
 - Automatic session lifecycle (creation, retrieval, cleanup)
@@ -51,11 +56,13 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 - Session persistence across WebSocket reconnections
 
 ### 6. Configurable Prompts
+
 - Injectable system prompt builder (`PromptBuilder`)
 - Identity, domain context, and response guideline configuration
 - Dynamic prompt composition from templates
 
 ### 7. HTTP + WebSocket Server
+
 - Express.js v5 application with full CORS support
 - WebSocket server built on `ws` library
 - Configurable base path (default: `/hal`)
@@ -68,10 +75,12 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 ### Message Flow
 
 **Incoming Messages** (`IncomingMessage` type):
+
 - `UserMessage`: User-provided text input with optional metadata
 - `Ping`: WebSocket heartbeat
 
 **Outgoing Messages** (`OutgoingMessage` type):
+
 - `ConnectedMessage`: Initial handshake after WebSocket connection
 - `EntryUpsertMessage`: New or updated conversation entry
 - `EntryDeltaMessage`: Streaming content delta
@@ -84,6 +93,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 ### Session Model
 
 **ChatSession**:
+
 - `id`: Unique session identifier (UUID)
 - `userId`: Authenticated user identifier
 - `entries`: Array of conversation entries
@@ -91,6 +101,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 - `updatedAt`: Last activity timestamp
 
 **Entry Types**:
+
 - `UserEntry`: Text message from user
 - `AssistantEntry`: AI-generated response with tool calls
 - `ThinkingEntry`: Internal reasoning (parsed from models that support thinking)
@@ -100,6 +111,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 ### AI Communication Model
 
 **Message** types:
+
 - `TextMessage`: Simple text content
 - `ToolUseMessage`: Tool invocation with arguments
 - `ToolResultMessage`: Tool execution result
@@ -117,6 +129,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 ```
 
 **Tool Response Variants**:
+
 - String: Direct text response
 - Object with `content`: Rich structured content
 - Object with `entries`: Multiple message entries
@@ -127,6 +140,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 ## User Roles
 
 ### 1. **System Administrator**
+
 - Configures `HalEngineConfig` during initialization
 - Selects AI provider and region
 - Defines authentication strategy
@@ -135,6 +149,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 - Configures CORS and network settings
 
 ### 2. **Application Developer**
+
 - Implements custom `WsAuthenticator` and optional `HttpAuthMiddleware`
 - Registers domain-specific tools via `ToolRegistry`
 - Defines prompt templates and system instructions
@@ -143,6 +158,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 - Consumes published API from `createHalEngine()`
 
 ### 3. **End User**
+
 - Connects via WebSocket with authentication token
 - Sends `UserMessage` entries with text input
 - Receives streaming `EntryUpsert`/`EntryDelta` messages
@@ -150,6 +166,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 - Maintains session across reconnections
 
 ### 4. **AI Model (Provider)**
+
 - Processes chat history and system prompts
 - Generates text responses and tool calls
 - Streams content in chunks
@@ -161,6 +178,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 ## Business Rules
 
 ### 1. Tool Execution
+
 - Tools execute only when explicitly requested by the AI model
 - Maximum tool loop iterations enforce termination (prevents infinite loops)
 - Tools execute in response to explicit `ToolCall` objects from the model
@@ -168,6 +186,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 - Tool failures are communicated via `ToolResultMessage` with error content
 
 ### 2. Message Ordering
+
 - User messages must precede assistant responses
 - Tool results must follow corresponding tool calls
 - Thinking entries (when present) appear before tool calls or text
@@ -175,6 +194,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 - Session history is immutable after commit
 
 ### 3. Authentication & Authorization
+
 - WebSocket connections require successful `WsAuthenticator` callback
 - Invalid tokens result in connection rejection
 - Each session is bound to exactly one authenticated user
@@ -182,6 +202,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 - The chat routes require an identified user: with no middleware configured, or middleware that attaches no usable `user.id`, they answer `401`
 
 ### 4. Session Lifecycle
+
 - Sessions are created on first successful WebSocket connection
 - Sessions persist across disconnections (reconnection support)
 - `onDisconnect` hook fires when session is abandoned (configurable timeout)
@@ -189,6 +210,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 - Session cleanup follows configurable eviction policy
 
 ### 5. Streaming & Response Handling
+
 - Streaming begins immediately upon receiving user message
 - Thinking content is parsed from XML tags (provider-dependent)
 - Deltas are sent as soon as available (streaming chunks)
@@ -196,12 +218,14 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 - Client must handle partial messages due to network conditions
 
 ### 6. Tool Response Normalization
+
 - Tool executors return `string`, object with `content`, or object with `entries`
 - Framework normalizes all variants to internal representation
 - Tool results are validated against original tool definition schema
 - Malformed responses result in error entries
 
 ### 7. Provider Compatibility
+
 - Provider selection is immutable per engine instance
 - Provider-specific configuration is validated at startup
 - Missing provider dependencies (e.g., AWS SDK) result in clear error messages
@@ -212,29 +236,34 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 ## Success Metrics
 
 ### Operational Metrics
+
 1. **Availability**: WebSocket server uptime and connection stability
-2. **Latency**: 
+2. **Latency**:
    - Time to first token (TTFT) from model
    - End-to-end response time (user message → final entry commit)
 3. **Throughput**: Concurrent WebSocket connections supported
 4. **Error Rate**: Failed messages, tool execution errors, provider failures
 
 ### Integration Metrics
+
 1. **Tool Success Rate**: Percentage of tool calls that execute without error
 2. **Tool Loop Efficiency**: Average iterations before response completion
 3. **Streaming Efficiency**: Chunk size and delta frequency
 
 ### Developer Experience Metrics
+
 1. **Time to Integration**: Hours to implement custom provider or tool
 2. **Configuration Complexity**: Lines of code for basic setup
 3. **Documentation Coverage**: Completeness of docs/ directory
 
 ### Business Metrics
+
 1. **Provider Cost Per Interaction**: Token usage × provider pricing
 2. **Session Persistence**: Reconnection success rate
 3. **Authentication Success Rate**: Percentage of valid auth attempts
 
 ### Reliability Metrics
+
 1. **Message Delivery Guarantee**: No lost messages within a session
 2. **Tool Execution Idempotency**: Safe to retry failed tool calls
 3. **Provider Fallback**: Time to detect provider failure and escalate
@@ -259,20 +288,23 @@ Each layer depends only on layers below it, ensuring clean separation of concern
 ## Configuration & Deployment
 
 ### Required Configuration
+
 - `provider`: Type and credentials for selected AI provider
 - `prompt`: System identity and context instructions
 - `auth.ws`: WebSocket authentication function
 
 ### Optional Configuration
+
 - `tools`: Custom tool registry (defaults to empty)
 - `session`: Custom session store (defaults to in-memory)
 - `transport`: Port, CORS, base path, heartbeat interval
 - `auth.http`: Express middleware for HTTP endpoints
-- `orchestrator`: Max tool rounds, context config
+- `orchestrator`: Max tool rounds, context config, lifecycle hooks
 - `onConnect`/`onDisconnect`: Lifecycle hooks, fire-and-forget
 - `logger`: Custom logger instance
 
 ### Deployment Artifacts
+
 - Builds to `dist/` directory (ES2022, ESM only - `type: module`, resolved through the `exports` map)
 - Type definitions included (`dist/index.d.ts`)
 - Published as npm package `@re-cinq/hal-engine`, Apache-2.0, `engines: node >=22`

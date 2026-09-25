@@ -34,10 +34,10 @@ export const weatherTool: ToolDefinition = {
 };
 
 export const executeWeather: ToolExecutor = async input => {
-  const location = (input.location as string) || 'Unknown';
-  const units = (input.units as string) || 'celsius';
+  const location = input.location as string;
+  const units = (input.units as string) ?? 'celsius';
 
-  // Replace with a real API call. `input` is untrusted: inputSchema shapes what the model sends, it does not enforce it.
+  // Replace with a real API call. `location` has already passed the declared inputSchema.
   const result = {
     location,
     temperature: 18,
