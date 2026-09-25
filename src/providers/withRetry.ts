@@ -64,7 +64,7 @@ export function withRetry(provider: AIProvider, policy: RetryPolicy = {}): AIPro
         }
       }
 
-      throw lastError ?? new AIError('max attempts exhausted', 'RETRY_EXHAUSTED', false);
+      throw lastError ?? new AIError('max attempts exhausted', 'RETRY_EXHAUSTED');
     },
 
     async generateStructured<T>(params: StructuredOutputParams<T>): Promise<T> {
@@ -80,7 +80,7 @@ export function withRetry(provider: AIProvider, policy: RetryPolicy = {}): AIPro
         }
       }
 
-      throw lastError ?? new AIError('max attempts exhausted', 'RETRY_EXHAUSTED', false);
+      throw lastError ?? new AIError('max attempts exhausted', 'RETRY_EXHAUSTED');
     },
   };
 }
