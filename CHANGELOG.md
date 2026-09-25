@@ -15,6 +15,7 @@ package, not for somebody reading this repository's commit log.
 - `HalEngineConfig.orchestrator.hooks` now carries a JSDoc comment. The field already shipped
   in `0.2.x`; the comment makes the lifecycle-hook seam discoverable from the published type
   declarations so editors surface it on hover without a trip to the README.
+- `ToolRegistry.execute` now validates tool input against the declared `inputSchema` before invoking the executor. A schema-invalid call returns a descriptive `ToolResponse` to the model (naming the failing property path and constraint, never the value) rather than throwing, so the model can retry within the existing tool-round budget. Extra properties pass through to the executor unchanged. **Migration note**: an executor that previously hand-validated its own input now receives only input that has already passed the declared schema; a tool that relied on seeing malformed input to produce its own error message will no longer see it.
 
 ## [0.2.1] - 2026-09-14
 
