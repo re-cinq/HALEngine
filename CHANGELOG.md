@@ -16,6 +16,7 @@ package, not for somebody reading this repository's commit log.
 
 ### Added
 
+- `VertexConfig` gains an optional `apiEndpoint` field, forwarded verbatim to the `@google-cloud/vertexai` SDK constructor. Deployers who must keep inference in the EU multi-region can set `apiEndpoint: 'aiplatform.eu.rep.googleapis.com'`; the change is additive and the default behaviour (endpoint derived from `location`) is unchanged.
 - `HalEngineConfig.transport` now accepts three optional extension points: `additionalRoutes` (mounts a router under `basePath`, unauthenticated), `rootRoutes` (mounts a router at `/`, after the `basePath` router and before the 404 catch-all), and `errorHandler` (replaces Express's default HTML error page). Pass none of them and the app is identical to before. See `docs/getting-started.md` for usage and the GDPR / NIS-2 notes that apply to unauthenticated routes.
 
 ### Changed

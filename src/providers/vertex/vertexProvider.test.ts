@@ -9,20 +9,25 @@ interface VertexRequest {
 interface VertexModelConfig {
   generationConfig?: Record<string, unknown>;
 }
+interface VertexInit {
+  project: string;
+  location: string;
+  apiEndpoint?: string;
+  googleAuthOptions?: Record<string, unknown>;
+}
 
 const mockGenerateContentStream = jest.fn<(request: VertexRequest) => Promise<unknown>>();
 const mockGenerateContent = jest.fn<(request: VertexRequest) => Promise<unknown>>();
 const mockGetGenerativeModel = jest.fn<(config: VertexModelConfig) => unknown>();
+const mockVertexAI = jest
+  .fn<(init: VertexInit) => unknown>()
+  .mockImplementation(() => ({getGenerativeModel: mockGetGenerativeModel}));
 
 const callMock = () => jest.fn<(request: VertexRequest) => Promise<unknown>>();
 
 // createRequire never reaches jest's ESM registry, so the helper is the seam, not the package.
 jest.unstable_mockModule('../requireOptionalPeer.js', () => ({
-  requireOptionalPeer: () => ({
-    VertexAI: jest.fn().mockImplementation(() => ({
-      getGenerativeModel: mockGetGenerativeModel,
-    })),
-  }),
+  requireOptionalPeer: () => ({VertexAI: mockVertexAI}),
 }));
 
 const {createVertexProvider} = await import('./vertexProvider.js');
@@ -285,6 +290,26 @@ describe('createVertexProvider', () => {
         code: 'RATE_LIMITED',
         retryable: true,
       });
+    });
+  });
+
+  describe('endpoint selection', () => {
+    it('forwards apiEndpoint to the VertexAI constructor for the eu multi-region', () => {
+      createVertexProvider({
+        type: 'vertex',
+        projectId: 'test-project',
+        location: 'eu',
+        apiEndpoint: 'aiplatform.eu.rep.googleapis.com',
+        modelId: 'gemini-3-pro',
+      });
+      const [[euInit]] = mockVertexAI.mock.calls;
+      expect(euInit).toMatchObject({location: 'eu', apiEndpoint: 'aiplatform.eu.rep.googleapis.com'});
+    });
+
+    it('omits apiEndpoint when unset so single-region deployments are unchanged', () => {
+      createVertexProvider(defaultConfig);
+      const [[defaultInit]] = mockVertexAI.mock.calls;
+      expect(defaultInit).not.toHaveProperty('apiEndpoint');
     });
   });
 });

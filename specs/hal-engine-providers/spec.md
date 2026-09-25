@@ -11,16 +11,15 @@ hal-engine ships with built-in support for multiple AI providers. All providers 
 
 Model ids below were checked against vendor sources on 2026-09-11, by documentation and by a live publisher-model listing for Vertex. Ids are vendor-controlled and retire on the vendor's schedule, not this package's: `modelId` is a bare unvalidated string on both working providers, so a retired id reaches a consumer as an error that looks like their credentials are wrong. Re-check before trusting a snippet that is older than a few months.
 
-
 Implementation status is scored per method in `README.md`, which carries the only such matrix.
 
-| Provider | Type string | Package |
-|----------|-------------|---------|
-| AWS Bedrock | `'bedrock'` | `@aws-sdk/client-bedrock-runtime` |
-| Google Vertex AI | `'vertex'` | `@google-cloud/vertexai` |
-| OpenAI | `'openai'` | `openai` |
-| Anthropic (Direct) | `'anthropic'` | `@anthropic-ai/sdk` |
-| Mock | `'mock'` | (built-in) |
+| Provider           | Type string   | Package                           |
+| ------------------ | ------------- | --------------------------------- |
+| AWS Bedrock        | `'bedrock'`   | `@aws-sdk/client-bedrock-runtime` |
+| Google Vertex AI   | `'vertex'`    | `@google-cloud/vertexai`          |
+| OpenAI             | `'openai'`    | `openai`                          |
+| Anthropic (Direct) | `'anthropic'` | `@anthropic-ai/sdk`               |
+| Mock               | `'mock'`      | (built-in)                        |
 
 ## Configuring a Provider
 
@@ -83,6 +82,7 @@ const engine = createHalEngine({
 The `eu.` prefix is not decoration. Claude Sonnet 4.5 supports no in-region inference in any region, so the bare `anthropic.claude-sonnet-4-5-20250929-v1:0` fails and a geo inference profile is required: `eu.` from an EU region, `us.` from a US one. The profile keeps requests inside that geography, which is why the EU form pairs with `region: 'eu-west-1'` here. `modelId` is an unvalidated string, so getting this wrong surfaces as a vendor error on the first message, not at startup.
 
 **Credentials:**
+
 ```bash
 AWS_ACCESS_KEY_ID=<from-environment>
 AWS_SECRET_ACCESS_KEY=<from-environment>
@@ -91,6 +91,7 @@ AWS_SECRET_ACCESS_KEY=<from-environment>
 This package reads neither. `src/providers/bedrock/bedrockProvider.ts:28` constructs `new BedrockRuntimeClient({region: config.region})` and the AWS SDK resolves credentials itself, from the environment, a shared profile, or an instance role. `region` is the config field above, not `AWS_REGION`: setting the variable and passing a different `region` gives you the config value with no warning.
 
 **IAM permissions required:**
+
 - `bedrock:InvokeModel`
 - `bedrock:InvokeModelWithResponseStream`
 
@@ -98,7 +99,7 @@ See [spike-bedrock-integration.md](../../docs/spikes/spike-bedrock-integration.m
 
 ## Google Vertex AI
 
-Supports streaming through `sendMessage` and structured JSON output through `generateStructured` ([validated by: streams text chunks from Vertex AI response](../../src/providers/vertex/vertexProvider.test.ts#L55), [structured](../../src/providers/vertex/vertexProvider.test.ts#L208)).
+Supports streaming through `sendMessage` and structured JSON output through `generateStructured` ([validated by: streams text chunks from Vertex AI response](../../src/providers/vertex/vertexProvider.test.ts#L60), [structured](../../src/providers/vertex/vertexProvider.test.ts#L213)).
 
 <!-- doc-block: none -- a composed provider configuration; its fields are checked through src/config.ts by typecheck -->
 ```typescript
@@ -112,14 +113,22 @@ const engine = createHalEngine({
     googleAuthOptions: {
       keyFilename: '/path/to/service-account.json',
     },
+    // EU multi-region only — location alone cannot reach it. The endpoint decides
+    // where the request goes, so this line works with any EU location value:
+    // apiEndpoint: 'aiplatform.eu.rep.googleapis.com',
   },
   // ...
 });
 ```
 
+Measured on 2026-09-25 against project `re5-n8n-platform`, one `generateContent` call per cell: `gemini-3.1-flash-lite` answers on `aiplatform.eu.rep.googleapis.com` with `location` set to either `eu` or `europe-west4`, and returns 404 on the `europe-west4` regional host. The host routes; the `location` segment does not override it. So a reader who uncomments `apiEndpoint` without touching `location` gets the EU multi-region, which is the point of the field.
+
 `location` selects the regional endpoint, so it decides where the request is processed and which jurisdiction the data stays in - not merely which datacentre is nearest. It is passed straight to `new VertexAI({location})` and the engine does not validate it: a region that does not serve the model surfaces as a vendor error on the first call, not at construction. The examples here use `europe-west4`.
 
+The `eu` multi-region is a distinct host (`aiplatform.eu.rep.googleapis.com`) rather than a `location` value, and `@google-cloud/vertexai` derives its endpoint from `location` unless given one, so `location` alone cannot reach it. The optional `apiEndpoint` on `VertexConfig` is forwarded verbatim to `new VertexAI({apiEndpoint})`, and when it is absent no endpoint override is passed, so single-region deployments are byte-for-byte unchanged ([validated by: forwards apiEndpoint to the VertexAI constructor for the eu multi-region](../../src/providers/vertex/vertexProvider.test.ts#L297), [omits apiEndpoint when unset so single-region deployments are unchanged](../../src/providers/vertex/vertexProvider.test.ts#L309)).
+
 **Credentials:**
+
 ```bash
 GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 ```
@@ -154,22 +163,22 @@ const result = await provider.generateStructured<{score: number; feedback: strin
 
 ### Streaming
 
-- A function call part becomes a `tool_use` chunk. Vertex reports no call id of its own, so the function's name is used as the id as well ([validated by: yields tool_use chunks for function calls](../../src/providers/vertex/vertexProvider.test.ts#L76)).
-- A `MAX_TOKENS` finish reason becomes the stop reason `max_tokens`, so a truncated reply is distinguishable from a completed one ([validated by: maps MAX_TOKENS finish reason](../../src/providers/vertex/vertexProvider.test.ts#L110)).
-- A candidate carrying no parts is skipped rather than emitted as an empty chunk ([validated by: skips chunks with no candidate parts](../../src/providers/vertex/vertexProvider.test.ts#L158)).
-- The `assistant` role is sent to Vertex as `model`, which is the only role name its API accepts for a prior reply; `user` passes through unchanged ([validated by: maps assistant role to model for Vertex API](../../src/providers/vertex/vertexProvider.test.ts#L175)).
+- A function call part becomes a `tool_use` chunk. Vertex reports no call id of its own, so the function's name is used as the id as well ([validated by: yields tool_use chunks for function calls](../../src/providers/vertex/vertexProvider.test.ts#L81)).
+- A `MAX_TOKENS` finish reason becomes the stop reason `max_tokens`, so a truncated reply is distinguishable from a completed one ([validated by: maps MAX_TOKENS finish reason](../../src/providers/vertex/vertexProvider.test.ts#L115)).
+- A candidate carrying no parts is skipped rather than emitted as an empty chunk ([validated by: skips chunks with no candidate parts](../../src/providers/vertex/vertexProvider.test.ts#L163)).
+- The `assistant` role is sent to Vertex as `model`, which is the only role name its API accepts for a prior reply; `user` passes through unchanged ([validated by: maps assistant role to model for Vertex API](../../src/providers/vertex/vertexProvider.test.ts#L180)).
 
 ### Structured output
 
-- `generateStructured` sets `responseMimeType` to `application/json` and passes the schema with its type names upper-cased, which is the form the Vertex SDK expects ([validated by: configures model with responseMimeType and responseSchema](../../src/providers/vertex/vertexProvider.test.ts#L228)).
-- A response body that is not valid JSON raises `AIError` with code `PARSE_ERROR`, rather than returning something the caller would have to re-check ([validated by: throws AIError with PARSE_ERROR on invalid JSON](../../src/providers/vertex/vertexProvider.test.ts#L263)).
+- `generateStructured` sets `responseMimeType` to `application/json` and passes the schema with its type names upper-cased, which is the form the Vertex SDK expects ([validated by: configures model with responseMimeType and responseSchema](../../src/providers/vertex/vertexProvider.test.ts#L233)).
+- A response body that is not valid JSON raises `AIError` with code `PARSE_ERROR`, rather than returning something the caller would have to re-check ([validated by: throws AIError with PARSE_ERROR on invalid JSON](../../src/providers/vertex/vertexProvider.test.ts#L268)).
 
 ### Error mapping
 
-- A message naming `429` or `RESOURCE_EXHAUSTED` becomes `RATE_LIMITED` and is marked retryable ([validated by: throws AIError with RATE_LIMITED on 429](../../src/providers/vertex/vertexProvider.test.ts#L122)).
-- A message naming `401`, `403` or `PERMISSION_DENIED` becomes `AUTH_ERROR` ([validated by: throws AIError with AUTH_ERROR on permission denied](../../src/providers/vertex/vertexProvider.test.ts#L134)).
-- Anything the mapping cannot classify becomes `PROVIDER_ERROR`, so an SDK error never reaches the caller as a raw `Error` ([validated by: falls back to PROVIDER_ERROR for a failure it cannot classify](../../src/providers/vertex/vertexProvider.test.ts#L146)).
-- The mapping is shared: a failure raised during `generateStructured` is classified exactly as the same failure during `sendMessage` would be ([validated by: throws mapped AIError on Vertex API failure](../../src/providers/vertex/vertexProvider.test.ts#L277)).
+- A message naming `429` or `RESOURCE_EXHAUSTED` becomes `RATE_LIMITED` and is marked retryable ([validated by: throws AIError with RATE_LIMITED on 429](../../src/providers/vertex/vertexProvider.test.ts#L127)).
+- A message naming `401`, `403` or `PERMISSION_DENIED` becomes `AUTH_ERROR` ([validated by: throws AIError with AUTH_ERROR on permission denied](../../src/providers/vertex/vertexProvider.test.ts#L139)).
+- Anything the mapping cannot classify becomes `PROVIDER_ERROR`, so an SDK error never reaches the caller as a raw `Error` ([validated by: falls back to PROVIDER_ERROR for a failure it cannot classify](../../src/providers/vertex/vertexProvider.test.ts#L151)).
+- The mapping is shared: a failure raised during `generateStructured` is classified exactly as the same failure during `sendMessage` would be ([validated by: throws mapped AIError on Vertex API failure](../../src/providers/vertex/vertexProvider.test.ts#L282)).
 
 ## OpenAI
 
@@ -187,6 +196,7 @@ const engine = createHalEngine({
 ```
 
 **Credentials:**
+
 ```bash
 OPENAI_API_KEY=sk-...
 ```
@@ -211,6 +221,7 @@ const engine = createHalEngine({
 ```
 
 **Credentials:**
+
 ```bash
 ANTHROPIC_API_KEY=sk-ant-...
 ```
@@ -350,13 +361,7 @@ Open `src/providers/providerFactory.ts` and add your provider:
 import {createCustomProvider} from './custom/index.js';
 import type {CustomConfig} from './custom/index.js';
 
-export type ProviderConfig =
-  | BedrockConfig
-  | VertexConfig
-  | OpenAIConfig
-  | AnthropicConfig
-  | MockConfig
-  | CustomConfig;   // add here
+export type ProviderConfig = BedrockConfig | VertexConfig | OpenAIConfig | AnthropicConfig | MockConfig | CustomConfig; // add here
 
 // Each config carries its own `type` literal, which is what the switch narrows on.
 
@@ -383,11 +388,11 @@ export type {CustomConfig} from './providers/custom/index.js';
 
 Your provider must yield these chunk types:
 
-| Chunk type | When to yield | Required fields |
-|------------|---------------|-----------------|
-| `{type: 'text', text: string}` | For each text token/fragment | `text` |
-| `{type: 'tool_use', toolCall: ToolCall}` | When the model requests a tool call | `toolCall.id`, `toolCall.name`, `toolCall.input` |
-| `{type: 'stop', stopReason: string, usage?: UsageMetadata}` | When the model finishes | `stopReason` (`'end_turn'` or `'tool_use'`), optional `usage` |
+| Chunk type                                                  | When to yield                       | Required fields                                               |
+| ----------------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------- |
+| `{type: 'text', text: string}`                              | For each text token/fragment        | `text`                                                        |
+| `{type: 'tool_use', toolCall: ToolCall}`                    | When the model requests a tool call | `toolCall.id`, `toolCall.name`, `toolCall.input`              |
+| `{type: 'stop', stopReason: string, usage?: UsageMetadata}` | When the model finishes             | `stopReason` (`'end_turn'` or `'tool_use'`), optional `usage` |
 
 The orchestrator handles `tool_use` stop reasons by executing tools and re-calling your provider with the results appended to messages. Your provider does not need to implement the tool loop -- just yield the chunks and the orchestrator handles the rest.
 
@@ -411,7 +416,12 @@ const stagingEngine = createHalEngine({
 
 // Production: use Bedrock
 const prodEngine = createHalEngine({
-  provider: {type: 'bedrock', region: 'eu-west-1', modelId: 'eu.anthropic.claude-sonnet-4-5-20250929-v1:0', maxTokens: 4096},
+  provider: {
+    type: 'bedrock',
+    region: 'eu-west-1',
+    modelId: 'eu.anthropic.claude-sonnet-4-5-20250929-v1:0',
+    maxTokens: 4096,
+  },
   // ...
 });
 ```
