@@ -113,12 +113,15 @@ const engine = createHalEngine({
     googleAuthOptions: {
       keyFilename: '/path/to/service-account.json',
     },
-    // EU multi-region only — location alone cannot reach it:
+    // EU multi-region only — location alone cannot reach it. The endpoint decides
+    // where the request goes, so this line works with any EU location value:
     // apiEndpoint: 'aiplatform.eu.rep.googleapis.com',
   },
   // ...
 });
 ```
+
+Measured on 2026-09-25 against project `re5-n8n-platform`, one `generateContent` call per cell: `gemini-3.1-flash-lite` answers on `aiplatform.eu.rep.googleapis.com` with `location` set to either `eu` or `europe-west4`, and returns 404 on the `europe-west4` regional host. The host routes; the `location` segment does not override it. So a reader who uncomments `apiEndpoint` without touching `location` gets the EU multi-region, which is the point of the field.
 
 `location` selects the regional endpoint, so it decides where the request is processed and which jurisdiction the data stays in - not merely which datacentre is nearest. It is passed straight to `new VertexAI({location})` and the engine does not validate it: a region that does not serve the model surfaces as a vendor error on the first call, not at construction. The examples here use `europe-west4`.
 
