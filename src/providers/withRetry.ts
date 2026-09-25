@@ -61,7 +61,7 @@ export function withRetry(provider: AIProvider, policy: RetryPolicy = {}): AIPro
             firstTimeout.cancel();
           } catch (err) {
             firstTimeout.cancel();
-            void iter.return();
+            void iter.return(undefined);
             if (err instanceof AIError) {
               if (err.code === 'TIMEOUT') {
                 lastError = new AIError('first chunk timeout', 'TIMEOUT', true);
