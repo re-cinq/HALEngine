@@ -14,6 +14,10 @@ package, not for somebody reading this repository's commit log.
 
 ## [0.3.0] - 2026-09-17
 
+### Added
+
+- `HalEngineConfig.transport` now accepts three optional extension points: `additionalRoutes` (mounts a router under `basePath`, unauthenticated), `rootRoutes` (mounts a router at `/`, after the `basePath` router and before the 404 catch-all), and `errorHandler` (replaces Express's default HTML error page). Pass none of them and the app is identical to before. See `docs/getting-started.md` for usage and the GDPR / NIS-2 notes that apply to unauthenticated routes.
+
 ### Changed
 
 - `HalEngineConfig.orchestrator.hooks` now carries a JSDoc comment. The field already shipped
