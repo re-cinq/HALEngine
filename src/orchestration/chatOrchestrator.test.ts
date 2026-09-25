@@ -519,4 +519,59 @@ describe('ChatOrchestrator tool loop', () => {
 
     expect(seen).toEqual(usage);
   });
+
+  it('sums the usage of every round, not only the last', async () => {
+    const first: UsageMetadata = {inputTokens: 10, outputTokens: 5, totalTokens: 15};
+    const second: UsageMetadata = {inputTokens: 20, outputTokens: 7, totalTokens: 27};
+    let seen: UsageMetadata | undefined;
+    const hooks: OrchestratorHooks = {
+      afterModelResponse: async (_session, _text, reported) => {
+        seen = reported;
+      },
+    };
+    const orchestrator = createChatOrchestrator(
+      scriptedProvider([
+        [TOOL_CALL, {type: 'stop', stopReason: 'tool_use', usage: first}],
+        [
+          {type: 'text', text: 'done'},
+          {type: 'stop', stopReason: 'end_turn', usage: second},
+        ],
+      ]),
+      promptBuilder,
+      registryReturning({result: 'r'}),
+      {hooks}
+    );
+
+    await orchestrator.processMessage(createSession('ask'));
+
+    expect(seen).toEqual({inputTokens: 30, outputTokens: 12, totalTokens: 42});
+  });
+
+  it('counts every reporting round even when a round between them reports none', async () => {
+    const first: UsageMetadata = {inputTokens: 10, outputTokens: 5, totalTokens: 15};
+    const third: UsageMetadata = {inputTokens: 1, outputTokens: 2, totalTokens: 3};
+    let seen: UsageMetadata | undefined;
+    const hooks: OrchestratorHooks = {
+      afterModelResponse: async (_session, _text, reported) => {
+        seen = reported;
+      },
+    };
+    const orchestrator = createChatOrchestrator(
+      scriptedProvider([
+        [TOOL_CALL, {type: 'stop', stopReason: 'tool_use', usage: first}],
+        [TOOL_CALL, {type: 'stop', stopReason: 'tool_use'}],
+        [
+          {type: 'text', text: 'done'},
+          {type: 'stop', stopReason: 'end_turn', usage: third},
+        ],
+      ]),
+      promptBuilder,
+      registryReturning({result: 'r'}),
+      {hooks}
+    );
+
+    await orchestrator.processMessage(createSession('ask'));
+
+    expect(seen).toEqual({inputTokens: 11, outputTokens: 7, totalTokens: 18});
+  });
 });
