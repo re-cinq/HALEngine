@@ -181,7 +181,7 @@ interface PromptBuilderConfig {
 
 ### OrchestratorHooks
 
-Async lifecycle hooks for customizing the orchestration flow. Every hook is optional and receives the current session, and an orchestrator built with none behaves exactly as one built with an empty set ([validated by: works without any hooks configured](../../src/orchestration/chatOrchestrator.test.ts#L359)).
+Async lifecycle hooks for customizing the orchestration flow. Every hook is optional and receives the current session, and an orchestrator built with none behaves exactly as one built with an empty set ([validated by: works without any hooks configured](../../src/orchestration/chatOrchestrator.test.ts#L359)). Install hooks through `HalEngineConfig.orchestrator.hooks`; `createHalEngine` forwards the set to the orchestrator ([validated by: forwards an orchestrator hook, so one passed through the config actually fires](../../src/config.test.ts#L17)).
 
 <!-- doc-block: src/orchestration/chatOrchestrator.ts#OrchestratorHooks -->
 ```typescript
@@ -215,6 +215,8 @@ beforeSession → beforeUserInput → afterUserInput → beforeModelResponse →
 - `onError` observes rather than handles: the error still propagates to the caller after it returns ([validated by: error still propagates after onError hook](../../src/orchestration/chatOrchestrator.test.ts#L273)).
 - `afterSession` runs after everything else completes ([validated by: called after everything completes](../../src/orchestration/chatOrchestrator.test.ts#L118)).
 - `afterSession` fires even on error ([validated by: called even when an error occurs](../../src/orchestration/chatOrchestrator.test.ts#L128)).
+
+A hook receives the full `session` object, so it has access to `session.authHeaders?.authorization` (the caller's bearer token forwarded from the WebSocket upgrade request) and every user message verbatim through `session.entries`; the engine redacts nothing before calling a hook. Anything a hook persists becomes the deployer's own data-retention obligation.
 
 ## Message Lifecycle
 
@@ -268,11 +270,11 @@ Every piece of content in the conversation is a **SessionEntry**. The protocol h
 
 `src/orchestration/entryMutations.ts` holds three functions, and all three mutate `session.entries` in place.
 
-| Function | Signature | Effect |
-|---|---|---|
-| `appendEntry` | `(session, entry) => number` | Pushes the entry and returns the index it landed at |
-| `appendDelta` | `(session, index, delta) => void` | Concatenates onto `entry.content` |
-| `commitEntry` | `(session, index) => void` | Sets `isStreaming = false` |
+| Function      | Signature                         | Effect                                              |
+| ------------- | --------------------------------- | --------------------------------------------------- |
+| `appendEntry` | `(session, entry) => number`      | Pushes the entry and returns the index it landed at |
+| `appendDelta` | `(session, index, delta) => void` | Concatenates onto `entry.content`                   |
+| `commitEntry` | `(session, index) => void`        | Sets `isStreaming = false`                          |
 
 `appendEntry` returns a number because its caller needs that index for the frame it sends next. The other two return nothing, because the mutation is the result.
 
@@ -282,12 +284,12 @@ Every piece of content in the conversation is a **SessionEntry**. The protocol h
 
 Four frame types, not three.
 
-| Server message | Sent when | Client function |
-|---|---|---|
-| `entry_upsert` | an entry is created, or replaced at an index | `applyUpsert()` |
-| `entry_delta` | text is appended to a streaming entry | `applyDelta()` |
-| `entry_commit` | an entry is finalised | `applyCommit()` |
-| `entry_skip` | an entry exists server-side but is not forwarded | none -- the client advances its index |
+| Server message | Sent when                                        | Client function                       |
+| -------------- | ------------------------------------------------ | ------------------------------------- |
+| `entry_upsert` | an entry is created, or replaced at an index     | `applyUpsert()`                       |
+| `entry_delta`  | text is appended to a streaming entry            | `applyDelta()`                        |
+| `entry_commit` | an entry is finalised                            | `applyCommit()`                       |
+| `entry_skip`   | an entry exists server-side but is not forwarded | none -- the client advances its index |
 
 `entry_skip` is what a suppressed assistant response produces. The entry stays in the session so the model's next turn sees it, and the client is told to move past that index without rendering anything. The WebSocket protocol spec covers the index arithmetic in its § 8.2.
 
@@ -355,6 +357,7 @@ Parsed segments:
 The parser is stateful and handles partial tags at chunk boundaries. For example, if a chunk ends with `</thin`, the parser buffers it until the next chunk completes the tag. Its full contract is in `specs/hal-engine-thinking-tag-parser/spec.md`.
 
 The message handler routes these segments to different entries:
+
 - `thinking` segments go into a `ThinkingEntry` (collapsible in the UI)
 - `text` segments go into an `AssistantEntry` (rendered as markdown)
 
@@ -395,22 +398,22 @@ When a connection drops, the frontend reconnects automatically:
 
 ## Source Files
 
-| Concern | File |
-|---------|------|
-| Entry point / config | `src/config.ts` |
-| Shared session types | `src/types/session.ts` |
-| AI provider interface | `src/types/ai.ts` |
-| Message types | `src/types/messages.ts` |
-| Auth interfaces | `src/types/auth.ts` |
-| Session store interface | `src/types/sessionStore.ts` |
-| Prompt builder | `src/infrastructure/builders/promptBuilder.ts` |
-| Chat orchestrator | `src/orchestration/chatOrchestrator.ts` |
-| Conversation context | `src/orchestration/conversationContext.ts` |
-| WebSocket sender | `src/transport/ws/sender.ts` |
-| Message validation | `src/transport/ws/validation.ts` |
-| Message handling | `src/transport/ws/messageHandler.ts` |
-| Connection handler | `src/transport/ws/connectionHandler.ts` |
-| Tool registry | `src/orchestration/tools/registry.ts` |
-| Entry factories | `src/orchestration/entryFactories.ts` |
-| Entry mutations | `src/orchestration/entryMutations.ts` |
-| Thinking tag parser | `src/infrastructure/parsers/thinkingTagParser.ts` |
+| Concern                 | File                                              |
+| ----------------------- | ------------------------------------------------- |
+| Entry point / config    | `src/config.ts`                                   |
+| Shared session types    | `src/types/session.ts`                            |
+| AI provider interface   | `src/types/ai.ts`                                 |
+| Message types           | `src/types/messages.ts`                           |
+| Auth interfaces         | `src/types/auth.ts`                               |
+| Session store interface | `src/types/sessionStore.ts`                       |
+| Prompt builder          | `src/infrastructure/builders/promptBuilder.ts`    |
+| Chat orchestrator       | `src/orchestration/chatOrchestrator.ts`           |
+| Conversation context    | `src/orchestration/conversationContext.ts`        |
+| WebSocket sender        | `src/transport/ws/sender.ts`                      |
+| Message validation      | `src/transport/ws/validation.ts`                  |
+| Message handling        | `src/transport/ws/messageHandler.ts`              |
+| Connection handler      | `src/transport/ws/connectionHandler.ts`           |
+| Tool registry           | `src/orchestration/tools/registry.ts`             |
+| Entry factories         | `src/orchestration/entryFactories.ts`             |
+| Entry mutations         | `src/orchestration/entryMutations.ts`             |
+| Thinking tag parser     | `src/infrastructure/parsers/thinkingTagParser.ts` |
