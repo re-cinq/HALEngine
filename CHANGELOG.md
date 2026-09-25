@@ -8,6 +8,10 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+### Changed
+
+- `onError` now fires for every rejection, not only those where the thrown value is an `Error` instance. A value that is not already an `Error` is wrapped in one whose `cause` is the original, so a hook typed against `Error` keeps compiling; a hook that wants the raw value can retrieve it via `error.cause`. **Migration note**: a deployer whose `onError` hook previously never fired for string or plain-object rejections will now see those calls; the caller-boundary rejection value is unchanged.
+
 ## [0.3.0] - 2026-09-17
 
 ### Added
