@@ -8,6 +8,10 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+### Fixed
+
+- `onError` and `afterSession` hooks now fire when `beforeSession` throws, matching the guarantee the hook names imply. Previously, a throw from `beforeSession` escaped the `try`/`finally` block entirely, so neither hook ran. **Migration note**: if your `afterSession` hook assumed it would only be called after a full session turn, it will now also be called when `beforeSession` itself fails — the hook can inspect the session to detect this case (no entries beyond the initial user message will have been processed).
+
 ## [0.3.0] - 2026-09-17
 
 ### Added

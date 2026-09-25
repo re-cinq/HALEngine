@@ -71,9 +71,9 @@ export function createChatOrchestrator(
     },
 
     async *processMessageStream(session: ChatSession): AsyncGenerator<MessageChunk> {
-      if (hooks?.beforeSession) await hooks.beforeSession(session);
-
       try {
+        if (hooks?.beforeSession) await hooks.beforeSession(session);
+
         let userMessage = lastUserContent(session);
 
         if (hooks?.beforeUserInput) {
