@@ -16,6 +16,10 @@ const SENT_AT = '2026-01-01T00:00:00.000Z';
 const outcomeOf = (call: Promise<unknown>): Promise<string> =>
   call.then(() => 'resolved without throwing').catch((error: Error) => error.message);
 
+// Returns the caller's rejection value verbatim, so a non-Error rejection can be compared by identity.
+const rejectionOf = (call: Promise<unknown>): Promise<unknown> =>
+  call.then(() => 'resolved without throwing').catch((error: unknown) => error);
+
 function createSession(content: string): ChatSession {
   return {
     sessionId: 's1',
@@ -41,6 +45,19 @@ function createErrorProvider(error: Error): AIProvider {
     // eslint-disable-next-line require-yield
     async *sendMessage(): AsyncGenerator<MessageChunk> {
       throw error;
+    },
+    async generateStructured<T>(): Promise<T> {
+      return {} as T;
+    },
+  };
+}
+
+// Rejects the stream with a value that is not an Error, standing in for a library that rejects with its own shape.
+function createRejectingProvider(value: unknown): AIProvider {
+  return {
+    // eslint-disable-next-line require-yield
+    async *sendMessage(): AsyncGenerator<MessageChunk> {
+      throw value;
     },
     async generateStructured<T>(): Promise<T> {
       return {} as T;
@@ -279,6 +296,42 @@ describe('ChatOrchestrator hooks', () => {
         hooks,
       });
       await expect(orchestrator.processMessage(createSession('hello'))).rejects.toThrow('boom');
+    });
+
+    it('wraps a non-Error rejection in an Error whose cause is the original and still rejects the caller with the original', async () => {
+      const cases: {label: string; value: unknown}[] = [
+        {label: 'string', value: 'plain string boom'},
+        {label: 'object', value: {code: 'WEIRD', detail: 'no stack here'}},
+        {label: 'undefined', value: undefined},
+      ];
+
+      const results = [];
+      for (const {label, value} of cases) {
+        const received: unknown[] = [];
+        const hooks: OrchestratorHooks = {
+          onError: async (_session, error) => {
+            received.push(error);
+          },
+        };
+
+        const orchestrator = createChatOrchestrator(createRejectingProvider(value), promptBuilder, undefined, {hooks});
+        const rejection = await rejectionOf(orchestrator.processMessage(createSession('hello')));
+
+        const passed = received[0];
+        results.push({
+          label,
+          onErrorCallCount: received.length,
+          isError: passed instanceof Error,
+          causeIsOriginal: passed instanceof Error && passed.cause === value,
+          callerReceivedOriginal: rejection === value,
+        });
+      }
+
+      expect(results).toEqual([
+        {label: 'string', onErrorCallCount: 1, isError: true, causeIsOriginal: true, callerReceivedOriginal: true},
+        {label: 'object', onErrorCallCount: 1, isError: true, causeIsOriginal: true, callerReceivedOriginal: true},
+        {label: 'undefined', onErrorCallCount: 1, isError: true, causeIsOriginal: true, callerReceivedOriginal: true},
+      ]);
     });
   });
 
