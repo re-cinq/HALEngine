@@ -30,12 +30,12 @@ All eight live in `src/providers/withRetry.test.ts` and drive the real `withRetr
 
 ## Facets
 
-- [ ] Create `src/providers/withRetry.ts` exporting `withRetry` and `RetryPolicy` (all fields optional, defaulting `3 / 500 / 5000 / 30000 / 30000`); make tests 1, 4, 7 green first (retry loop), then 5a/5b (deadlines + `return()`), then 6 (jittered backoff), then 3 (after-first-chunk lock).
-- [ ] Re-export `withRetry` and `RetryPolicy` from `src/index.ts`, no `any` in the signature.
-- [ ] Add `resilience?: RetryPolicy` to `HalEngineConfig` and wrap the provider in `createHalEngine` between `createProvider` and `createChatOrchestrator` when present (see Out of scope for why this has no runtime RED test).
-- [ ] Ensure the decorator's log lines carry only attempt number, `AIError.code` and delay — never message content, prompt, tool args or auth headers.
-- [ ] `CHANGELOG.md` entry + MINOR version bump (`0.3.0` → `0.4.0`); note it in the PR body. CI's `check-changelog.sh` only fires once a non-test `src/` file lands, i.e. in the implementation round.
-- [ ] Run `npm run spec:names -- --fix` from `origin/main` if the citation lines drift as the test file grows.
+- [x] Create `src/providers/withRetry.ts` exporting `withRetry` and `RetryPolicy` (all fields optional, defaulting `3 / 500 / 5000 / 30000 / 30000`); make tests 1, 4, 7 green first (retry loop), then 5a/5b (deadlines + `return()`), then 6 (jittered backoff), then 3 (after-first-chunk lock).
+- [x] Re-export `withRetry` and `RetryPolicy` from `src/index.ts`, no `any` in the signature.
+- [x] Add `resilience?: RetryPolicy` to `HalEngineConfig` and wrap the provider in `createHalEngine` between `createProvider` and `createChatOrchestrator` when present (see Out of scope for why this has no runtime RED test).
+- [x] Ensure the decorator's log lines carry only attempt number, `AIError.code` and delay — never message content, prompt, tool args or auth headers.
+- [x] `CHANGELOG.md` entry + MINOR version bump (`0.3.0` → `0.4.0`); note it in the PR body. CI's `check-changelog.sh` only fires once a non-test `src/` file lands, i.e. in the implementation round.
+- [x] Run `npm run spec:names -- --fix` from `origin/main` if the citation lines drift as the test file grows.
 
 ## Out of scope
 

@@ -8,6 +8,22 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-25
+
+### Added
+
+- `withRetry(provider, policy)` decorator wraps any `AIProvider` with per-attempt retry and timeout logic.
+  Pass it a `RetryPolicy` — all fields optional — to absorb transient provider failures before they reach
+  the caller. Defaults: `maxAttempts: 3`, `baseDelayMs: 500`, `maxDelayMs: 5000`,
+  `firstChunkTimeoutMs: 30000`, `idleChunkTimeoutMs: 30000`. A hung request (first chunk never arrives)
+  is abandoned and retried; a stalled stream (idle after the first chunk) surfaces as an `AIError` with
+  code `TIMEOUT` and is not retried, because chunks already streamed cannot be un-sent. Backoff is
+  exponential with full jitter. Both `withRetry` and `RetryPolicy` are exported from the package root.
+- `HalEngineConfig` gains an optional `resilience?: RetryPolicy` field. When present, `createHalEngine`
+  wraps the provider with `withRetry` between `createProvider` and `createChatOrchestrator`; when absent,
+  behaviour is unchanged. This is a strictly additive change — no existing call to `createHalEngine` is
+  affected, so the version bump is MINOR.
+
 ## [0.3.0] - 2026-09-17
 
 ### Added
