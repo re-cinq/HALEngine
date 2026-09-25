@@ -123,3 +123,34 @@ describe('createApp chat route mounting', () => {
     expect(response.status).toBe(404);
   });
 });
+
+describe('createApp rootRoutes extension', () => {
+  it('mounts a rootRoutes handler at / before the catch-all 404', async () => {
+    const a = createApp({
+      rootRoutes: router => router.get('/', (_req, res) => res.send('<html>hi</html>')),
+    });
+
+    const root = await request(a).get('/');
+    const health = await request(a).get('/hal/health');
+
+    expect({rootStatus: root.status, healthStatus: health.status, healthOk: health.body?.status}).toEqual({
+      rootStatus: 200,
+      healthStatus: 200,
+      healthOk: 'ok',
+    });
+  });
+
+  it('lets rootRoutes at /health and the basePath health answer independently', async () => {
+    const a = createApp({
+      rootRoutes: router => router.get('/health', (_req, res) => res.json({source: 'root'})),
+    });
+
+    const rootHealth = await request(a).get('/health');
+    const engineHealth = await request(a).get('/hal/health');
+
+    expect({rootBody: rootHealth.body, engineStatus: engineHealth.status}).toEqual({
+      rootBody: {source: 'root'},
+      engineStatus: 200,
+    });
+  });
+});
