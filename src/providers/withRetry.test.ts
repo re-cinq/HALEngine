@@ -17,19 +17,26 @@ const textOf = (chunks: MessageChunk[]): string =>
     .map(c => (c.type === 'text' ? c.text : ''))
     .join('');
 
+async function* successStream(): AsyncGenerator<MessageChunk> {
+  yield {type: 'text', text: 'recovered'};
+  yield {type: 'stop', stopReason: 'end_turn'};
+}
+
+const noopGenerateStructured = async <T>(_params: StructuredOutputParams<T>): Promise<T> => {
+  throw new AIError('unused', 'UNUSED');
+};
+
 describe('withRetry', () => {
   it('retries a retryable failure and streams the eventual success, calling the provider three times', async () => {
     let calls = 0;
     const provider: AIProvider = {
       async *sendMessage(_params: SendMessageParams): AsyncGenerator<MessageChunk> {
         calls++;
+        // eslint-disable-next-line re-lint/no-flag-params -- AIError's retryable flag; see adrs/ADR-006-lint-suppressions.md
         if (calls < 3) throw new AIError('rate limited', 'RATE_LIMIT', true);
-        yield {type: 'text', text: 'recovered'};
-        yield {type: 'stop', stopReason: 'end_turn'};
+        yield* successStream();
       },
-      async generateStructured<T>(): Promise<T> {
-        throw new AIError('unused', 'UNUSED');
-      },
+      generateStructured: noopGenerateStructured,
     };
 
     const wrapped = withRetry(provider, {baseDelayMs: 0, maxDelayMs: 0});
@@ -40,9 +47,11 @@ describe('withRetry', () => {
 
   it('does not retry a non-retryable failure and propagates the same error unchanged', async () => {
     let calls = 0;
+    // eslint-disable-next-line re-lint/no-flag-params -- AIError's retryable flag; see adrs/ADR-006-lint-suppressions.md
     const boom = new AIError('bad request', 'INVALID', false);
     const provider: AIProvider = {
       async *sendMessage(_params: SendMessageParams): AsyncGenerator<MessageChunk> {
+        yield* [] as MessageChunk[];
         calls++;
         throw boom;
       },
@@ -68,11 +77,10 @@ describe('withRetry', () => {
       async *sendMessage(_params: SendMessageParams): AsyncGenerator<MessageChunk> {
         calls++;
         yield {type: 'text', text: 'partial'};
+        // eslint-disable-next-line re-lint/no-flag-params -- AIError's retryable flag; see adrs/ADR-006-lint-suppressions.md
         throw new AIError('stream broke mid-flight', 'STREAM', true);
       },
-      async generateStructured<T>(): Promise<T> {
-        throw new AIError('unused', 'UNUSED');
-      },
+      generateStructured: noopGenerateStructured,
     };
 
     const wrapped = withRetry(provider, {baseDelayMs: 0});
@@ -97,12 +105,12 @@ describe('withRetry', () => {
     let calls = 0;
     const provider: AIProvider = {
       async *sendMessage(_params: SendMessageParams): AsyncGenerator<MessageChunk> {
+        yield* [] as MessageChunk[];
         calls++;
+        // eslint-disable-next-line re-lint/no-flag-params -- AIError's retryable flag; see adrs/ADR-006-lint-suppressions.md
         throw new AIError(`attempt ${calls} failed`, `CODE_${calls}`, true);
       },
-      async generateStructured<T>(): Promise<T> {
-        throw new AIError('unused', 'UNUSED');
-      },
+      generateStructured: noopGenerateStructured,
     };
 
     const wrapped = withRetry(provider, {maxAttempts: 3, baseDelayMs: 0});
@@ -137,12 +145,9 @@ describe('withRetry', () => {
             }
             return;
           }
-          yield {type: 'text', text: 'recovered'};
-          yield {type: 'stop', stopReason: 'end_turn'};
+          yield* successStream();
         },
-        async generateStructured<T>(): Promise<T> {
-          throw new AIError('unused', 'UNUSED');
-        },
+        generateStructured: noopGenerateStructured,
       };
 
       const wrapped = withRetry(provider, {firstChunkTimeoutMs: 1000, baseDelayMs: 0});
@@ -169,9 +174,7 @@ describe('withRetry', () => {
           await new Promise<never>(() => {});
           yield {type: 'text', text: 'never'};
         },
-        async generateStructured<T>(): Promise<T> {
-          throw new AIError('unused', 'UNUSED');
-        },
+        generateStructured: noopGenerateStructured,
       };
 
       const wrapped = withRetry(provider, {idleChunkTimeoutMs: 1000, baseDelayMs: 0});
@@ -207,12 +210,12 @@ describe('withRetry', () => {
       let calls = 0;
       const provider: AIProvider = {
         async *sendMessage(_params: SendMessageParams): AsyncGenerator<MessageChunk> {
+          yield* [] as MessageChunk[];
           calls++;
+          // eslint-disable-next-line re-lint/no-flag-params -- AIError's retryable flag; see adrs/ADR-006-lint-suppressions.md
           throw new AIError('rate limited', 'RATE_LIMIT', true);
         },
-        async generateStructured<T>(): Promise<T> {
-          throw new AIError('unused', 'UNUSED');
-        },
+        generateStructured: noopGenerateStructured,
       };
 
       const wrapped = withRetry(provider, {maxAttempts: 3, baseDelayMs: 500, maxDelayMs: 5000});
@@ -225,13 +228,21 @@ describe('withRetry', () => {
         .map(call => call[1])
         .filter((ms): ms is number => typeof ms === 'number' && ms <= 5000);
 
-      expect(error).toBeInstanceOf(AIError);
-      expect({attempts: calls, backoffCount: backoff.length}).toEqual({attempts: 3, backoffCount: 2});
-      expect(backoff[0]).toBeGreaterThanOrEqual(0);
-      expect(backoff[0]).toBeLessThanOrEqual(500);
-      expect(backoff[1]).toBeGreaterThanOrEqual(0);
-      expect(backoff[1]).toBeLessThanOrEqual(1000);
-      expect(Math.max(...backoff)).toBeLessThanOrEqual(5000);
+      expect({
+        isAiError: error instanceof AIError,
+        attempts: calls,
+        backoffCount: backoff.length,
+        attempt1Within: backoff[0] !== undefined && backoff[0] >= 0 && backoff[0] <= 500,
+        attempt2Within: backoff[1] !== undefined && backoff[1] >= 0 && backoff[1] <= 1000,
+        noneOverMax: backoff.length === 0 || Math.max(...backoff) <= 5000,
+      }).toEqual({
+        isAiError: true,
+        attempts: 3,
+        backoffCount: 2,
+        attempt1Within: true,
+        attempt2Within: true,
+        noneOverMax: true,
+      });
     } finally {
       setTimeoutSpy.mockRestore();
       jest.useRealTimers();
@@ -246,6 +257,7 @@ describe('withRetry', () => {
       },
       async generateStructured<T>(_params: StructuredOutputParams<T>): Promise<T> {
         calls++;
+        // eslint-disable-next-line re-lint/no-flag-params -- AIError's retryable flag; see adrs/ADR-006-lint-suppressions.md
         if (calls < 3) throw new AIError('rate limited', 'RATE_LIMIT', true);
         return {ok: true} as T;
       },
