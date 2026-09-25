@@ -8,6 +8,10 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+### Changed
+
+- `afterModelResponse` hook now receives the accumulated usage across every provider call in the turn, not only the last one. Existing consumers that use this hook for billing or audit will see larger totals for turns that called tools — this is the correct number. A turn with no tool calls is unchanged.
+
 ## [0.3.0] - 2026-09-17
 
 ### Changed

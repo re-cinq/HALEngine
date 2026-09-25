@@ -14,33 +14,33 @@ new module is needed; the fix is at the `lastUsage` local and the call site.
 
 ## Done when these pass
 
-- [ ] **sums the usage of every round, not only the last** — two tool rounds
-  report `{10,5,15}` and `{20,7,27}`; the hook must receive the sum
-  `{30,12,42}`. Fails today because only the last round's `{20,7,27}` survives.
-  `src/orchestration/chatOrchestrator.test.ts`
+- [x] **sums the usage of every round, not only the last** — two tool rounds
+      report `{10,5,15}` and `{20,7,27}`; the hook must receive the sum
+      `{30,12,42}`. Fails today because only the last round's `{20,7,27}` survives.
+      `src/orchestration/chatOrchestrator.test.ts`
 
-- [ ] **counts every reporting round even when a round between them reports
-  none** — three rounds report `{10,5,15}`, nothing, `{1,2,3}`; the hook must
-  receive `{11,7,18}`. Fails today (gets the last round's `{1,2,3}`) and pins
-  that a silent round neither erases the earlier count nor turns the total to
-  `NaN`.
-  `src/orchestration/chatOrchestrator.test.ts`
+- [x] **counts every reporting round even when a round between them reports
+      none** — three rounds report `{10,5,15}`, nothing, `{1,2,3}`; the hook must
+      receive `{11,7,18}`. Fails today (gets the last round's `{1,2,3}`) and pins
+      that a silent round neither erases the earlier count nor turns the total to
+      `NaN`.
+      `src/orchestration/chatOrchestrator.test.ts`
 
 ## Facets
 
-- [ ] Red: two new tests above fail because usage is the last round, not the sum.
-- [ ] Green: accumulate usage across rounds at the `lastUsage` local; pass the
-  sum to `afterModelResponse`.
-- [ ] Type: name/type the argument so a reader sees it is a sum without opening
-  the orchestrator (acceptance criterion 4 — a review concern, not a test; no
-  honest behavioural red bar exists for a type name).
-- [ ] Preserve (already green, must stay green): `receives collected response
-  text and usage` (no-tool turn reports its single round unchanged — acceptance
-  criterion 2, existing test left unedited) and `keeps the usage an earlier
-  round reported when a later round reports none` (report-then-silent still
-  yields the reported usage, and guards against `NaN` on the gap).
-- [ ] Docs (not acceptance tests): `specs/hal-engine-config-hooks/spec.md`
-  under-counting line and the CHANGELOG entry — see Out of scope.
+- [x] Red: two new tests above fail because usage is the last round, not the sum.
+- [x] Green: accumulate usage across rounds at the `lastUsage` local; pass the
+      sum to `afterModelResponse`.
+- [x] Type: name/type the argument so a reader sees it is a sum without opening
+      the orchestrator (acceptance criterion 4 — a review concern, not a test; no
+      honest behavioural red bar exists for a type name).
+- [x] Preserve (already green, must stay green): `receives collected response
+text and usage` (no-tool turn reports its single round unchanged — acceptance
+      criterion 2, existing test left unedited) and `keeps the usage an earlier
+round reported when a later round reports none` (report-then-silent still
+      yields the reported usage, and guards against `NaN` on the gap).
+- [x] Docs (not acceptance tests): `specs/hal-engine-config-hooks/spec.md`
+      under-counting line and the CHANGELOG entry — see Out of scope.
 
 ## Out of scope
 

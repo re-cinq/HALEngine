@@ -16,13 +16,13 @@ Five mandatory layers (no cross-layer shortcuts, no circular deps). Declared in 
 types → providers → infrastructure → orchestration → transport
 ```
 
-| Layer | Path | Purpose |
-|-------|------|---------|
-| types | `src/types/` | Core interfaces: `AIProvider`, `SessionStore`, message protocol |
-| providers | `src/providers/` | Bedrock (full), Vertex (full), OpenAI/Anthropic (stubs), Mock (built-in) |
-| infrastructure | `src/infrastructure/` | Stores, prompt builder, thinking-tag parser |
-| orchestration | `src/orchestration/` | `chatOrchestrator`, tool registry, context management |
-| transport | `src/transport/` | Express app, WebSocket server, chat routes |
+| Layer          | Path                  | Purpose                                                                  |
+| -------------- | --------------------- | ------------------------------------------------------------------------ |
+| types          | `src/types/`          | Core interfaces: `AIProvider`, `SessionStore`, message protocol          |
+| providers      | `src/providers/`      | Bedrock (full), Vertex (full), OpenAI/Anthropic (stubs), Mock (built-in) |
+| infrastructure | `src/infrastructure/` | Stores, prompt builder, thinking-tag parser                              |
+| orchestration  | `src/orchestration/`  | `chatOrchestrator`, tool registry, context management                    |
+| transport      | `src/transport/`      | Express app, WebSocket server, chat routes                               |
 
 Pluggable interfaces: `AIProvider`, `SessionStore`, `WsAuthenticator`, `PromptStore`, `UsageStore`.
 
@@ -74,6 +74,7 @@ These rules enforce message ordering and must not be violated when adding provid
 Providers must implement **both** methods:
 
 <!-- doc-block: src/types/ai.ts#AIProvider -->
+
 ```typescript
 interface AIProvider {
   sendMessage(params: SendMessageParams): AsyncGenerator<MessageChunk>;
@@ -96,6 +97,7 @@ interface AIProvider {
 ## Adding a tool
 
 <!-- doc-block: none -- the registration call shape, with placeholder fields a reader fills in -->
+
 ```typescript
 tools.register(
   {
@@ -111,10 +113,10 @@ tools.register(
 
 Tools receive a `ToolContext` with session, user, workspace. The return value is normalized:
 
-| Return value | Effect |
-|---|---|
-| `string` or `{ content: string }` | Standard tool result returned to the AI |
-| `{ entries: OutgoingMessage[] }` | Messages forwarded directly to the WebSocket client |
+| Return value                               | Effect                                                          |
+| ------------------------------------------ | --------------------------------------------------------------- |
+| `string` or `{ content: string }`          | Standard tool result returned to the AI                         |
+| `{ entries: OutgoingMessage[] }`           | Messages forwarded directly to the WebSocket client             |
 | `{ ..., suppressAssistantResponse: true }` | AI follow-up kept in session history but hidden from the client |
 
 See `docs/adding-a-tool.md` and `specs/hal-engine-tool-responses/spec.md` for full details.
@@ -124,6 +126,7 @@ See `docs/adding-a-tool.md` and `specs/hal-engine-tool-responses/spec.md` for fu
 Pass hooks to `createChatOrchestrator` (via `ChatOrchestratorOptions.hooks`) to intercept the message lifecycle:
 
 <!-- doc-block: src/orchestration/chatOrchestrator.ts#OrchestratorHooks -->
+
 ```typescript
 interface OrchestratorHooks {
   beforeSession?: (session: ChatSession) => Promise<void>;
@@ -131,7 +134,7 @@ interface OrchestratorHooks {
   beforeUserInput?: (session: ChatSession, userMessage: string) => Promise<string>;
   afterUserInput?: (session: ChatSession, userMessage: string) => Promise<void>;
   beforeModelResponse?: (session: ChatSession, systemPrompt: string) => Promise<string>;
-  afterModelResponse?: (session: ChatSession, responseText: string, usage?: UsageMetadata) => Promise<void>;
+  afterModelResponse?: (session: ChatSession, responseText: string, totalUsage?: UsageMetadata) => Promise<void>;
   onError?: (session: ChatSession, error: Error) => Promise<void>;
 }
 ```
@@ -164,6 +167,7 @@ Must be discussed in an issue first, include a migration guide in the PR, bump M
 `ChatSession` (in `src/types/session.ts`) uses `sessionId`, not `id`:
 
 <!-- doc-block: src/types/session.ts#ChatSession -->
+
 ```typescript
 interface ChatSession {
   sessionId: string;

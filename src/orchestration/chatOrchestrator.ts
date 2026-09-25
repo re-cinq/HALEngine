@@ -32,7 +32,7 @@ export interface OrchestratorHooks {
   beforeUserInput?: (session: ChatSession, userMessage: string) => Promise<string>;
   afterUserInput?: (session: ChatSession, userMessage: string) => Promise<void>;
   beforeModelResponse?: (session: ChatSession, systemPrompt: string) => Promise<string>;
-  afterModelResponse?: (session: ChatSession, responseText: string, usage?: UsageMetadata) => Promise<void>;
+  afterModelResponse?: (session: ChatSession, responseText: string, totalUsage?: UsageMetadata) => Promise<void>;
   onError?: (session: ChatSession, error: Error) => Promise<void>;
 }
 
@@ -96,7 +96,7 @@ export function createChatOrchestrator(
 
           const outcome = yield* streamRound(provider, {messages, systemPrompt, tools}, pendingToolCalls);
           responseText += outcome.text;
-          lastUsage = outcome.usage ?? lastUsage;
+          lastUsage = accumulateUsage(lastUsage, outcome.usage);
 
           if (!shouldContinueToolLoop(outcome.stopReason, pendingToolCalls, toolRegistry)) break;
 
@@ -236,4 +236,15 @@ function assignEntryIndices(clientMessages: OutgoingMessage[], session: ChatSess
     const index = appendEntry(session, msg.entry);
     return {...msg, index};
   });
+}
+
+// Adds per-round token counts so the hook receives the total across all provider calls in the turn.
+function accumulateUsage(acc: UsageMetadata | undefined, next: UsageMetadata | undefined): UsageMetadata | undefined {
+  if (!acc) return next;
+  if (!next) return acc;
+  return {
+    inputTokens: acc.inputTokens + next.inputTokens,
+    outputTokens: acc.outputTokens + next.outputTokens,
+    totalTokens: acc.totalTokens + next.totalTokens,
+  };
 }
