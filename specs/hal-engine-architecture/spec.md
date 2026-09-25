@@ -78,6 +78,7 @@ hal-engine is designed around pluggable interfaces that let consumers customize 
 Controls where session data is stored: the default `InMemorySessionStore` keeps sessions in a `Map` ([validated by: creates and retrieves a session](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L10)). Implement this interface to persist sessions in Redis, a database, or any other backing store. The store is generic -- pass your own session type extending `BaseSession`.
 
 <!-- doc-block: src/types/sessionStore.ts#SessionStore -->
+
 ```typescript
 interface SessionStore<T extends BaseSession = ChatSession> {
   create(sessionId: string, userId: string | number, options?: SessionCreateOptions): T;
@@ -100,11 +101,13 @@ interface SessionStore<T extends BaseSession = ChatSession> {
 Authenticates WebSocket connections during the handshake. It receives the whole Node `IncomingMessage`, not a pre-extracted token, so it can read credentials from wherever the client put them. Return the authenticated user to accept the connection, or `null` to reject it with HTTP 401 -- a rejection is a returned `null`, not a thrown error.
 
 <!-- doc-block: src/types/auth.ts#WsAuthenticator -->
+
 ```typescript
 type WsAuthenticator = (req: IncomingMessage) => Promise<AuthenticatedUser | null>;
 ```
 
 <!-- doc-block: src/types/session.ts#AuthenticatedUser -->
+
 ```typescript
 interface AuthenticatedUser {
   id: string | number;
@@ -119,6 +122,7 @@ The connection handler takes `id` as the session's `userId` and picks up `worksp
 The core abstraction for AI model communication. Each provider (Bedrock, Vertex, OpenAI, Anthropic) implements this interface. The orchestrator depends only on this interface, never on provider-specific code.
 
 <!-- doc-block: src/types/ai.ts#AIProvider -->
+
 ```typescript
 interface AIProvider {
   sendMessage(params: SendMessageParams): AsyncGenerator<MessageChunk>;
@@ -134,6 +138,7 @@ interface AIProvider {
 Loads prompt templates by name with variable substitution ([validated by: returns prompt template when found](../../src/infrastructure/stores/inMemoryPromptStore.test.ts#L11), [resolve](../../src/infrastructure/stores/inMemoryPromptStore.test.ts#L28)). Use this for database-driven prompts instead of static `PromptBuilder` configuration.
 
 <!-- doc-block: src/types/promptStore.ts#PromptStore -->
+
 ```typescript
 interface PromptStore {
   findByName(name: string): Promise<PromptTemplate | undefined>;
@@ -153,6 +158,7 @@ interface PromptStore {
 Tracks AI call metadata such as token counts and model version, for cost monitoring ([validated by: records and retrieves usage by session](../../src/infrastructure/stores/inMemoryUsageStore.test.ts#L24)).
 
 <!-- doc-block: src/types/usageStore.ts#UsageStore -->
+
 ```typescript
 interface UsageStore {
   record(entry: UsageRecord): Promise<void>;
@@ -168,6 +174,7 @@ interface UsageStore {
 Configures static system prompt assembly. Provide your AI identity, domain context, response guidelines, and custom instructions. The `PromptBuilder` combines these with tool instructions from the registry into the final system prompt.
 
 <!-- doc-block: src/infrastructure/builders/promptBuilder.ts#PromptBuilderConfig -->
+
 ```typescript
 interface PromptBuilderConfig {
   identity: string;
@@ -184,6 +191,7 @@ interface PromptBuilderConfig {
 Async lifecycle hooks for customizing the orchestration flow. Every hook is optional and receives the current session, and an orchestrator built with none behaves exactly as one built with an empty set ([validated by: works without any hooks configured](../../src/orchestration/chatOrchestrator.test.ts#L359)). Install hooks through `HalEngineConfig.orchestrator.hooks`; `createHalEngine` forwards the set to the orchestrator ([validated by: forwards an orchestrator hook, so one passed through the config actually fires](../../src/config.test.ts#L18)).
 
 <!-- doc-block: src/orchestration/chatOrchestrator.ts#OrchestratorHooks -->
+
 ```typescript
 interface OrchestratorHooks {
   beforeSession?: (session: ChatSession) => Promise<void>;
@@ -432,20 +440,20 @@ An `AIProvider` can fail transiently — a rate-limited vendor, a request that i
 
 `RetryPolicy` is entirely optional and defaults to `maxAttempts: 3`, `baseDelayMs: 500`, `maxDelayMs: 5000`, `firstChunkTimeoutMs: 30000`, `idleChunkTimeoutMs: 30000`. Both `withRetry` and `RetryPolicy` are re-exported from `src/index.ts`, and `HalEngineConfig` gains an optional `resilience?: RetryPolicy` block: when present, `createHalEngine` wraps the provider between `createProvider` and `createChatOrchestrator`; when absent, the provider is passed through untouched, so today's behaviour is unchanged. This is the first tier of operational resilience and is distinct from the client-side WebSocket reconnection backoff described under Connection Lifecycle: that backoff lives in the browser client and re-establishes a dropped socket, while this one lives in the engine and re-issues a failed model call.
 
-- A retryable `AIError` is retried, and the eventual success is streamed to the caller ([validated by: retries a retryable failure and streams the eventual success, calling the provider three times](../../src/providers/withRetry.test.ts#L21)).
-- A non-retryable `AIError` is attempted exactly once and propagates unchanged — same class, same `code` ([validated by: does not retry a non-retryable failure and propagates the same error unchanged](../../src/providers/withRetry.test.ts#L41)).
-- Once the first chunk has been handed to the caller the attempt is uninterruptible: a later failure propagates without a retry, because the chunks already streamed cannot be un-sent ([validated by: does not retry once the first chunk has been handed off, even on a retryable failure](../../src/providers/withRetry.test.ts#L65)).
-- When every attempt fails, `withRetry` throws an `AIError` carrying the last attempt's `code`, so the orchestrator's `error instanceof Error` guard passes and a later failover path can act on the final failure ([validated by: gives up after maxAttempts and throws an AIError carrying the last attempt code](../../src/providers/withRetry.test.ts#L96)).
-- `firstChunkTimeoutMs` bounds a hung request: an attempt whose first chunk never arrives is abandoned — its iterator's `return()` is called to release the generator — and retried ([validated by: abandons an attempt whose first chunk never arrives, calls return on it, and retries](../../src/providers/withRetry.test.ts#L119)).
-- `idleChunkTimeoutMs` bounds a stalled stream once output has begun: it surfaces as an `AIError` with code `TIMEOUT` and is not retried, because output has already reached the caller ([validated by: throws a TIMEOUT AIError without retrying when the stream stalls after its first chunk](../../src/providers/withRetry.test.ts#L161)).
-- Backoff is exponential with full jitter capped at `maxDelayMs`: the wait before attempt two falls within `[0, baseDelayMs]` and before attempt three within `[0, 2 × baseDelayMs]` ([validated by: backs off with full jitter, bounding attempt two to baseDelay and attempt three to twice it](../../src/providers/withRetry.test.ts#L203)).
-- `generateStructured` is wrapped by the same attempt-and-backoff loop; it returns a `Promise` rather than a stream, so the first-chunk rule does not apply and a retry there is unconditionally safe ([validated by: retries generateStructured under the same attempt-and-backoff loop](../../src/providers/withRetry.test.ts#L241)).
+- A retryable `AIError` is retried, and the eventual success is streamed to the caller ([validated by: retries a retryable failure and streams the eventual success, calling the provider three times](../../src/providers/withRetry.test.ts#L30)).
+- A non-retryable `AIError` is attempted exactly once and propagates unchanged — same class, same `code` ([validated by: does not retry a non-retryable failure and propagates the same error unchanged](../../src/providers/withRetry.test.ts#L48)).
+- Once the first chunk has been handed to the caller the attempt is uninterruptible: a later failure propagates without a retry, because the chunks already streamed cannot be un-sent ([validated by: does not retry once the first chunk has been handed off, even on a retryable failure](../../src/providers/withRetry.test.ts#L74)).
+- When every attempt fails, `withRetry` throws an `AIError` carrying the last attempt's `code`, so the orchestrator's `error instanceof Error` guard passes and a later failover path can act on the final failure ([validated by: gives up after maxAttempts and throws an AIError carrying the last attempt code](../../src/providers/withRetry.test.ts#L104)).
+- `firstChunkTimeoutMs` bounds a hung request: an attempt whose first chunk never arrives is abandoned — its iterator's `return()` is called to release the generator — and retried ([validated by: abandons an attempt whose first chunk never arrives, calls return on it, and retries](../../src/providers/withRetry.test.ts#L127)).
+- `idleChunkTimeoutMs` bounds a stalled stream once output has begun: it surfaces as an `AIError` with code `TIMEOUT` and is not retried, because output has already reached the caller ([validated by: throws a TIMEOUT AIError without retrying when the stream stalls after its first chunk](../../src/providers/withRetry.test.ts#L166)).
+- Backoff is exponential with full jitter capped at `maxDelayMs`: the wait before attempt two falls within `[0, baseDelayMs]` and before attempt three within `[0, 2 × baseDelayMs]` ([validated by: backs off with full jitter, bounding attempt two to baseDelay and attempt three to twice it](../../src/providers/withRetry.test.ts#L206)).
+- `generateStructured` is wrapped by the same attempt-and-backoff loop; it returns a `Promise` rather than a stream, so the first-chunk rule does not apply and a retry there is unconditionally safe ([validated by: retries generateStructured under the same attempt-and-backoff loop](../../src/providers/withRetry.test.ts#L252)).
 
 Each retry re-sends the entire conversation — every message verbatim — to the model vendor again, so `maxAttempts` multiplies the volume of personal data crossing any jurisdictional boundary the deployment sits across. The decorator logs the attempt number, the `AIError.code` and the delay only; it never logs message content, the system prompt, tool arguments, or any auth header field, consistent with the engine redacting nothing elsewhere.
 
 ### Decision
 
-Retry is tier one of the resilience path: transient provider blips are absorbed here, before a sustained outage is handed to *Fail over to a second provider when one is sustainedly unavailable*, which owns the failover decision once this tier has given up. Widening what a provider classifies as retryable (the Vertex classifier matches only `429` / `RESOURCE_EXHAUSTED`, so a `503` is not retried under this policy) is provider behaviour with its own scope and belongs with that failover work, not here. Cancelling the underlying HTTP request of an abandoned attempt is out of scope and tracked as *Carry a cancellation signal into the provider SDK*: `return()` releases the generator but cannot abort the in-flight request today.
+Retry is tier one of the resilience path: transient provider blips are absorbed here, before a sustained outage is handed to _Fail over to a second provider when one is sustainedly unavailable_, which owns the failover decision once this tier has given up. Widening what a provider classifies as retryable (the Vertex classifier matches only `429` / `RESOURCE_EXHAUSTED`, so a `503` is not retried under this policy) is provider behaviour with its own scope and belongs with that failover work, not here. Cancelling the underlying HTTP request of an abandoned attempt is out of scope and tracked as _Carry a cancellation signal into the provider SDK_: `return()` releases the generator but cannot abort the in-flight request today.
 
 ## Source Files
 

@@ -224,9 +224,9 @@ describe('withRetry', () => {
       const error = await settled;
 
       // Timeout timers use the 30000ms default; only the backoff waits fall at or below maxDelayMs.
-      const backoff = setTimeoutSpy.mock.calls
-        .map(call => call[1])
-        .filter((ms): ms is number => typeof ms === 'number' && ms <= 5000);
+      const mockCalls = setTimeoutSpy.mock.calls;
+      const allDelays = mockCalls.map(call => call[1]);
+      const backoff = allDelays.filter((ms): ms is number => typeof ms === 'number' && ms <= 5000);
 
       expect({
         isAiError: error instanceof AIError,
