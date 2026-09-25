@@ -26,6 +26,8 @@ export interface VertexConfig {
   location: string;
   modelId: string;
   maxTokens?: number;
+  /** Base Vertex AI endpoint; use `aiplatform.eu.rep.googleapis.com` for the EU multi-region. */
+  apiEndpoint?: string;
   googleAuthOptions?: Record<string, unknown>;
 }
 export function createVertexProvider(config: VertexConfig): AIProvider {
@@ -33,6 +35,7 @@ export function createVertexProvider(config: VertexConfig): AIProvider {
   const vertexAI = new VertexAI({
     project: config.projectId,
     location: config.location,
+    ...(config.apiEndpoint ? {apiEndpoint: config.apiEndpoint} : {}),
     googleAuthOptions: config.googleAuthOptions,
   });
 
