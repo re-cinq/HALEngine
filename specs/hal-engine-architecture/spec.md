@@ -78,6 +78,7 @@ hal-engine is designed around pluggable interfaces that let consumers customize 
 Controls where session data is stored: the default `InMemorySessionStore` keeps sessions in a `Map` ([validated by: creates and retrieves a session](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L10)). Implement this interface to persist sessions in Redis, a database, or any other backing store. The store is generic -- pass your own session type extending `BaseSession`.
 
 <!-- doc-block: src/types/sessionStore.ts#SessionStore -->
+
 ```typescript
 interface SessionStore<T extends BaseSession = ChatSession> {
   create(sessionId: string, userId: string | number, options?: SessionCreateOptions): T;
@@ -100,11 +101,13 @@ interface SessionStore<T extends BaseSession = ChatSession> {
 Authenticates WebSocket connections during the handshake. It receives the whole Node `IncomingMessage`, not a pre-extracted token, so it can read credentials from wherever the client put them. Return the authenticated user to accept the connection, or `null` to reject it with HTTP 401 -- a rejection is a returned `null`, not a thrown error.
 
 <!-- doc-block: src/types/auth.ts#WsAuthenticator -->
+
 ```typescript
 type WsAuthenticator = (req: IncomingMessage) => Promise<AuthenticatedUser | null>;
 ```
 
 <!-- doc-block: src/types/session.ts#AuthenticatedUser -->
+
 ```typescript
 interface AuthenticatedUser {
   id: string | number;
@@ -119,6 +122,7 @@ The connection handler takes `id` as the session's `userId` and picks up `worksp
 The core abstraction for AI model communication. Each provider (Bedrock, Vertex, OpenAI, Anthropic) implements this interface. The orchestrator depends only on this interface, never on provider-specific code.
 
 <!-- doc-block: src/types/ai.ts#AIProvider -->
+
 ```typescript
 interface AIProvider {
   sendMessage(params: SendMessageParams): AsyncGenerator<MessageChunk>;
@@ -134,6 +138,7 @@ interface AIProvider {
 Loads prompt templates by name with variable substitution ([validated by: returns prompt template when found](../../src/infrastructure/stores/inMemoryPromptStore.test.ts#L11), [resolve](../../src/infrastructure/stores/inMemoryPromptStore.test.ts#L28)). Use this for database-driven prompts instead of static `PromptBuilder` configuration.
 
 <!-- doc-block: src/types/promptStore.ts#PromptStore -->
+
 ```typescript
 interface PromptStore {
   findByName(name: string): Promise<PromptTemplate | undefined>;
@@ -153,6 +158,7 @@ interface PromptStore {
 Tracks AI call metadata such as token counts and model version, for cost monitoring ([validated by: records and retrieves usage by session](../../src/infrastructure/stores/inMemoryUsageStore.test.ts#L24)).
 
 <!-- doc-block: src/types/usageStore.ts#UsageStore -->
+
 ```typescript
 interface UsageStore {
   record(entry: UsageRecord): Promise<void>;
@@ -168,6 +174,7 @@ interface UsageStore {
 Configures static system prompt assembly. Provide your AI identity, domain context, response guidelines, and custom instructions. The `PromptBuilder` combines these with tool instructions from the registry into the final system prompt.
 
 <!-- doc-block: src/infrastructure/builders/promptBuilder.ts#PromptBuilderConfig -->
+
 ```typescript
 interface PromptBuilderConfig {
   identity: string;
@@ -184,6 +191,7 @@ interface PromptBuilderConfig {
 Async lifecycle hooks for customizing the orchestration flow. Every hook is optional and receives the current session, and an orchestrator built with none behaves exactly as one built with an empty set ([validated by: works without any hooks configured](../../src/orchestration/chatOrchestrator.test.ts#L359)). Install hooks through `HalEngineConfig.orchestrator.hooks`; `createHalEngine` forwards the set to the orchestrator ([validated by: forwards an orchestrator hook, so one passed through the config actually fires](../../src/config.test.ts#L18)).
 
 <!-- doc-block: src/orchestration/chatOrchestrator.ts#OrchestratorHooks -->
+
 ```typescript
 interface OrchestratorHooks {
   beforeSession?: (session: ChatSession) => Promise<void>;
@@ -337,8 +345,8 @@ Here is what the message handler does when a tool call comes through:
 - The loop ends as soon as a round stops with `end_turn`, and nothing further is asked of the provider ([validated by: stops after one round when nothing asked for a tool](../../src/orchestration/chatOrchestrator.test.ts#L413)).
 - An `entry_upsert` a tool returns is appended to the session and its index rewritten to the position it actually landed in, because a tool cannot know how long the session already is ([validated by: appends an upserted entry to the session and rewrites its index to match](../../src/orchestration/chatOrchestrator.test.ts#L449)).
 - The response text a hook sees is the text of every round joined, not only the last ([validated by: joins the text of every round, not only the last](../../src/orchestration/chatOrchestrator.test.ts#L478)).
-- Usage an earlier round reported is kept when a later round reports none, so a tool round does not erase the token count ([validated by: keeps the usage an earlier round reported when a later round reports none](../../src/orchestration/chatOrchestrator.test.ts#L500)).
-- The usage a hook receives is the sum of every round, so a turn that called tools counts each provider call rather than only the last ([validated by: sums the usage of every round, not only the last](../../src/orchestration/chatOrchestrator.test.ts#L523)).
+- Usage an earlier round reported is kept when a later round reports none, so a tool round does not erase the token count ([validated by: keeps the usage an earlier round reported when a later round reports none](../../src/orchestration/chatOrchestrator.test.ts#L510)).
+- The usage a hook receives is the sum of every round, so a turn that called tools counts each provider call rather than only the last ([validated by: sums the usage of every round, not only the last](../../src/orchestration/chatOrchestrator.test.ts#L528)).
 - A round that reports no usage drops out of that sum without erasing the rounds that did or turning the total to `NaN` ([validated by: counts every reporting round even when a round between them reports none](../../src/orchestration/chatOrchestrator.test.ts#L550)).
 
 The frontend shows a spinner on the last tool entry while the stream is still processing (`isProcessing` is `true`). The `stream_end` message clears the processing state, which hides the spinner. This works correctly even when tool suppression prevents assistant entries from reaching the frontend. See [tool-responses.md](../hal-engine-tool-responses/spec.md) for details on client messages and suppression.
