@@ -124,8 +124,8 @@ export function createChatOrchestrator(
 
         if (hooks?.afterModelResponse) await hooks.afterModelResponse(session, responseText, lastUsage);
       } catch (error) {
-        if (hooks?.onError && error instanceof Error) {
-          await hooks.onError(session, error);
+        if (hooks?.onError) {
+          await hooks.onError(session, error instanceof Error ? error : new Error(String(error), {cause: error}));
         }
         throw error;
       } finally {
