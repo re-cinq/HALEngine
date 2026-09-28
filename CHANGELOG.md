@@ -22,6 +22,11 @@ package, not for somebody reading this repository's commit log.
   in `0.2.x`; the comment makes the lifecycle-hook seam discoverable from the published type
   declarations so editors surface it on hover without a trip to the README.
 - `ToolRegistry.execute` now validates tool input against the declared `inputSchema` before invoking the executor. A schema-invalid call returns a descriptive `ToolResponse` to the model (naming the failing property path and constraint, never the value) rather than throwing, so the model can retry within the existing tool-round budget. Extra properties pass through to the executor unchanged. **Migration note**: an executor that previously hand-validated its own input now receives only input that has already passed the declared schema; a tool that relied on seeing malformed input to produce its own error message will no longer see it.
+- The WebSocket server no longer echoes the access token in its handshake response. A client offers the new `hal.v1` marker beside its token (`new WebSocket(url, ['hal.v1', token])`, or `HAL_WS_SUBPROTOCOL`, now exported from the package root) and the server answers only `hal.v1`, so the token stays out of the 101 response headers and off the connected socket's `protocol` property. The token is read as the first offered value that is not the marker, in either order, and still reaches tools as `authHeaders.authorization`. **Migration note**: every client must be updated to offer `hal.v1` alongside its token. From the next MINOR, a client that offers only a bare token receives a 101 with no `Sec-WebSocket-Protocol` header, and `ws` and Chromium both fail such a handshake; this release still accepts a bare token (see Deprecated), because `0.2.x` documented it.
+
+### Deprecated
+
+- Offering a bare access token as the only WebSocket subprotocol. This release still echoes it and logs a warning that never includes the offered value; the next MINOR stops echoing it, and a client that has not added `hal.v1` will then fail its handshake.
 
 ## [0.2.1] - 2026-09-14
 

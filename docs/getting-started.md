@@ -215,8 +215,10 @@ The demo chat routes are not part of this flow. A `POST /chats` id is not a WebS
 
 <!-- doc-block: none -- illustrates assembling the parts by hand, which no single declaration or example region carries -->
 ```typescript
-// 1. Connect. The server mints the session id and sends it back in the `connected` frame.
-const ws = new WebSocket('ws://localhost:8086/api/ws', [token]);
+// 1. Connect. Offer the `hal.v1` marker (exported as HAL_WS_SUBPROTOCOL) beside the token; the server answers
+// the marker, so the token never appears in the response. The server mints the session id and sends it back
+// in the `connected` frame.
+const ws = new WebSocket('ws://localhost:8086/api/ws', ['hal.v1', token]);
 
 ws.onmessage = event => {
   const message = JSON.parse(event.data);

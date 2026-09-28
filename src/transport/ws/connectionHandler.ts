@@ -8,6 +8,7 @@ import type {ConnectedMessage} from '../../types/messages.js';
 import {ErrorCodes} from '../../types/session.js';
 import {sendError} from './sender.js';
 import {isValidWsPath, rejectSocket, parseWsData} from './helpers.js';
+import {credentialFromSubprotocol} from './subprotocol.js';
 import {log} from '../../shared/logger.js';
 
 export interface ExtWebSocket extends WebSocket {
@@ -68,12 +69,7 @@ export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandl
 }
 
 function bearerFromWebSocketProtocol(req: IncomingMessage): string | undefined {
-  const protocol = req.headers['sec-websocket-protocol'];
-  if (!protocol) return undefined;
-  const token = protocol
-    .split(',')
-    .map(s => s.trim())
-    .find(s => s.length > 0);
+  const token = credentialFromSubprotocol(req.headers['sec-websocket-protocol']);
   return token ? `Bearer ${token}` : undefined;
 }
 
