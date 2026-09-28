@@ -552,7 +552,7 @@ A provider fails after the answer has started. The partial answer is committed a
 
 ## 9. Tool Execution Loop
 
-When the AI model requests a tool invocation, the server executes the tool and re-queries the model with the result. The loop is bounded by `maxToolRounds` (default 5), counted from zero and inclusive, so the default permits six model calls: the first, plus five more after tool results.
+When the AI model requests a tool invocation, the server executes the tool and re-queries the model with the result. The loop is bounded by `maxToolRounds` (default 5): at most `maxToolRounds` tool rounds are executed, and the provider is called at most `maxToolRounds + 1` times, so the default permits six model calls: the first, plus five more that each read a round's tool results. A tool round the model requests once the budget is spent is not executed; the turn ends on that call's output.
 
 ```text
 Round 1:  Model streams text + requests tool_use

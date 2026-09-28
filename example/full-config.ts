@@ -90,7 +90,7 @@ const engine = createHalEngine({
 
   // OPTIONAL: Orchestrator settings
   orchestrator: {
-    maxToolRounds: 5, // Max tool execution rounds (default 5)
+    maxToolRounds: 5, // Max tool rounds executed (default 5); the provider is called at most maxToolRounds + 1 times
     contextConfig: {
       // How many messages are kept, and how much of each.
       maxMessages: 50,

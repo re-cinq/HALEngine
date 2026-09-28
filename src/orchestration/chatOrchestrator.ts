@@ -62,7 +62,7 @@ export function createChatOrchestrator(
   toolRegistry?: ToolRegistry,
   options?: ChatOrchestratorOptions
 ): ChatOrchestrator {
-  const maxToolRounds = options?.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS;
+  const maxToolRounds = normalizeToolRounds(options?.maxToolRounds);
   const contextConfig = createContextConfig(options?.contextConfig);
   const toolInstructions = toolRegistry?.getPromptInstructions();
   const baseSystemPrompt = promptBuilder.build({...options?.promptBuilderOptions, toolInstructions});
@@ -94,7 +94,8 @@ export function createChatOrchestrator(
         let lastUsage: UsageMetadata | undefined;
         let responseText = '';
 
-        for (let round = 0; round <= maxToolRounds; round++) {
+        // Bounded by the budget gate below, not the header: maxToolRounds executed rounds, maxToolRounds + 1 provider calls.
+        for (let round = 0; ; round++) {
           log.info('orchestrator', 'starting round', {round});
           const pendingToolCalls: ToolCall[] = [];
 
@@ -103,6 +104,7 @@ export function createChatOrchestrator(
           lastUsage = outcome.usage ?? lastUsage;
 
           if (!shouldContinueToolLoop(outcome.stopReason, pendingToolCalls, toolRegistry)) break;
+          if (budgetSpent(round, maxToolRounds, pendingToolCalls)) break;
 
           log.info('orchestrator', 'executing tools', {tools: pendingToolCalls.map(tc => tc.name)});
           const {clientMessages, suppressOutput} = await executeToolCalls(
@@ -137,6 +139,22 @@ export function createChatOrchestrator(
       }
     },
   };
+}
+
+// A negative budget means no tool rounds; a non-finite one, NaN included, falls back to the default rather than never ending.
+function normalizeToolRounds(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value)) return DEFAULT_MAX_TOOL_ROUNDS;
+  return Math.max(0, Math.floor(value));
+}
+
+// Gates execution, not the provider call: a round nobody can read is never run, and the call that read the last one already has.
+function budgetSpent(round: number, maxToolRounds: number, pendingToolCalls: ToolCall[]): boolean {
+  if (round < maxToolRounds) return false;
+  log.warn('orchestrator', 'tool budget exhausted', {
+    maxToolRounds,
+    requestedTools: pendingToolCalls.map(tc => tc.name),
+  });
+  return true;
 }
 
 interface RoundOutcome {

@@ -166,7 +166,7 @@ Once a tool is registered, the following work without any additional code:
 - When the provider returns a `tool_use` chunk, the message handler creates a `ToolEntry` and sends it via `entry_upsert`
 - The orchestrator executes all pending tool calls in parallel with `Promise.all()`
 - Before each executor runs, a consumer's `beforeToolCall` hook may decline the call: its returned `ToolResponse` takes the executor's place, the model reads its `result` as that call's `tool_result`, and a hook that throws declines the call rather than failing the turn. This is the seam for a human-oversight control; the wording of a declined result is yours
-- Tool results are added to the conversation, and the provider is re-queried (up to `maxToolRounds` rounds)
+- Tool results are added to the conversation, and the provider is re-queried: at most `maxToolRounds` tool rounds are executed, and the provider is called at most `maxToolRounds + 1` times. A round the model asks for once the budget is spent is not executed, and the turn ends
 
 **On the client:**
 
