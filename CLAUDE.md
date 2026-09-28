@@ -133,10 +133,12 @@ interface OrchestratorHooks {
   beforeModelResponse?: (session: ChatSession, systemPrompt: string) => Promise<string>;
   afterModelResponse?: (session: ChatSession, responseText: string, usage?: UsageMetadata) => Promise<void>;
   onError?: (session: ChatSession, error: Error) => Promise<void>;
+  /** The supported seam for an EU AI Act Art. 14 human-oversight control: fires before each known tool's executor, and a returned ToolResponse replaces the call (see docs/adding-a-tool.md); it receives the model's raw tool input and, through session, the caller's authHeaders, so a policy that logs either logs personal data and credential material; the engine asserts nothing about any policy installed here. */
+  beforeToolCall?: (session: ChatSession, call: ToolCall) => Promise<ToolResponse | undefined>;
 }
 ```
 
-Fire order: `beforeSession → beforeUserInput → afterUserInput → beforeModelResponse → [streaming] → afterModelResponse → afterSession`. The returned value matters for two of them: `beforeUserInput` rewrites the user message and `beforeModelResponse` replaces the system prompt. `afterSession` always fires, including on error. The block above is generated from the declaration, so the declaration order is not the fire order.
+Fire order: `beforeSession → beforeUserInput → afterUserInput → beforeModelResponse → [streaming, with beforeToolCall once per tool call, once per round] → afterModelResponse → afterSession`. `beforeToolCall` repeats: it fires for every known tool the model requests, in every round, concurrently within a round. The returned value matters for two of them: `beforeUserInput` rewrites the user message and `beforeModelResponse` replaces the system prompt. `afterSession` always fires, including on error. The block above is generated from the declaration, so the declaration order is not the fire order.
 
 ## Specs and ADRs
 

@@ -1,5 +1,5 @@
 import type {ChatSession} from '../types/session.js';
-import type {ToolRegistry, ToolContext} from './tools/registry.js';
+import type {ToolRegistry, ToolContext, ToolResponse} from './tools/registry.js';
 import type {
   AIProvider,
   Message,
@@ -34,7 +34,11 @@ export interface OrchestratorHooks {
   beforeModelResponse?: (session: ChatSession, systemPrompt: string) => Promise<string>;
   afterModelResponse?: (session: ChatSession, responseText: string, usage?: UsageMetadata) => Promise<void>;
   onError?: (session: ChatSession, error: Error) => Promise<void>;
+  /** The supported seam for an EU AI Act Art. 14 human-oversight control: fires before each known tool's executor, and a returned ToolResponse replaces the call (see docs/adding-a-tool.md); it receives the model's raw tool input and, through session, the caller's authHeaders, so a policy that logs either logs personal data and credential material; the engine asserts nothing about any policy installed here. */
+  beforeToolCall?: (session: ChatSession, call: ToolCall) => Promise<ToolResponse | undefined>;
 }
+
+type BeforeToolCall = NonNullable<OrchestratorHooks['beforeToolCall']>;
 
 export interface ChatOrchestrator {
   processMessage(session: ChatSession): Promise<string>;
@@ -104,8 +108,8 @@ export function createChatOrchestrator(
           const {clientMessages, suppressOutput} = await executeToolCalls(
             pendingToolCalls,
             messages,
-            toolRegistry!,
-            session
+            session,
+            toolCallRunner(toolRegistry!, session, hooks?.beforeToolCall)
           );
           log.info('orchestrator', 'tool execution complete', {
             clientMessageCount: clientMessages.length,
@@ -193,14 +197,8 @@ function updateLastUserContent(session: ChatSession, content: string): void {
   }
 }
 
-async function executeToolCalls(
-  pendingToolCalls: ToolCall[],
-  messages: Message[],
-  toolRegistry: ToolRegistry,
-  session: ChatSession
-): Promise<ToolExecutionResult> {
-  messages.push(buildToolCallMessages(pendingToolCalls));
-
+// One runner per round: the policy sees each known call before its executor, and an unknown name keeps the registry's own path.
+function toolCallRunner(toolRegistry: ToolRegistry, session: ChatSession, beforeToolCall?: BeforeToolCall) {
   const context: ToolContext = {
     userId: session.userId,
     sessionId: session.sessionId,
@@ -208,9 +206,41 @@ async function executeToolCalls(
     authHeaders: session.authHeaders,
   };
 
+  return async (tc: ToolCall): Promise<ToolResponse> => {
+    const declined =
+      beforeToolCall && toolRegistry.has(tc.name) ? await consultPolicy(beforeToolCall, session, tc) : undefined;
+    return declined ?? toolRegistry.execute(tc.name, tc.input, context);
+  };
+}
+
+// A throwing policy declines its call rather than failing the turn: every tool_use must still be answered.
+async function consultPolicy(
+  policy: BeforeToolCall,
+  session: ChatSession,
+  tc: ToolCall
+): Promise<ToolResponse | undefined> {
+  try {
+    return await policy(session, tc);
+  } catch (error) {
+    log.warn('orchestrator', 'beforeToolCall threw, so the call is declined', {
+      tool: tc.name,
+      errorType: error instanceof Error ? error.name : typeof error,
+    });
+    return {result: `The ${tc.name} call was declined and not performed.`};
+  }
+}
+
+async function executeToolCalls(
+  pendingToolCalls: ToolCall[],
+  messages: Message[],
+  session: ChatSession,
+  runToolCall: (tc: ToolCall) => Promise<ToolResponse>
+): Promise<ToolExecutionResult> {
+  messages.push(buildToolCallMessages(pendingToolCalls));
+
   const responses = await Promise.all(
     pendingToolCalls.map(async tc => {
-      const response = await toolRegistry.execute(tc.name, tc.input, context);
+      const response = await runToolCall(tc);
       return {tc, response};
     })
   );

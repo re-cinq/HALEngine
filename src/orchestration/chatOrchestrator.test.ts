@@ -61,7 +61,7 @@ type RecordedHook =
 
 // Only the named hooks are installed: one that merely exists changes the observed order.
 const recordingHooks = (callOrder: string[], names: RecordedHook[]): OrchestratorHooks => {
-  const all: Required<OrchestratorHooks> = {
+  const all: Required<Pick<OrchestratorHooks, RecordedHook>> = {
     beforeSession: async () => void callOrder.push('beforeSession'),
     beforeUserInput: async (_session, msg) => {
       callOrder.push('beforeUserInput');
