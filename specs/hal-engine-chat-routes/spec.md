@@ -76,7 +76,7 @@ A deployment MUST configure `auth.http` middleware that attaches a `user` with a
 - An Express `RequestHandler` is accepted as an `HttpAuthMiddleware` ([validated by: accepts a plain express RequestHandler, which is what a consumer already has](../../src/transport/createApp.test.ts#L75)).
 - An `HttpAuthMiddleware` is usable as an Express `RequestHandler` ([validated by: is itself usable as an express RequestHandler, which is how the router mounts it](../../src/transport/createApp.test.ts#L82)).
 
-A chat id from `POST /chats` is not a WebSocket session id. The socket mints its own on each connection and stores that, so neither identifier can be guessed from the other ([validated by: mints a fresh session id per connection rather than reusing one](../../src/transport/ws/connectionHandler.test.ts#L55)).
+A chat id from `POST /chats` is not a WebSocket session id. The socket mints its own on each connection and stores that, so neither identifier can be guessed from the other ([validated by: mints a fresh session id per connection rather than reusing one](../../src/transport/ws/connectionHandler.test.ts#L62)).
 
 ## GET /chats/:id
 

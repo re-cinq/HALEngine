@@ -17,6 +17,7 @@ package, not for somebody reading this repository's commit log.
 
 ### Changed
 
+- Every `user_message` now ends in exactly one `stream_end`, including a run that fails and a message that fails validation; the `error` frame is advisory rather than terminal. Unparseable JSON remains the one frame answered with `INVALID_FORMAT` and no `stream_end`. **Migration note**: `stream_end` may now follow an `error` frame, so treat `stream_end` (or the socket closing) as the only end of a run. The one live consumer handles the two frame types independently, and both clear its processing state, so it keeps working unchanged and no deprecation period is served by delaying.
 - `HalEngineConfig.orchestrator.hooks` now carries a JSDoc comment. The field already shipped
   in `0.2.x`; the comment makes the lifecycle-hook seam discoverable from the published type
   declarations so editors surface it on hover without a trip to the README.

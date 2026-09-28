@@ -29,26 +29,45 @@ type StateIndexKey = 'thinkingIndex' | 'assistantIndex';
 type EntryFactory = typeof createThinkingEntry | typeof createAssistantEntry;
 export function createMessageHandler(orchestrator: ChatOrchestrator) {
   return async function handleMessage(ws: WebSocket, session: ChatSession, rawMessage: unknown): Promise<void> {
-    const validation = validateMessage(rawMessage);
+    try {
+      await dispatchMessage(ws, session, orchestrator, rawMessage);
+    } finally {
+      // Every user_message ends in exactly one stream_end, errored or not; a ping never gets one.
+      if (isUserMessageFrame(rawMessage)) sendStreamEnd(ws);
+    }
+  };
+}
 
-    if (!validation.valid) {
-      log.warn('message', 'validation failed', {error: validation.error});
-      sendError(ws, ErrorCodes.INVALID_MESSAGE, validation.error);
-      return;
+async function dispatchMessage(
+  ws: WebSocket,
+  session: ChatSession,
+  orchestrator: ChatOrchestrator,
+  rawMessage: unknown
+): Promise<void> {
+  const validation = validateMessage(rawMessage);
+
+  if (!validation.valid) {
+    log.warn('message', 'validation failed', {error: validation.error});
+    sendError(ws, ErrorCodes.INVALID_MESSAGE, validation.error);
+    return;
+  }
+
+  const message = validation.data;
+
+  await wsErrorHandler(ws, async () => {
+    if (message.type === 'user_message') {
+      await handleUserMessage(ws, session, orchestrator, message.content);
     }
 
-    const message = validation.data;
+    if (message.type === 'ping') {
+      handlePing(ws, message.timestamp);
+    }
+  });
+}
 
-    await wsErrorHandler(ws, async () => {
-      if (message.type === 'user_message') {
-        await handleUserMessage(ws, session, orchestrator, message.content);
-      }
-
-      if (message.type === 'ping') {
-        handlePing(ws, message.timestamp);
-      }
-    });
-  };
+// Read from the raw frame, so a user_message that fails validation still gets its stream_end.
+function isUserMessageFrame(rawMessage: unknown): boolean {
+  return typeof rawMessage === 'object' && rawMessage !== null && Reflect.get(rawMessage, 'type') === 'user_message';
 }
 
 async function wsErrorHandler(ws: WebSocket, action: () => Promise<void>): Promise<void> {
@@ -97,7 +116,6 @@ async function handleUserMessage(
     log.debug('stream', `received ${textChunkCount} text chunks`);
   }
   log.info('stream', 'stream completed', {suppressed: state.suppressOutput, entries: session.entries.length});
-  sendStreamEnd(ws);
 }
 
 // Diagnostics only: counts a run of text chunks so it is logged once, not per token.

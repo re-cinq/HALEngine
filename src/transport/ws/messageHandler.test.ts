@@ -28,13 +28,29 @@ const text = (value: string): MessageChunk => ({type: 'text', text: value});
 const STOP: MessageChunk = {type: 'stop', stopReason: 'end_turn'};
 const SUPPRESS = {type: 'suppress_output'} as unknown as MessageChunk;
 
-const harness = (chunks: MessageChunk[], failWith?: Error) => {
+interface StreamScript {
+  failWith?: Error;
+  pauseAfter?: {chunks: number; until: Promise<void>};
+}
+
+const deferred = () => {
+  let release = (): void => undefined;
+  const until = new Promise<void>(resolve => {
+    release = resolve;
+  });
+  return {until, release};
+};
+
+const harness = (chunks: MessageChunk[], {failWith, pauseAfter}: StreamScript = {}) => {
   const sent: OutgoingMessage[] = [];
   const ws = {send: (raw: string) => sent.push(JSON.parse(raw) as OutgoingMessage)} as unknown as WebSocket;
 
   const stream = async function* (): AsyncGenerator<MessageChunk> {
+    for (const [position, chunk] of chunks.entries()) {
+      if (pauseAfter && position === pauseAfter.chunks) await pauseAfter.until;
+      yield chunk;
+    }
     if (failWith) throw failWith;
-    for (const chunk of chunks) yield chunk;
   };
 
   const processMessageStream = jest.fn(stream);
@@ -223,19 +239,97 @@ describe('the websocket message handler', () => {
   describe('failures', () => {
     it('tells the client to retry when the provider is rate limited', async () => {
       // eslint-disable-next-line re-lint/no-flag-params -- AIError's retryable flag; see adrs/ADR-006-lint-suppressions.md
-      const h = harness([], new AIError('slow down', 'RATE_LIMITED', true));
+      const h = harness([], {failWith: new AIError('slow down', 'RATE_LIMITED', true)});
 
       await h.send();
 
-      expect(h.frames()).toEqual(['upsert 0 user "hello"', 'error RATE_LIMITED']);
+      expect(h.frames()).toEqual(['upsert 0 user "hello"', 'error RATE_LIMITED', 'stream_end']);
     });
 
     it('reports any other failure as a server error', async () => {
-      const h = harness([], new Error('boom'));
+      const h = harness([], {failWith: new Error('boom')});
 
       await h.send();
 
-      expect(h.frames()).toEqual(['upsert 0 user "hello"', 'error SERVER_ERROR']);
+      expect(h.frames()).toEqual(['upsert 0 user "hello"', 'error SERVER_ERROR', 'stream_end']);
+    });
+  });
+
+  describe('the terminal frame', () => {
+    it('ends a provider failure mid-stream with error then stream_end, stream_end last', async () => {
+      const h = harness([text('Half an ans')], {failWith: new Error('provider dropped')});
+
+      await h.send();
+
+      expect(h.frames()).toEqual([
+        'upsert 0 user "hello"',
+        'upsert 1 assistant ""',
+        'delta 1 "Half an ans"',
+        'error SERVER_ERROR',
+        'stream_end',
+      ]);
+    });
+
+    const invalidRun = async (content: string) => {
+      const h = harness([]);
+      await h.send({type: 'user_message', content});
+      const {calls} = h.processMessageStream.mock;
+      return {frames: h.frames(), streams: calls.length};
+    };
+    const REFUSED = {frames: ['error INVALID_MESSAGE', 'stream_end'], streams: 0};
+
+    it('answers an empty user_message with INVALID_MESSAGE then stream_end', async () => {
+      expect(await invalidRun('')).toEqual(REFUSED);
+    });
+
+    it('answers a blank user_message with INVALID_MESSAGE then stream_end', async () => {
+      expect(await invalidRun('   ')).toEqual(REFUSED);
+    });
+
+    it('answers an over-length user_message with INVALID_MESSAGE then stream_end', async () => {
+      expect(await invalidRun('x'.repeat(10_001))).toEqual(REFUSED);
+    });
+
+    it('answers a malformed ping with INVALID_MESSAGE and no stream_end', async () => {
+      const h = harness([]);
+
+      await h.send({type: 'ping', timestamp: 'soon'});
+
+      expect(h.frames()).toEqual(['error INVALID_MESSAGE']);
+    });
+
+    it('keeps one stream_end, last, when a malformed ping lands mid-run', async () => {
+      const gate = deferred();
+      const h = harness([text('first '), text('second'), STOP], {pauseAfter: {chunks: 1, until: gate.until}});
+
+      const run = h.send();
+      await new Promise(resolve => setImmediate(resolve));
+      await h.send({type: 'ping', timestamp: 'soon'});
+      gate.release();
+      await run;
+
+      expect(h.frames()).toEqual([
+        'upsert 0 user "hello"',
+        'upsert 1 assistant ""',
+        'delta 1 "first "',
+        'error INVALID_MESSAGE',
+        'delta 1 "second"',
+        'commit 1',
+        'stream_end',
+      ]);
+    });
+
+    it('sends one stream_end for a three-round tool conversation', async () => {
+      const call = (id: string): MessageChunk => ({type: 'tool_use', toolCall: {id, name: 'lookup', input: {id}}});
+      const h = harness([call('c1'), call('c2'), call('c3'), text('Done'), STOP]);
+
+      await h.send();
+
+      const frames = h.frames();
+      expect({ends: frames.filter(frame => frame === 'stream_end').length, last: frames.at(-1)}).toEqual({
+        ends: 1,
+        last: 'stream_end',
+      });
     });
   });
 });

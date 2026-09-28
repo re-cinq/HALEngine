@@ -35,7 +35,14 @@ const harness = (hooks: Partial<Pick<ConnectionHandlerDeps, 'onConnect' | 'onDis
 
   const connect = () => createConnectionHandler(deps, [])(ws);
 
-  return {connect, sent, deleted, close: () => listeners.get('close')?.()};
+  return {
+    connect,
+    sent,
+    deleted,
+    handleMessage: deps.handleMessage as jest.Mock,
+    close: () => listeners.get('close')?.(),
+    receive: (frame: string) => listeners.get('message')?.(frame),
+  };
 };
 
 describe('the websocket connection handler', () => {
@@ -143,6 +150,22 @@ describe('the websocket connection handler', () => {
       close();
 
       await expect(settle()).resolves.toBeUndefined();
+    });
+  });
+
+  describe('inbound frames', () => {
+    it('answers unparseable JSON with INVALID_FORMAT alone and never dispatches it', () => {
+      const {connect, sent, receive, handleMessage} = harness();
+      connect();
+
+      receive('{"type": "user_message", "content": ');
+
+      const types = sent.slice(1).map(raw => (JSON.parse(raw) as {type: string; code?: string}).code ?? 'no code');
+      const {calls} = handleMessage.mock;
+      expect({afterConnected: types, dispatched: calls.length}).toEqual({
+        afterConnected: ['INVALID_FORMAT'],
+        dispatched: 0,
+      });
     });
   });
 });
