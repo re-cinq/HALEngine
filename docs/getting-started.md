@@ -135,6 +135,8 @@ const hooks: OrchestratorHooks = {
     call.name === 'send_notification'
       ? {result: 'Not performed. A human reviewer has been asked to do it.'}
       : undefined,
+  // The engine writes no user-facing prose: this sentence closes a turn whose tool budget ran out.
+  onToolBudgetExhausted: async () => 'I could not finish looking that up, so a colleague will follow up.',
 };
 
 // A Logger of your own; this one writes plain lines to stderr. Passing `log` itself here is treated as passing none.
@@ -209,14 +211,14 @@ const engine = createHalEngine({
 
 ### Message lifecycle hooks
 
-`orchestrator.hooks` takes an `OrchestratorHooks`: `beforeSession`, `beforeUserInput`, `afterUserInput`, `beforeModelResponse`, `afterModelResponse`, `afterSession`, `onError` and `beforeToolCall`. Every one is optional.
+`orchestrator.hooks` takes an `OrchestratorHooks`: `beforeSession`, `beforeUserInput`, `afterUserInput`, `beforeModelResponse`, `afterModelResponse`, `afterSession`, `onError`, `beforeToolCall` and `onToolBudgetExhausted`. Every one is optional.
 
-Three of them use their return value — `beforeUserInput` rewrites the user message, `beforeModelResponse` replaces the system prompt, and `beforeToolCall` can decline a tool call by returning the `ToolResponse` the model reads instead (see [adding a tool](adding-a-tool.md#what-happens-automatically)). `afterSession` always fires, including on error.
+Four of them use their return value — `beforeUserInput` rewrites the user message, `beforeModelResponse` replaces the system prompt, `onToolBudgetExhausted` supplies the sentence that closes a turn whose tool budget ran out, and `beforeToolCall` can decline a tool call by returning the `ToolResponse` the model reads instead (see [adding a tool](adding-a-tool.md#what-happens-automatically)). `afterSession` always fires, including on error.
 
 They fire in this order:
 
 ```
-beforeSession → beforeUserInput → afterUserInput → beforeModelResponse → ...streaming (beforeToolCall × each tool call, each round)... → afterModelResponse → afterSession
+beforeSession → beforeUserInput → afterUserInput → beforeModelResponse → ...streaming (beforeToolCall × each tool call, each round)... → onToolBudgetExhausted (only on an exhausted budget) → afterModelResponse → afterSession
 ```
 
 ## Connecting a Client

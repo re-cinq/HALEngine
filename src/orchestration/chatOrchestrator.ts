@@ -36,9 +36,19 @@ export interface OrchestratorHooks {
   onError?: (session: ChatSession, error: Error) => Promise<void>;
   /** The supported seam for an EU AI Act Art. 14 human-oversight control: fires before each known tool's executor, and a returned ToolResponse replaces the call (see docs/adding-a-tool.md); it receives the model's raw tool input and, through session, the caller's authHeaders, so a policy that logs either logs personal data and credential material; the engine asserts nothing about any policy installed here. */
   beforeToolCall?: (session: ChatSession, call: ToolCall) => Promise<ToolResponse | undefined>;
+  /** Fires when the model asks for a tool round the budget refuses, after the last provider call and before afterModelResponse; a returned string reaches the user as the turn's closing text, and the engine writes none of its own (see specs/hal-engine-tool-budget/spec.md). */
+  onToolBudgetExhausted?: (session: ChatSession, budget: ToolBudgetInfo) => Promise<string | undefined>;
+}
+
+export interface ToolBudgetInfo {
+  maxToolRounds: number;
+  requestedTools: string[];
 }
 
 type BeforeToolCall = NonNullable<OrchestratorHooks['beforeToolCall']>;
+type OnToolBudgetExhausted = NonNullable<OrchestratorHooks['onToolBudgetExhausted']>;
+
+export const TOOL_BUDGET_EXHAUSTED = 'tool_budget_exhausted';
 
 export interface ChatOrchestrator {
   processMessage(session: ChatSession): Promise<string>;
@@ -104,7 +114,11 @@ export function createChatOrchestrator(
           lastUsage = outcome.usage ?? lastUsage;
 
           if (!shouldContinueToolLoop(outcome.stopReason, pendingToolCalls, toolRegistry)) break;
-          if (budgetSpent(round, maxToolRounds, pendingToolCalls)) break;
+          if (budgetSpent(round, maxToolRounds, pendingToolCalls)) {
+            const budget = {maxToolRounds, requestedTools: pendingToolCalls.map(tc => tc.name)};
+            responseText += yield* closeExhaustedTurn(session, budget, hooks?.onToolBudgetExhausted);
+            break;
+          }
 
           log.info('orchestrator', 'executing tools', {tools: pendingToolCalls.map(tc => tc.name)});
           const {clientMessages, suppressOutput} = await executeToolCalls(
@@ -155,6 +169,18 @@ function budgetSpent(round: number, maxToolRounds: number, pendingToolCalls: Too
     requestedTools: pendingToolCalls.map(tc => tc.name),
   });
   return true;
+}
+
+// The stop always follows the text: the round's own stop already committed its entry, and a bare text chunk would open one never committed.
+async function* closeExhaustedTurn(
+  session: ChatSession,
+  budget: ToolBudgetInfo,
+  hook?: OnToolBudgetExhausted
+): AsyncGenerator<MessageChunk, string> {
+  const sentence = (hook ? await hook(session, budget) : undefined) ?? '';
+  if (sentence !== '') yield {type: 'text', text: sentence};
+  yield {type: 'stop', stopReason: TOOL_BUDGET_EXHAUSTED};
+  return sentence;
 }
 
 interface RoundOutcome {

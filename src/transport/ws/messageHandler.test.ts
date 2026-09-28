@@ -1,6 +1,7 @@
 import {jest} from '@jest/globals';
 import type {WebSocket} from 'ws';
 import {createMessageHandler} from './messageHandler.js';
+import {TOOL_BUDGET_EXHAUSTED} from '../../orchestration/chatOrchestrator.js';
 import type {ChatOrchestrator} from '../../orchestration/chatOrchestrator.js';
 import type {MessageChunk} from '../../types/ai.js';
 import {AIError} from '../../types/ai.js';
@@ -402,6 +403,39 @@ describe('the websocket message handler', () => {
         frames: ['upsert 0 user "hello"', 'skip 1', 'error SERVER_ERROR', 'stream_end'],
         open: 0,
       });
+    });
+  });
+
+  describe('an exhausted tool budget', () => {
+    const SENTENCE = 'A colleague will follow up on this.';
+    const LOOKUP: MessageChunk = {type: 'tool_use', toolCall: {id: 'c1', name: 'lookup', input: {}}};
+    const TOOL_STOP: MessageChunk = {type: 'stop', stopReason: 'tool_use'};
+    const BUDGET_STOP: MessageChunk = {type: 'stop', stopReason: TOOL_BUDGET_EXHAUSTED};
+
+    it("renders the hook's sentence as its own committed entry, then stream_end, with no error", async () => {
+      const h = harness([LOOKUP, TOOL_STOP, text(SENTENCE), BUDGET_STOP]);
+
+      await h.send();
+
+      const frames = h.frames();
+      expect({tail: frames.slice(-4), errors: frames.filter(frame => frame.startsWith('error'))}).toEqual({
+        tail: ['upsert 2 assistant ""', `delta 2 ${JSON.stringify(SENTENCE)}`, 'commit 2', 'stream_end'],
+        errors: [],
+      });
+    });
+
+    it('writes the sentence into the session but only skips it on the wire under suppression', async () => {
+      const h = harness([LOOKUP, TOOL_STOP, SUPPRESS, text(SENTENCE), BUDGET_STOP]);
+
+      await h.send();
+
+      const frames = h.frames();
+      const [, , stored] = h.session.entries;
+      expect({
+        skipped: frames.includes('skip 2'),
+        deltas: frames.filter(frame => frame.startsWith('delta 2')),
+        stored,
+      }).toMatchObject({skipped: true, deltas: [], stored: {role: 'assistant', content: SENTENCE}});
     });
   });
 });
