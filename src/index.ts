@@ -8,8 +8,13 @@ export type {HalServerOptions, HalServer} from './transport/createServer.js';
 export {createChatRoutes} from './transport/routes/chats.js';
 export {HAL_WS_SUBPROTOCOL, credentialFromSubprotocol} from './transport/ws/subprotocol.js';
 
-export {createChatOrchestrator} from './orchestration/chatOrchestrator.js';
-export type {ChatOrchestrator, ChatOrchestratorOptions, OrchestratorHooks} from './orchestration/chatOrchestrator.js';
+export {createChatOrchestrator, TOOL_BUDGET_EXHAUSTED} from './orchestration/chatOrchestrator.js';
+export type {
+  ChatOrchestrator,
+  ChatOrchestratorOptions,
+  OrchestratorHooks,
+  ToolBudgetInfo,
+} from './orchestration/chatOrchestrator.js';
 export {PromptBuilder} from './infrastructure/builders/promptBuilder.js';
 export type {PromptBuilderConfig, PromptBuilderOptions} from './infrastructure/builders/promptBuilder.js';
 export {toMessages, createContextConfig} from './orchestration/conversationContext.js';
