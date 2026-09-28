@@ -3,7 +3,14 @@
 // #region full-config
 import process from 'node:process';
 import {createHalEngine, InMemorySessionStore, ToolRegistry, log} from '../src/index.js';
-import type {AuthenticatedRequest, HttpAuthMiddleware, Logger, OrchestratorHooks} from '../src/index.js';
+import type {
+  AuthenticatedRequest,
+  HttpAuthMiddleware,
+  Logger,
+  OrchestratorHooks,
+  ToolCall,
+  ToolResponse,
+} from '../src/index.js';
 
 const toolRegistry = new ToolRegistry();
 
@@ -24,6 +31,11 @@ const hooks: OrchestratorHooks = {
   afterModelResponse: async (_session, _responseText, usage) => log.info('app', 'answered', {usage}),
   afterSession: async session => log.info('app', 'session closed', {sessionId: session.sessionId}),
   onError: async (_session, error) => log.error('app', 'orchestration failed', {error: error.message}),
+  // A human-oversight policy: a returned ToolResponse declines the call, and the model reads its result instead.
+  beforeToolCall: async (_session, call: ToolCall): Promise<ToolResponse | undefined> =>
+    call.name === 'send_notification'
+      ? {result: 'Not performed. A human reviewer has been asked to do it.'}
+      : undefined,
 };
 
 // A Logger of your own; this one writes plain lines to stderr. Passing `log` itself here is treated as passing none.

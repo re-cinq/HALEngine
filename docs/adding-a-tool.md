@@ -165,6 +165,7 @@ Once a tool is registered, the following work without any additional code:
 - `chatOrchestrator.ts` calls `toolRegistry.getDefinitions()` to pass all tools to the AI provider
 - When the provider returns a `tool_use` chunk, the message handler creates a `ToolEntry` and sends it via `entry_upsert`
 - The orchestrator executes all pending tool calls in parallel with `Promise.all()`
+- Before each executor runs, a consumer's `beforeToolCall` hook may decline the call: its returned `ToolResponse` takes the executor's place, the model reads its `result` as that call's `tool_result`, and a hook that throws declines the call rather than failing the turn. This is the seam for a human-oversight control; the wording of a declined result is yours
 - Tool results are added to the conversation, and the provider is re-queried (up to `maxToolRounds` rounds)
 
 **On the client:**

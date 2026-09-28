@@ -102,7 +102,14 @@ Here is every option available on `HalEngineConfig`:
 ```typescript
 import process from 'node:process';
 import {createHalEngine, InMemorySessionStore, ToolRegistry, log} from '@re-cinq/hal-engine';
-import type {AuthenticatedRequest, HttpAuthMiddleware, Logger, OrchestratorHooks} from '@re-cinq/hal-engine';
+import type {
+  AuthenticatedRequest,
+  HttpAuthMiddleware,
+  Logger,
+  OrchestratorHooks,
+  ToolCall,
+  ToolResponse,
+} from '@re-cinq/hal-engine';
 
 const toolRegistry = new ToolRegistry();
 
@@ -123,6 +130,11 @@ const hooks: OrchestratorHooks = {
   afterModelResponse: async (_session, _responseText, usage) => log.info('app', 'answered', {usage}),
   afterSession: async session => log.info('app', 'session closed', {sessionId: session.sessionId}),
   onError: async (_session, error) => log.error('app', 'orchestration failed', {error: error.message}),
+  // A human-oversight policy: a returned ToolResponse declines the call, and the model reads its result instead.
+  beforeToolCall: async (_session, call: ToolCall): Promise<ToolResponse | undefined> =>
+    call.name === 'send_notification'
+      ? {result: 'Not performed. A human reviewer has been asked to do it.'}
+      : undefined,
 };
 
 // A Logger of your own; this one writes plain lines to stderr. Passing `log` itself here is treated as passing none.
@@ -197,14 +209,14 @@ const engine = createHalEngine({
 
 ### Message lifecycle hooks
 
-`orchestrator.hooks` takes an `OrchestratorHooks`: `beforeSession`, `beforeUserInput`, `afterUserInput`, `beforeModelResponse`, `afterModelResponse`, `afterSession` and `onError`. Every one is optional.
+`orchestrator.hooks` takes an `OrchestratorHooks`: `beforeSession`, `beforeUserInput`, `afterUserInput`, `beforeModelResponse`, `afterModelResponse`, `afterSession`, `onError` and `beforeToolCall`. Every one is optional.
 
-Two of them use their return value — `beforeUserInput` rewrites the user message, and `beforeModelResponse` replaces the system prompt. `afterSession` always fires, including on error.
+Three of them use their return value — `beforeUserInput` rewrites the user message, `beforeModelResponse` replaces the system prompt, and `beforeToolCall` can decline a tool call by returning the `ToolResponse` the model reads instead (see [adding a tool](adding-a-tool.md#what-happens-automatically)). `afterSession` always fires, including on error.
 
 They fire in this order:
 
 ```
-beforeSession → beforeUserInput → afterUserInput → beforeModelResponse → ...streaming... → afterModelResponse → afterSession
+beforeSession → beforeUserInput → afterUserInput → beforeModelResponse → ...streaming (beforeToolCall × each tool call, each round)... → afterModelResponse → afterSession
 ```
 
 ## Connecting a Client
