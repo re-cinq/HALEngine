@@ -435,6 +435,7 @@ entry_upsert  -->  entry_delta (0..N)  -->  entry_commit
 1. The server sends `entry_upsert` with `isStreaming: true` and an empty `content`.
 2. The server sends zero or more `entry_delta` messages. The client MUST concatenate each `delta` to the entry's `content`.
 3. The server sends `entry_commit`. The client MUST set `isStreaming` to `false`, matching the committed entry the server keeps in the session. No further deltas will arrive for this entry ([validated by: leaves the committed assistant entry in the session, no longer streaming](../../src/transport/ws/messageHandler.test.ts#L106)).
+4. Every entry the server opens is committed by the time the turn ends, on every terminal path: a `stop`, a round that ends without one, and a provider that throws mid-stream. The partial content is committed exactly as streamed, and on a throw the `entry_commit` frames arrive before the `error` frame ([validated by: commits a partial answer as streamed, before the error, when the provider throws](../../src/transport/ws/messageHandler.test.ts#L342), [validated by: commits the answer when a round ends on a tool call with no stop chunk](../../src/transport/ws/messageHandler.test.ts#L376)).
 
 ### 7.2 Non-Streaming Entries (user, tool)
 
@@ -536,7 +537,7 @@ The second `entry_upsert` at index 1 is the retraction: same index, empty conten
 
 ### 8.4 Example: Error During Streaming
 
-A provider fails after the answer has started. The client receives the `error` frame, then `stream_end` as the last frame of the run, and clears its processing state on `stream_end`, not on `error`.
+A provider fails after the answer has started. The partial answer is committed as streamed, then the client receives the `error` frame, then `stream_end` as the last frame of the run, and clears its processing state on `stream_end`, not on `error`.
 
 ```json
 --> {"type": "user_message", "content": "Where is my booking?"}
@@ -544,6 +545,7 @@ A provider fails after the answer has started. The client receives the `error` f
 <-- {"type": "entry_upsert", "index": 0, "entry": {"role": "user", ...}}
 <-- {"type": "entry_upsert", "index": 1, "entry": {"role": "assistant", "content": "", "isStreaming": true, ...}}
 <-- {"type": "entry_delta",  "index": 1, "delta": "Your booking is "}
+<-- {"type": "entry_commit", "index": 1}
 <-- {"type": "error",        "code": "SERVER_ERROR", "message": "Failed to process message"}
 <-- {"type": "stream_end"}
 ```

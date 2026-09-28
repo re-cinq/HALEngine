@@ -265,6 +265,7 @@ describe('the websocket message handler', () => {
         'upsert 0 user "hello"',
         'upsert 1 assistant ""',
         'delta 1 "Half an ans"',
+        'commit 1',
         'error SERVER_ERROR',
         'stream_end',
       ]);
@@ -329,6 +330,77 @@ describe('the websocket message handler', () => {
       expect({ends: frames.filter(frame => frame === 'stream_end').length, last: frames.at(-1)}).toEqual({
         ends: 1,
         last: 'stream_end',
+      });
+    });
+  });
+
+  describe('open entries on every terminal path', () => {
+    const stillStreaming = ({entries}: ChatSession): number =>
+      entries.filter(entry => 'isStreaming' in entry && entry.isStreaming).length;
+    const DROPPED = new Error('provider dropped');
+
+    it('commits a partial answer as streamed, before the error, when the provider throws', async () => {
+      const h = harness([text('partial answer')], {failWith: DROPPED});
+
+      await h.send();
+
+      const [, answer] = h.session.entries;
+      expect({frames: h.frames(), open: stillStreaming(h.session), answer}).toMatchObject({
+        frames: [
+          'upsert 0 user "hello"',
+          'upsert 1 assistant ""',
+          'delta 1 "partial answer"',
+          'commit 1',
+          'error SERVER_ERROR',
+          'stream_end',
+        ],
+        open: 0,
+        answer: {role: 'assistant', content: 'partial answer', isStreaming: false},
+      });
+    });
+
+    it('commits an open thinking entry too when the provider throws mid-thought', async () => {
+      const h = harness([text('<thinking>half a thou')], {failWith: DROPPED});
+
+      await h.send();
+
+      expect({
+        commits: h.frames().filter(frame => frame.startsWith('commit')),
+        open: stillStreaming(h.session),
+      }).toEqual({
+        commits: ['commit 1'],
+        open: 0,
+      });
+    });
+
+    it('commits the answer when a round ends on a tool call with no stop chunk', async () => {
+      const lookup: MessageChunk = {type: 'tool_use', toolCall: {id: 'c1', name: 'lookup', input: {}}};
+      const h = harness([text('Let me check'), lookup]);
+
+      await h.send();
+
+      expect({last: h.frames().slice(-2), open: stillStreaming(h.session)}).toEqual({
+        last: ['commit 1', 'stream_end'],
+        open: 0,
+      });
+    });
+
+    it('sends one commit per opened entry when the turn ends on a stop chunk', async () => {
+      const h = harness([text('<thinking>pondering</thinking>answer'), STOP]);
+
+      await h.send();
+
+      expect(h.frames().filter(frame => frame.startsWith('commit'))).toEqual(['commit 1', 'commit 2']);
+    });
+
+    it('records the open entries under suppression without sending a commit when the provider throws', async () => {
+      const h = harness([SUPPRESS, text('hidden')], {failWith: DROPPED});
+
+      await h.send();
+
+      expect({frames: h.frames(), open: stillStreaming(h.session)}).toEqual({
+        frames: ['upsert 0 user "hello"', 'skip 1', 'error SERVER_ERROR', 'stream_end'],
+        open: 0,
       });
     });
   });
