@@ -107,9 +107,14 @@ async function handleUserMessage(
 
   let textChunkCount = 0;
 
-  for await (const chunk of orchestrator.processMessageStream(session)) {
-    textChunkCount = logChunk(chunk, textChunkCount);
-    processChunk(ws, session, state, parser, chunk);
+  try {
+    for await (const chunk of orchestrator.processMessageStream(session)) {
+      textChunkCount = logChunk(chunk, textChunkCount);
+      processChunk(ws, session, state, parser, chunk);
+    }
+  } finally {
+    // A throw and a stopless end close what the run opened, as a stop does; after a stop both keys are null already.
+    commitOpenEntries(ws, session, state);
   }
 
   if (textChunkCount > 0) {
