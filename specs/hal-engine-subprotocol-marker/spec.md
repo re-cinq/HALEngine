@@ -21,6 +21,7 @@ A browser WebSocket cannot set an `Authorization` header, so a client carries it
 - A client offering the marker and two other values gets the first of them, matching the behaviour before the marker ([validated by: reads the first non-marker value when two are offered beside the marker](../../src/transport/ws/subprotocol.test.ts#L59)).
 - An offer of only the marker carries no credential, and neither does an upgrade with no subprotocol header ([validated by: reads nothing when only the marker is offered](../../src/transport/ws/subprotocol.test.ts#L67), [validated by: reads nothing when no subprotocol header was sent](../../src/transport/ws/subprotocol.test.ts#L71)).
 - A client offering only the marker still connects, and its credential is read from the `Authorization` header when it sends one ([validated by: connects a client offering only the marker, reading its credential from the Authorization header](../../src/transport/handshake.test.ts#L104)).
+- `credentialFromSubprotocol` is exported from the package root beside the marker, so a consumer's `WsAuthenticator` reads the credential the way the engine does rather than taking the first offered value, which is now the marker; the getting-started, README and `example/` authenticators use it ([validated by: exports the hal.v1 marker with the reader a WsAuthenticator uses](../../src/index.test.ts#L5)).
 
 ## Deprecation window
 
