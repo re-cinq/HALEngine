@@ -309,11 +309,11 @@ flowchart TD
     B --> C{stopReason?}
     C -->|end_turn| D[Done]
     C -->|tool_use| E[Collect tool calls]
-    E --> F[Execute tools in parallel via Promise.all]
+    E --> H{rounds executed < maxToolRounds?}
+    H -->|yes| F[Execute tools in parallel via Promise.all]
+    H -->|no: budget exhausted| X[Log tool budget exhausted and end the turn]
     F --> G[Add tool results to messages]
-    G --> H{round <= maxToolRounds?}
-    H -->|yes| A
-    H -->|no| D
+    G --> A
 ```
 
 Here is what the message handler does when a tool call comes through:
@@ -325,7 +325,7 @@ Here is what the message handler does when a tool call comes through:
 5. If the tool returned `clientMessages`, they are forwarded to the frontend as-is, in one `tool_result` chunk ([validated by: forwards the client messages a tool returned as one tool_result chunk](../../src/orchestration/chatOrchestrator.test.ts#L436))
 6. If the tool set `suppressAssistantResponse`, the AI's next reply is kept in session context but hidden from the frontend ([validated by: asks for suppression when the tool says the reply is already handled](../../src/orchestration/chatOrchestrator.test.ts#L466))
 7. The orchestrator re-queries the AI provider with the updated messages, and the chunks of every round reach the client in order ([validated by: runs another round after a tool call and streams both rounds in order](../../src/orchestration/chatOrchestrator.test.ts#L401))
-8. This repeats while `round <= maxToolRounds`, counted from zero, so the default of 5 permits six model calls in total ([validated by: stops asking for tools once maxToolRounds is spent](../../src/orchestration/chatOrchestrator.test.ts#L422))
+8. This repeats until the budget is spent: at most `maxToolRounds` tool rounds are executed, and the provider is called at most `maxToolRounds + 1` times, so the default of 5 executes five rounds and makes six model calls, the last of which reads the fifth round's results. A round requested after that is not executed; see [the tool budget spec](../hal-engine-tool-budget/spec.md) ([validated by: executes 5 tool rounds and makes 6 provider calls at the default budget](../../src/orchestration/toolBudget.test.ts#L75), [validated by: stops asking for tools once maxToolRounds is spent](../../src/orchestration/chatOrchestrator.test.ts#L422))
 
 ### Whether a round continues
 

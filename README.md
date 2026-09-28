@@ -137,7 +137,7 @@ interface HalEngineConfig {
     http?: HttpAuthMiddleware; // Express auth middleware
   };
   orchestrator?: {
-    maxToolRounds?: number; // Max tool loop iterations (default: 5)
+    maxToolRounds?: number; // Max tool rounds executed (default: 5); at most maxToolRounds + 1 provider calls
     contextConfig?: Partial<ContextConfig>;
   };
   onConnect?: (session) => void | Promise<void>; // Fire-and-forget; never awaited
