@@ -6,6 +6,7 @@ export type {HalAppOptions} from './transport/createApp.js';
 export {createServer} from './transport/createServer.js';
 export type {HalServerOptions, HalServer} from './transport/createServer.js';
 export {createChatRoutes} from './transport/routes/chats.js';
+export {HAL_WS_SUBPROTOCOL, credentialFromSubprotocol} from './transport/ws/subprotocol.js';
 
 export {createChatOrchestrator} from './orchestration/chatOrchestrator.js';
 export type {ChatOrchestrator, ChatOrchestratorOptions, OrchestratorHooks} from './orchestration/chatOrchestrator.js';

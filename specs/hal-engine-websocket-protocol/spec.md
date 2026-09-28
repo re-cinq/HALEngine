@@ -48,14 +48,20 @@ The server validates only that the path begins with `{basePath}/ws`; it does not
 
 ### 2.2 Authentication
 
-Authentication is performed during the WebSocket handshake. The client MUST pass the access token as a WebSocket subprotocol in the `Sec-WebSocket-Protocol` header:
+Authentication is performed during the WebSocket handshake. A browser WebSocket cannot set an `Authorization` header, so the client MUST offer two subprotocols in the `Sec-WebSocket-Protocol` header: the reserved marker `hal.v1` (exported as `HAL_WS_SUBPROTOCOL`) and the access token, in either order:
 
 ```text
 GET /hal/ws/abc-123 HTTP/1.1
 Upgrade: websocket
 Connection: Upgrade
-Sec-WebSocket-Protocol: <access-token>
+Sec-WebSocket-Protocol: hal.v1, <access-token>
 ```
+
+The server answers `Sec-WebSocket-Protocol: hal.v1` and never echoes the token. It reads the credential from the request header as the first offered value that is not the marker, and forwards it to the session as `Bearer <access-token>`. A client that can set headers MAY offer only the marker and send `Authorization` instead.
+
+A subprotocol is validated client-side as an HTTP token (RFC 7230 `tchar`), so a value carried this way can contain only letters, digits and ``!#$%&'*+-.^_`|~``: a JWT fits, but a padded base64 token (`=`, `/`) cannot use this carrier at all.
+
+A client that offers a bare token without the marker, the shape `0.2.x` documented, is deprecated: for one MINOR the server still echoes its offer and logs a warning that never includes the offered value. The MINOR after that answers such an offer with no `Sec-WebSocket-Protocol` header, which `ws` and Chromium both fail, so every client must offer `hal.v1` before then (see [the subprotocol marker spec](../hal-engine-subprotocol-marker/spec.md)).
 
 The server MUST validate the token via the configured `WsAuthenticator` before completing the upgrade. If authentication fails, the server MUST reject the connection with HTTP 401.
 
@@ -600,7 +606,9 @@ After 5 failed attempts, the client MUST stop reconnecting and report a disconne
 
 ## 12. Security Considerations
 
-- Access tokens are transmitted via the `Sec-WebSocket-Protocol` header during the handshake, avoiding exposure in URL query strings or server logs.
+- Access tokens are transmitted in the `Sec-WebSocket-Protocol` request header, which keeps them out of the request line and so out of a URL-based access log. They are not hidden from logging in general: an ingress or proxy that captures request headers records them, as it records an `Authorization` header, so header capture must redact `Sec-WebSocket-Protocol` too.
+- The server answers with the `hal.v1` marker, so the token is never written into the 101 response headers or held as the connected socket's `protocol` property; only a deprecated bare-token client still has its offer echoed, for one MINOR.
+- No offered subprotocol value is written to the engine's own log at any level. Every place a credential exists during a connection - request headers, the socket's and the session's `authHeaders`, and the tool context - is listed in [the subprotocol marker spec](../hal-engine-subprotocol-marker/spec.md#where-a-credential-exists).
 - Message content is validated at the server boundary. Content exceeding 10,000 characters is rejected.
 - The server validates all incoming messages against known types. Unrecognized types receive an `INVALID_MESSAGE` error.
 

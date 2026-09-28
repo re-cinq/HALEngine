@@ -14,14 +14,14 @@ The simplest possible setup requires two things: an AI provider configuration an
 
 <!-- doc-block: example/minimal.ts#minimal -->
 ```typescript
-import {createHalEngine} from '@re-cinq/hal-engine';
+import {createHalEngine, credentialFromSubprotocol} from '@re-cinq/hal-engine';
 
 const engine = createHalEngine({
   provider: {type: 'mock'},
   prompt: {identity: 'You are a helpful assistant.'},
   auth: {
     ws: async req => {
-      const token = req.headers.authorization;
+      const token = req.headers.authorization ?? credentialFromSubprotocol(req.headers['sec-websocket-protocol']);
       if (!token) return null;
       return {id: 'user-1'};
     },
@@ -32,7 +32,7 @@ const engine = createHalEngine({
 await engine.start();
 ```
 
-`ws` receives the WebSocket upgrade request, not a token, so pull whatever you authenticate with off `req.headers` yourself. Return an `AuthenticatedUser` — `id` is the only required field, and anything else you put on it reaches tools through `ToolContext`. Returning `null` rejects the upgrade with `401`.
+`ws` receives the WebSocket upgrade request, not a token, so pull whatever you authenticate with off `req.headers` yourself. A browser cannot set `Authorization` on a WebSocket, so it offers its token beside `hal.v1` in `Sec-WebSocket-Protocol`; `credentialFromSubprotocol` reads it the way the engine does, skipping the marker. Return an `AuthenticatedUser` — `id` is the only required field, and anything else you put on it reaches tools through `ToolContext`. Returning `null` rejects the upgrade with `401`.
 
 This starts a server with:
 
@@ -51,7 +51,7 @@ Tools let the AI fetch data or perform actions. Register them on the engine's `t
 
 <!-- doc-block: example/with-tools.ts#with-tools -->
 ```typescript
-import {createHalEngine, ToolRegistry} from '@re-cinq/hal-engine';
+import {createHalEngine, credentialFromSubprotocol, ToolRegistry} from '@re-cinq/hal-engine';
 import type {ToolDefinition} from '@re-cinq/hal-engine';
 
 const weatherTool: ToolDefinition = {
@@ -89,7 +89,7 @@ const engine = createHalEngine({
   },
   tools: toolRegistry,
   auth: {
-    ws: async req => verifyToken(req.headers.authorization),
+    ws: async req => verifyToken(req.headers.authorization ?? credentialFromSubprotocol(req.headers['sec-websocket-protocol'])),
   },
 });
 ```
@@ -215,8 +215,10 @@ The demo chat routes are not part of this flow. A `POST /chats` id is not a WebS
 
 <!-- doc-block: none -- illustrates assembling the parts by hand, which no single declaration or example region carries -->
 ```typescript
-// 1. Connect. The server mints the session id and sends it back in the `connected` frame.
-const ws = new WebSocket('ws://localhost:8086/api/ws', [token]);
+// 1. Connect. Offer the `hal.v1` marker (exported as HAL_WS_SUBPROTOCOL) beside the token; the server answers
+// the marker, so the token never appears in the response. The server mints the session id and sends it back
+// in the `connected` frame.
+const ws = new WebSocket('ws://localhost:8086/api/ws', ['hal.v1', token]);
 
 ws.onmessage = event => {
   const message = JSON.parse(event.data);
