@@ -270,20 +270,24 @@ describe('the websocket message handler', () => {
       ]);
     });
 
-    it.each([
-      {name: 'empty', content: ''},
-      {name: 'blank', content: '   '},
-      {name: 'over-length', content: 'x'.repeat(10_001)},
-    ])('answers an $name user_message with INVALID_MESSAGE then stream_end', async ({content}) => {
+    const invalidRun = async (content: string) => {
       const h = harness([]);
-
       await h.send({type: 'user_message', content});
-
       const {calls} = h.processMessageStream.mock;
-      expect({frames: h.frames(), streams: calls.length}).toEqual({
-        frames: ['error INVALID_MESSAGE', 'stream_end'],
-        streams: 0,
-      });
+      return {frames: h.frames(), streams: calls.length};
+    };
+    const REFUSED = {frames: ['error INVALID_MESSAGE', 'stream_end'], streams: 0};
+
+    it('answers an empty user_message with INVALID_MESSAGE then stream_end', async () => {
+      expect(await invalidRun('')).toEqual(REFUSED);
+    });
+
+    it('answers a blank user_message with INVALID_MESSAGE then stream_end', async () => {
+      expect(await invalidRun('   ')).toEqual(REFUSED);
+    });
+
+    it('answers an over-length user_message with INVALID_MESSAGE then stream_end', async () => {
+      expect(await invalidRun('x'.repeat(10_001))).toEqual(REFUSED);
     });
 
     it('answers a malformed ping with INVALID_MESSAGE and no stream_end', async () => {
