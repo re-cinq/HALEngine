@@ -8,7 +8,15 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
-## [0.3.0] - 2026-09-17
+## [0.3.0] - 2026-09-29
+
+**Upgrading from 0.2.x.** Nothing is removed and no existing signature changes, but check these before you bump:
+
+- `OrchestratorHooks` gains two optional members, `beforeToolCall` and `onToolBudgetExhausted`. Code that checks the hooks exhaustively, for example `satisfies Record<keyof OrchestratorHooks, …>`, fails to type-check until it names both.
+- `ToolRegistry.execute` now validates tool input against each tool's `inputSchema`, so a tool that produced its own message for malformed input receives only valid input; the model reads the registry's validation message instead.
+- `maxToolRounds` now counts executed rounds: the default of 5 runs 5 tool rounds, not 6. Raise it by one to keep the old count.
+- Offering a bare access token as the only WebSocket subprotocol still works but is deprecated: offer `hal.v1` beside it now, because the next minor release stops accepting a bare token.
+- New dependencies: `ajv`, and `cookie` moves from `^0.7` to `^2`.
 
 ### Added
 
@@ -223,6 +231,7 @@ path from `0.1.0` on the registry — only from the git specifier.
 - Resolved a high-severity advisory in `ws`, a direct runtime dependency. The full dependency audit went
   from 18 advisories (1 critical, 6 high) to 3 (2 moderate, 1 low), none at high or above.
 
-[Unreleased]: https://github.com/re-cinq/HALEngine/compare/v0.2.1...main
+[Unreleased]: https://github.com/re-cinq/HALEngine/compare/v0.3.0...main
+[0.3.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.3.0
 [0.2.1]: https://github.com/re-cinq/HALEngine/releases/tag/v0.2.1
 [0.2.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.2.0
