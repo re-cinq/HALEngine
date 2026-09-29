@@ -9,8 +9,8 @@
 
 ## When it fires
 
-- `save` fires exactly once for one processed user message ([validated by: saves once for one processed user message](../../src/orchestration/sessionSave.test.ts#L44)).
-- It is called from the orchestrator's `finally` path, the same one that runs `afterSession`, rather than from the success path, because a turn that ended in a provider error still produced a user entry worth keeping and a store that only heard about successes would silently lose exactly the conversations a customer complains about: a provider that rejects still produces one `save`, and the rejection still reaches the caller ([validated by: saves once and still rethrows when the provider fails](../../src/orchestration/sessionSave.test.ts#L52)).
+- `save` fires exactly once for one processed user message ([validated by: saves once for one processed user message](../../src/orchestration/sessionSave.test.ts#L31)).
+- It is called from the orchestrator's `finally` path, the same one that runs `afterSession`, rather than from the success path, because a turn that ended in a provider error still produced a user entry worth keeping and a store that only heard about successes would silently lose exactly the conversations a customer complains about: a provider that rejects still produces one `save`, and the rejection still reaches the caller ([validated by: saves once and still rethrows when the provider fails](../../src/orchestration/sessionSave.test.ts#L39)).
 - The store reaches the orchestrator through `ChatOrchestratorOptions.sessionStore`, which `createHalEngine` forwards from `HalEngineConfig.session` — the same store the transport already received ([validated by: forwards the session store, so its write signal reaches the orchestrator](../../src/config.test.ts#L204)).
 
 ## What it carries
@@ -29,9 +29,9 @@
 
 ## Compatibility
 
-- `save` is optional: a store that omits it behaves exactly as it did before the member existed, and logs nothing ([validated by: logs nothing for a store that implements no save](../../src/orchestration/sessionSave.test.ts#L80)).
+- `save` is optional: a store that omits it behaves exactly as it did before the member existed, and logs nothing ([validated by: logs nothing for a store that implements no save](../../src/orchestration/sessionSave.test.ts#L67)).
 - `InMemorySessionStore` is deliberately not edited, and the member is typed `void | Promise<void>` rather than `Promise<void>`, so its absence of `save` is the compatibility case while a synchronous implementation and an `async` one both satisfy the interface, owing nothing to the queued `Awaitable` change ([validated by: accepts a synchronous save, an async save, and the shipped store that has none](../../src/infrastructure/stores/sessionStoreSaveSignature.test.ts#L11)).
-- No exported name or signature changes and no existing behaviour changes, so the bump is MINOR ([validated by: logs nothing for a store that implements no save](../../src/orchestration/sessionSave.test.ts#L80)).
+- No exported name or signature changes and no existing behaviour changes, so the bump is MINOR ([validated by: logs nothing for a store that implements no save](../../src/orchestration/sessionSave.test.ts#L67)).
 
 ## Out of scope
 

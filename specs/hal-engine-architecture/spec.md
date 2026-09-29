@@ -80,11 +80,11 @@ Controls where session data is stored: the default `InMemorySessionStore` keeps 
 <!-- doc-block: src/types/sessionStore.ts#SessionStore -->
 ```typescript
 interface SessionStore<T extends BaseSession = ChatSession> {
-  create(sessionId: string, userId: string | number, options?: SessionCreateOptions): T;
-  get(sessionId: string): T | undefined;
-  delete(sessionId: string): boolean;
-  count(): number;
-  clear(): void;
+  create(sessionId: string, userId: string | number, options?: SessionCreateOptions): Awaitable<T>;
+  get(sessionId: string): Awaitable<T | undefined>;
+  delete(sessionId: string): Awaitable<boolean>;
+  count(): Awaitable<number>;
+  clear(): Awaitable<void>;
   /** Write signal: fires once per processed user message; failures are swallowed (specs/hal-engine-session-write-signal/spec.md). */
   save?(session: T): void | Promise<void>;
 }
@@ -96,7 +96,7 @@ interface SessionStore<T extends BaseSession = ChatSession> {
 - `delete` reports `false` for an id the store was not holding ([validated by: returns false when deleting nonexistent session](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L42)).
 - `count` reflects creates and deletes as they happen ([validated by: tracks count correctly](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L46)).
 - `clear` empties the store, leaving `count` at zero and every previous id unresolvable ([validated by: clears all sessions](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L60)).
-- `save` is the optional write signal the engine calls once per processed user message, detailed in [the session write signal spec](../hal-engine-session-write-signal/spec.md); a store that omits it, as `InMemorySessionStore` does, is unaffected ([validated by: logs nothing for a store that implements no save](../../src/orchestration/sessionSave.test.ts#L80)).
+- `save` is the optional write signal the engine calls once per processed user message, detailed in [the session write signal spec](../hal-engine-session-write-signal/spec.md); a store that omits it, as `InMemorySessionStore` does, is unaffected ([validated by: logs nothing for a store that implements no save](../../src/orchestration/sessionSave.test.ts#L67)).
 
 ### WsAuthenticator
 
