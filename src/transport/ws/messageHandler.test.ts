@@ -479,6 +479,18 @@ describe('the websocket message handler', () => {
         resent: {content: 'Half <thi', truncated: true},
       });
     });
+
+    it('keeps the held text in a suppressed entry too, flagged, without sending any of it', async () => {
+      const h = harness([SUPPRESS, text('Half <thi')], {failWith: DROPPED});
+
+      await h.send();
+
+      const [, hidden] = h.session.entries;
+      expect({hidden, toClient: h.frames().filter(frame => /^\w+ 1( |$)/.test(frame))}).toMatchObject({
+        hidden: {content: 'Half <thi', truncated: true, isStreaming: false},
+        toClient: ['skip 1'],
+      });
+    });
   });
 
   describe('an exhausted tool budget', () => {

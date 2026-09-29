@@ -24,15 +24,14 @@ A streaming entry is born with `isStreaming: true`, and only a commit flips it t
 ## Marking what was cut short
 
 - Committing a cut-off entry keeps what the customer saw, but on its own a committed entry reads as a finished answer, and the `error` frame that explained it is not stored, so a replay would present half a sentence as a complete reply; the flag carries that fact on the entry itself ([validated by: flags a partial answer truncated in the session and re-sends it with the flag before its commit](../../src/transport/ws/messageHandler.test.ts#L419)).
-
 - An entry still open when the run ends, which after a `stop` is never the case, is marked `truncated: true` before it is committed, so the flag lives on the stored entry that any replay sends ([validated by: flags a partial answer truncated in the session and re-sends it with the flag before its commit](../../src/transport/ws/messageHandler.test.ts#L419)).
 - A live client learns it from an `entry_upsert` of that entry, carrying the flag, sent just before its `entry_commit` ([validated by: flags a partial answer truncated in the session and re-sends it with the flag before its commit](../../src/transport/ws/messageHandler.test.ts#L419)).
 - A thinking entry cut off mid-thought is flagged the same way ([validated by: flags an open thinking entry truncated when the provider throws mid-thought](../../src/transport/ws/messageHandler.test.ts#L438)).
 - A round that ends on a tool call with no `stop` flags its answer too ([validated by: commits the answer, flagged truncated, when a round ends on a tool call with no stop chunk](../../src/transport/ws/messageHandler.test.ts#L380)).
 - An entry committed on a `stop` never carries the field and is sent once ([validated by: leaves an entry committed on a stop chunk without the flag and sends it once](../../src/transport/ws/messageHandler.test.ts#L447)).
 - A suppressed entry is flagged in the session like any other, since the flag describes the entry, but it is never re-sent: it is hidden from the customer, so nothing is shown as cut off ([validated by: flags a suppressed entry that a throw cut short in the session but never re-sends it](../../src/transport/ws/messageHandler.test.ts#L459)).
-
 - Text the thinking-tag parser still held back, a tail that might have opened a tag, is flushed into the entry before it is flagged, so a cut-off answer keeps everything the model produced, as a `stop` already did ([validated by: keeps the text the thinking-tag parser still held when a throw cuts the answer short](../../src/transport/ws/messageHandler.test.ts#L471)).
+- The same holds for a suppressed entry: the flushed tail is stored and the entry flagged, and none of it reaches the customer, who only ever saw `entry_skip` for it ([validated by: keeps the held text in a suppressed entry too, flagged, without sending any of it](../../src/transport/ws/messageHandler.test.ts#L483)).
 
 ## Out of scope
 
