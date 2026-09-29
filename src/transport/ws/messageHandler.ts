@@ -14,7 +14,7 @@ import {
   createThinkingEntry,
   createToolEntry,
 } from '../../orchestration/entryFactories.js';
-import {appendEntry, appendDelta, commitEntry} from '../../orchestration/entryMutations.js';
+import {appendEntry, appendDelta, commitEntry, markTruncated} from '../../orchestration/entryMutations.js';
 import {sendJson, sendUpsert, sendDelta, sendCommit, sendSkip, sendError, sendStreamEnd} from './sender.js';
 import {log} from '../../shared/logger.js';
 
@@ -113,8 +113,10 @@ async function handleUserMessage(
       processChunk(ws, session, state, parser, chunk);
     }
   } finally {
-    // A throw and a stopless end close what the run opened, as a stop does; after a stop both keys are null already.
-    commitOpenEntries(ws, session, state);
+    // Anything still open here was cut short: a stop has already flushed the parser and committed every entry it opened.
+    flushHeldText(ws, session, state, parser);
+    closeCutOff(ws, session, state, 'thinkingIndex');
+    closeCutOff(ws, session, state, 'assistantIndex');
   }
 
   if (textChunkCount > 0) {
@@ -247,11 +249,24 @@ function processSuppressChunk(ws: WebSocket, session: ChatSession, state: Stream
 }
 
 function processStopChunk(ws: WebSocket, session: ChatSession, state: StreamState, parser: ThinkingTagParser): void {
-  const remaining = parser.flush();
-  for (const segment of remaining) {
+  flushHeldText(ws, session, state, parser);
+  commitOpenEntries(ws, session, state);
+}
+
+// The parser holds back a tail that might open a tag; without this the tail of a cut-off answer would be lost.
+function flushHeldText(ws: WebSocket, session: ChatSession, state: StreamState, parser: ThinkingTagParser): void {
+  for (const segment of parser.flush()) {
     handleTextSegment(ws, session, state, segment);
   }
-  commitOpenEntries(ws, session, state);
+}
+
+// The flag lives on the stored entry even when suppressed; only a visible entry is re-sent, which is how a live client learns it.
+function closeCutOff(ws: WebSocket, session: ChatSession, state: StreamState, key: StateIndexKey): void {
+  const index = state[key];
+  if (index === null) return;
+  markTruncated(session, index);
+  if (!state.suppressOutput) sendUpsert(ws, index, session.entries[index]);
+  commitAndClear(ws, session, state, key);
 }
 
 function commitOpenEntries(ws: WebSocket, session: ChatSession, state: StreamState): void {

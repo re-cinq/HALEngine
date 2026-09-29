@@ -14,6 +14,13 @@ export function appendDelta(session: ChatSession, index: number, delta: string):
   }
 }
 
+export function markTruncated(session: ChatSession, index: number): void {
+  const entry = session.entries[index];
+  if (entry.role === 'assistant' || entry.role === 'thinking') {
+    entry.truncated = true;
+  }
+}
+
 export function commitEntry(session: ChatSession, index: number): void {
   const entry = session.entries[index];
   if (entry.role === 'assistant' || entry.role === 'thinking') {
