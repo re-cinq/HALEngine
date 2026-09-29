@@ -63,6 +63,7 @@ const harness = (chunks: MessageChunk[], {failWith, pauseAfter}: StreamScript = 
   return {
     session,
     processMessageStream,
+    sent,
     frames: () => wire(sent),
     send: (raw: unknown = {type: 'user_message', content: 'hello'}) => handle(ws, session, raw),
   };
@@ -266,6 +267,7 @@ describe('the websocket message handler', () => {
         'upsert 0 user "hello"',
         'upsert 1 assistant ""',
         'delta 1 "Half an ans"',
+        'upsert 1 assistant "Half an ans"',
         'commit 1',
         'error SERVER_ERROR',
         'stream_end',
@@ -351,6 +353,7 @@ describe('the websocket message handler', () => {
           'upsert 0 user "hello"',
           'upsert 1 assistant ""',
           'delta 1 "partial answer"',
+          'upsert 1 assistant "partial answer"',
           'commit 1',
           'error SERVER_ERROR',
           'stream_end',
@@ -374,15 +377,17 @@ describe('the websocket message handler', () => {
       });
     });
 
-    it('commits the answer when a round ends on a tool call with no stop chunk', async () => {
+    it('commits the answer, flagged truncated, when a round ends on a tool call with no stop chunk', async () => {
       const lookup: MessageChunk = {type: 'tool_use', toolCall: {id: 'c1', name: 'lookup', input: {}}};
       const h = harness([text('Let me check'), lookup]);
 
       await h.send();
 
-      expect({last: h.frames().slice(-2), open: stillStreaming(h.session)}).toEqual({
+      const [, answer] = h.session.entries;
+      expect({last: h.frames().slice(-2), open: stillStreaming(h.session), answer}).toMatchObject({
         last: ['commit 1', 'stream_end'],
         open: 0,
+        answer: {role: 'assistant', content: 'Let me check', truncated: true},
       });
     });
 
@@ -402,6 +407,64 @@ describe('the websocket message handler', () => {
       expect({frames: h.frames(), open: stillStreaming(h.session)}).toEqual({
         frames: ['upsert 0 user "hello"', 'skip 1', 'error SERVER_ERROR', 'stream_end'],
         open: 0,
+      });
+    });
+  });
+
+  describe('an entry cut short', () => {
+    const DROPPED = new Error('provider dropped');
+    const upsertsOf = (sent: OutgoingMessage[], index: number) =>
+      sent.flatMap(frame => (frame.type === 'entry_upsert' && frame.index === index ? [frame.entry] : []));
+
+    it('flags a partial answer truncated in the session and re-sends it with the flag before its commit', async () => {
+      const h = harness([text('partial answer')], {failWith: DROPPED});
+
+      await h.send();
+
+      const [, stored] = h.session.entries;
+      const resent = upsertsOf(h.sent, 1).at(-1);
+      const frames = h.frames();
+      expect({
+        stored,
+        resent,
+        resentBeforeCommit: frames.lastIndexOf('upsert 1 assistant "partial answer"') < frames.indexOf('commit 1'),
+      }).toMatchObject({
+        stored: {role: 'assistant', content: 'partial answer', isStreaming: false, truncated: true},
+        resent: {role: 'assistant', content: 'partial answer', truncated: true},
+        resentBeforeCommit: true,
+      });
+    });
+
+    it('flags an open thinking entry truncated when the provider throws mid-thought', async () => {
+      const h = harness([text('<thinking>half a thou')], {failWith: DROPPED});
+
+      await h.send();
+
+      const [, thought] = h.session.entries;
+      expect(thought).toMatchObject({role: 'thinking', isStreaming: false, truncated: true});
+    });
+
+    it('leaves an entry committed on a stop chunk without the flag and sends it once', async () => {
+      const h = harness([text('All done.'), STOP]);
+
+      await h.send();
+
+      const [, answer] = h.session.entries;
+      expect({flagged: 'truncated' in answer, upserts: upsertsOf(h.sent, 1).length}).toEqual({
+        flagged: false,
+        upserts: 1,
+      });
+    });
+
+    it('neither flags nor re-sends a suppressed entry that a throw cut short', async () => {
+      const h = harness([SUPPRESS, text('hidden')], {failWith: DROPPED});
+
+      await h.send();
+
+      const [, hidden] = h.session.entries;
+      expect({flagged: 'truncated' in hidden, upserts: upsertsOf(h.sent, 1).length}).toEqual({
+        flagged: false,
+        upserts: 0,
       });
     });
   });

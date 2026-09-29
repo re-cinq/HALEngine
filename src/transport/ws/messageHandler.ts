@@ -14,7 +14,7 @@ import {
   createThinkingEntry,
   createToolEntry,
 } from '../../orchestration/entryFactories.js';
-import {appendEntry, appendDelta, commitEntry} from '../../orchestration/entryMutations.js';
+import {appendEntry, appendDelta, commitEntry, markTruncated} from '../../orchestration/entryMutations.js';
 import {sendJson, sendUpsert, sendDelta, sendCommit, sendSkip, sendError, sendStreamEnd} from './sender.js';
 import {log} from '../../shared/logger.js';
 
@@ -113,8 +113,9 @@ async function handleUserMessage(
       processChunk(ws, session, state, parser, chunk);
     }
   } finally {
-    // A throw and a stopless end close what the run opened, as a stop does; after a stop both keys are null already.
-    commitOpenEntries(ws, session, state);
+    // Anything still open here was cut short: a stop has already committed every entry it opened.
+    closeCutOff(ws, session, state, 'thinkingIndex');
+    closeCutOff(ws, session, state, 'assistantIndex');
   }
 
   if (textChunkCount > 0) {
@@ -252,6 +253,17 @@ function processStopChunk(ws: WebSocket, session: ChatSession, state: StreamStat
     handleTextSegment(ws, session, state, segment);
   }
   commitOpenEntries(ws, session, state);
+}
+
+// The re-sent upsert is how a live client learns the flag; a replay would carry it on the stored entry the same way.
+function closeCutOff(ws: WebSocket, session: ChatSession, state: StreamState, key: StateIndexKey): void {
+  const index = state[key];
+  if (index === null) return;
+  if (!state.suppressOutput) {
+    markTruncated(session, index);
+    sendUpsert(ws, index, session.entries[index]);
+  }
+  commitAndClear(ws, session, state, key);
 }
 
 function commitOpenEntries(ws: WebSocket, session: ChatSession, state: StreamState): void {
