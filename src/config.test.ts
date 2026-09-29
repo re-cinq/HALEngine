@@ -5,6 +5,7 @@ import {log, setLogger} from './shared/logger.js';
 import type {Logger} from './shared/logger.js';
 import type {ChatSession} from './types/session.js';
 import type {WsAuthenticator} from './types/auth.js';
+import {recordingSessionStore} from './infrastructure/writeSignalTestSupport.js';
 
 // Both options below are declared on HalEngineConfig and were dropped at the forwarding site.
 
@@ -195,5 +196,18 @@ describe('createHalEngine transport extension forwarding', () => {
     const response = await request(engine.app).get('/hal/ping');
 
     expect({status: response.status, body: response.body}).toEqual({status: 200, body: {ok: true}});
+  });
+});
+
+// The store was declared on HalEngineConfig and reached the transport, but never the orchestrator.
+describe('createHalEngine session store forwarding', () => {
+  it('forwards the session store, so its write signal reaches the orchestrator', async () => {
+    const saved: string[] = [];
+    const session = recordingSessionStore(written => void saved.push(written.sessionId));
+    const engine = createHalEngine({...base, session});
+
+    await engine.orchestrator.processMessage(session.create('s1', 'u1') as ChatSession);
+
+    expect(saved).toEqual(['s1']);
   });
 });
