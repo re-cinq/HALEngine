@@ -10,7 +10,7 @@ getting it wrong either destroys a customer's history or fails to honour their e
 |---|---|---|
 | `delete(sessionId)` | evicts | **erases** — the consumer's erasure primitive; the engine never calls it |
 | `clear()` | evicts everything | untouched |
-| `evict(sessionId)` | evicts | **erases** — only ever called for a session no client received |
+| `evict(sessionId)` | evicts | **erases** — the engine's own call, for a session no client received |
 | `eraseConversation(sessionId)` | evicts | **erases that document, permanently** |
 | `eraseOlderThan(cutoff)` | evicts | **erases every document created before `cutoff`** |
 | `eraseAll()` | evicts everything | **erases every document** |
@@ -24,10 +24,12 @@ under GDPR Article 17 calls for; `delete` is its synonym.
 unguarded mass erasure reachable by a method name that gives no warning. `eraseAll` is the durable
 wipe, and it says so.
 
-**Read this before wiring `onDisconnect`.** Because `delete` erases here, the one-line migration
-that restores the pre-0.4 close behaviour — `onDisconnect: sessionId => store.delete(sessionId)` —
-destroys the conversation on every socket close when it is pointed at this store. Use `evict` if
-you want the old memory behaviour without the erasure.
+**Read this before wiring `onDisconnect`.** Both `delete` and `evict` erase on this store, so the
+one-line migration that restores the pre-0.4 close behaviour —
+`onDisconnect: sessionId => store.delete(sessionId)` — destroys the conversation on every socket
+close, a blip included. **Point `onDisconnect` at neither.** There is nothing to reclaim by hand:
+the cache is bounded by `maxAgeMs` and drops stale entries on its own, without touching a
+document. A conversation surviving its socket is the feature, not a leak.
 
 ## What is never persisted
 
@@ -53,7 +55,10 @@ default store does not grow without limit, and it defaults to eight hours.
 ## Truth and cache
 
 `MongoSessionStore` keeps an in-process cache because the orchestrator mutates a session in place
-while a turn streams, so `get` has to return a stable object. The collection is the truth: a
+while a turn streams, so `get` has to return a stable object. That cache is bounded by `maxAgeMs`
+(eight hours by default, as in `InMemorySessionStore`): a stale entry is dropped on read and swept
+when another session is cached, and dropping one erases nothing, because the next `get` reloads it
+from the collection. The collection is the truth: a
 session saved by one store instance is readable by another built on the same collection. The cache
 is not coherent across instances until a `save` — two processes serving the same conversation at
 once is not something this store supports.

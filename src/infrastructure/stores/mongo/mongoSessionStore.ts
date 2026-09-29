@@ -5,10 +5,18 @@ import type {MongoSessionDocument} from './mongoSessionDocument.js';
 import {persistedFields, toChatSession} from './mongoSessionDocument.js';
 
 const DEFAULT_COLLECTION_NAME = 'hal_sessions';
+// Eight hours, matching InMemorySessionStore: a bound on the cache in front of the collection, not a retention period.
+const DEFAULT_MAX_AGE_MS = 8 * 60 * 60 * 1000;
+
+interface CachedSession {
+  session: ChatSession;
+  cachedAt: number;
+}
 
 interface SharedOptions {
   collectionName?: string;
   now?: () => Date;
+  maxAgeMs?: number;
 }
 
 export type MongoSessionStoreOptions = SharedOptions &
@@ -19,15 +27,17 @@ export type MongoSessionStoreOptions = SharedOptions &
   );
 
 export class MongoSessionStore implements SessionStore {
-  private readonly cache = new Map<string, ChatSession>();
+  private readonly cache = new Map<string, CachedSession>();
   private readonly options: MongoSessionStoreOptions;
   private readonly now: () => Date;
+  private readonly maxAgeMs: number;
   private opened: Promise<CollectionLike<MongoSessionDocument>> | undefined;
   private owned: MongoClientLike | undefined;
 
   constructor(options: MongoSessionStoreOptions) {
     this.options = options;
     this.now = options.now ?? (() => new Date());
+    this.maxAgeMs = options.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
   }
 
   async create(sessionId: string, userId: string | number, options?: SessionCreateOptions): Promise<ChatSession> {
@@ -47,20 +57,20 @@ export class MongoSessionStore implements SessionStore {
     );
 
     // Cached only once the write landed: a failing database would otherwise fill memory with sessions it never stored.
-    this.cache.set(sessionId, session);
+    this.remember(sessionId, session);
     return session;
   }
 
   async get(sessionId: string): Promise<ChatSession | undefined> {
     const cached = this.cache.get(sessionId);
-    if (cached !== undefined) return cached;
+    if (cached !== undefined && !this.hasAged(cached)) return cached.session;
 
     const collection = await this.collection();
     const document = await collection.findOne({_id: sessionId});
     if (document === null) return undefined;
 
     const session = toChatSession(document);
-    this.cache.set(sessionId, session);
+    this.remember(sessionId, session);
     return session;
   }
 
@@ -125,6 +135,19 @@ export class MongoSessionStore implements SessionStore {
     await this.owned.close();
     this.owned = undefined;
     this.opened = undefined;
+  }
+
+  // Dropping a stale entry erases nothing: the collection is the truth and the next get reloads from it.
+  private remember(sessionId: string, session: ChatSession): void {
+    for (const [cachedId, cached] of this.cache) {
+      if (!this.hasAged(cached)) break;
+      this.cache.delete(cachedId);
+    }
+    this.cache.set(sessionId, {session, cachedAt: this.now().getTime()});
+  }
+
+  private hasAged(cached: CachedSession): boolean {
+    return Number.isFinite(cached.cachedAt) && this.now().getTime() - cached.cachedAt > this.maxAgeMs;
   }
 
   private collection(): Promise<CollectionLike<MongoSessionDocument>> {

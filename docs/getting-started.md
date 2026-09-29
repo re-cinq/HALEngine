@@ -281,8 +281,9 @@ const engine = createHalEngine({/* … */ session});
 ```
 
 Which method erases, and which only evicts, is the thing to get right — see
-[session-stores.md](session-stores.md). In short: `clear` and `evict` touch the cache, while
-`delete`, `eraseConversation`, `eraseOlderThan` and `eraseAll` remove documents.
+[session-stores.md](session-stores.md). In short: only `clear` is cache-only, while `delete`,
+`evict`, `eraseConversation`, `eraseOlderThan` and `eraseAll` all remove documents — so do not
+point `onDisconnect` at any of them.
 
 To write your own, implement `SessionStore`. Every member may be synchronous or return a promise,
 and `save` is the write signal the engine calls once per processed user message:
