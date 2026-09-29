@@ -6,9 +6,15 @@ export type {HalAppOptions} from './transport/createApp.js';
 export {createServer} from './transport/createServer.js';
 export type {HalServerOptions, HalServer} from './transport/createServer.js';
 export {createChatRoutes} from './transport/routes/chats.js';
+export {HAL_WS_SUBPROTOCOL, credentialFromSubprotocol} from './transport/ws/subprotocol.js';
 
-export {createChatOrchestrator} from './orchestration/chatOrchestrator.js';
-export type {ChatOrchestrator, ChatOrchestratorOptions, OrchestratorHooks} from './orchestration/chatOrchestrator.js';
+export {createChatOrchestrator, TOOL_BUDGET_EXHAUSTED} from './orchestration/chatOrchestrator.js';
+export type {
+  ChatOrchestrator,
+  ChatOrchestratorOptions,
+  OrchestratorHooks,
+  ToolBudgetInfo,
+} from './orchestration/chatOrchestrator.js';
 export {PromptBuilder} from './infrastructure/builders/promptBuilder.js';
 export type {PromptBuilderConfig, PromptBuilderOptions} from './infrastructure/builders/promptBuilder.js';
 export {toMessages, createContextConfig} from './orchestration/conversationContext.js';
@@ -37,6 +43,20 @@ export type {
 } from './orchestration/tools/index.js';
 
 export {InMemorySessionStore} from './infrastructure/stores/inMemorySessionStore.js';
+export type {InMemorySessionStoreOptions} from './infrastructure/stores/inMemorySessionStore.js';
+export {
+  MongoSessionStore,
+  createMongoSessionStore,
+  REDACTED_KEYS,
+  stripCredentialKeys,
+} from './infrastructure/stores/mongo/index.js';
+export type {
+  MongoSessionStoreOptions,
+  MongoSessionDocument,
+  CollectionLike,
+  DbLike,
+  MongoClientLike,
+} from './infrastructure/stores/mongo/index.js';
 export {InMemoryPromptStore} from './infrastructure/stores/inMemoryPromptStore.js';
 export {InMemoryUsageStore} from './infrastructure/stores/inMemoryUsageStore.js';
 export {ThinkingTagParser} from './infrastructure/parsers/thinkingTagParser.js';
@@ -89,6 +109,6 @@ export type {
 } from './types/messages.js';
 
 export type {WsAuthenticator, HttpAuthMiddleware, AuthenticatedRequest} from './types/auth.js';
-export type {SessionStore, SessionCreateOptions, BaseSession} from './types/sessionStore.js';
+export type {SessionStore, SessionCreateOptions, BaseSession, Awaitable} from './types/sessionStore.js';
 export type {PromptStore, PromptTemplate} from './types/promptStore.js';
 export type {UsageStore, UsageRecord} from './types/usageStore.js';

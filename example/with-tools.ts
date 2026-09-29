@@ -1,7 +1,7 @@
 // The getting-started tool example, as a file the compiler checks.
 
 // #region with-tools
-import {createHalEngine, ToolRegistry} from '../src/index.js';
+import {createHalEngine, credentialFromSubprotocol, ToolRegistry} from '../src/index.js';
 import type {ToolDefinition} from '../src/index.js';
 
 const weatherTool: ToolDefinition = {
@@ -39,7 +39,7 @@ const engine = createHalEngine({
   },
   tools: toolRegistry,
   auth: {
-    ws: async req => verifyToken(req.headers.authorization),
+    ws: async req => verifyToken(req.headers.authorization ?? credentialFromSubprotocol(req.headers['sec-websocket-protocol'])),
   },
 });
 // #endregion

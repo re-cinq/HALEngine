@@ -30,7 +30,7 @@ That last one has a trap in it. An existing `"hal-engine": "github:…"` entry k
 
 <!-- doc-block: example/server.ts#quick-start -->
 ```typescript
-import {createHalEngine, log, ToolRegistry} from '@re-cinq/hal-engine';
+import {createHalEngine, credentialFromSubprotocol, log, ToolRegistry} from '@re-cinq/hal-engine';
 
 const tools = new ToolRegistry();
 
@@ -64,7 +64,7 @@ const engine = createHalEngine({
   auth: {
     // No `http` middleware here, so the chat routes under /api/chats answer 401 rather than serving anyone.
     ws: async req => {
-      const token = req.headers.authorization;
+      const token = req.headers.authorization ?? credentialFromSubprotocol(req.headers['sec-websocket-protocol']);
       if (!token) return null;
       return {id: 'user-1'};
     },
@@ -137,7 +137,7 @@ interface HalEngineConfig {
     http?: HttpAuthMiddleware; // Express auth middleware
   };
   orchestrator?: {
-    maxToolRounds?: number; // Max tool loop iterations (default: 5)
+    maxToolRounds?: number; // Max tool rounds executed (default: 5); at most maxToolRounds + 1 provider calls
     contextConfig?: Partial<ContextConfig>;
   };
   onConnect?: (session) => void | Promise<void>; // Fire-and-forget; never awaited

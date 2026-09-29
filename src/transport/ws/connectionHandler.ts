@@ -5,9 +5,11 @@ import {v4 as uuidv4} from 'uuid';
 import type {WsAuthenticator} from '../../types/auth.js';
 import type {SessionStore} from '../../types/sessionStore.js';
 import type {ConnectedMessage} from '../../types/messages.js';
+import type {ChatSession} from '../../types/session.js';
 import {ErrorCodes} from '../../types/session.js';
 import {sendError} from './sender.js';
 import {isValidWsPath, rejectSocket, parseWsData} from './helpers.js';
+import {credentialFromSubprotocol} from './subprotocol.js';
 import {log} from '../../shared/logger.js';
 
 export interface ExtWebSocket extends WebSocket {
@@ -68,62 +70,149 @@ export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandl
 }
 
 function bearerFromWebSocketProtocol(req: IncomingMessage): string | undefined {
-  const protocol = req.headers['sec-websocket-protocol'];
-  if (!protocol) return undefined;
-  const token = protocol
-    .split(',')
-    .map(s => s.trim())
-    .find(s => s.length > 0);
+  const token = credentialFromSubprotocol(req.headers['sec-websocket-protocol']);
   return token ? `Bearer ${token}` : undefined;
 }
 
 export function createConnectionHandler(deps: ConnectionHandlerDeps, examplePrompts: string[]) {
   return function handleConnection(ws: ExtWebSocket): void {
-    const sessionId = uuidv4();
-    const session = deps.sessionStore.create(sessionId, ws.userId, {
+    // The listener stays synchronous: an async one rejects into the emitter, and node ends the process on that.
+    openSession(deps, examplePrompts, ws).catch((error: unknown) => {
+      log.error('ws', 'connection setup failed', {error: messageOf(error)});
+      // Resumed before closing: a paused socket never reads the close frame it would be waiting for.
+      ws.resume();
+      ws.close(1011, 'Connection setup failed');
+    });
+  };
+}
+
+async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[], ws: ExtWebSocket): Promise<void> {
+  const sessionId = uuidv4();
+  const state = {closed: false, settled: false, notified: false, delivered: false};
+  const held: {session?: ChatSession} = {};
+
+  ws.on('error', (error: Error) => {
+    log.error('ws', 'connection error', {sessionId, error: error.message});
+  });
+
+  ws.on('pong', () => {
+    ws.isAlive = true;
+  });
+
+  ws.on('close', () => {
+    state.closed = true;
+    log.info('ws', 'disconnected', {sessionId});
+    if (state.settled) endSession(deps, sessionId, state, held);
+  });
+
+  // Paused across the await so a frame arriving before the message listener exists is buffered, not dropped.
+  ws.pause();
+
+  const session = await createSession(deps, sessionId, ws);
+  state.settled = true;
+
+  if (session === undefined) {
+    // Resumed before closing: ws.close() on a paused socket waits for a close frame it can never read.
+    ws.resume();
+    ws.close(1011, 'Session store unavailable');
+    return;
+  }
+
+  if (state.closed) {
+    // Held first: a store that implements no evict still holds this session, and it carries the caller's credentials.
+    held.session = session;
+    await evictSession(deps, sessionId);
+    endSession(deps, sessionId, state, held);
+    ws.resume();
+    return;
+  }
+
+  held.session = session;
+
+  log.info('ws', 'connected', {sessionId, userId: ws.userId});
+
+  const connected: ConnectedMessage = {
+    type: 'connected',
+    sessionId,
+    message: 'Connected to HAL Engine',
+    examplePrompts,
+  };
+  // A socket that died between the check above and this frame must not leave the session it was created for behind.
+  try {
+    ws.send(JSON.stringify(connected));
+  } catch (error) {
+    log.error('ws', 'connected frame failed', {sessionId, error: messageOf(error)});
+    await evictSession(deps, sessionId);
+    endSession(deps, sessionId, state, held);
+    ws.resume();
+    ws.close(1011, 'Connection setup failed');
+    return;
+  }
+
+  state.delivered = true;
+
+  // Deferred, not inline: a synchronous throw in the `connection` listener corrupts an already-upgraded socket.
+
+  // A microtask, not setImmediate: it drains before the loop delivers any inbound frame on this socket.
+  queueMicrotask(() => runHook('onConnect', sessionId, () => deps.onConnect?.(session)));
+
+  ws.on('message', (frame: Buffer | string) => {
+    const parsed = parseWsData(frame);
+    if (parsed === null) {
+      sendError(ws, ErrorCodes.INVALID_FORMAT, 'Invalid JSON');
+      return;
+    }
+    log.info('ws', 'message received', {sessionId, type: (parsed as Record<string, unknown>).type as string});
+    deps.handleMessage(ws, session, parsed);
+  });
+
+  ws.resume();
+}
+
+// `undefined` rather than a throw: one store failure closes one socket instead of ending the process.
+async function createSession(
+  deps: ConnectionHandlerDeps,
+  sessionId: string,
+  ws: ExtWebSocket
+): Promise<ChatSession | undefined> {
+  try {
+    return await deps.sessionStore.create(sessionId, ws.userId, {
       authHeaders: ws.authHeaders,
       workspaceId: ws.workspaceId,
     });
+  } catch (error) {
+    log.error('ws', 'session create failed', {userId: ws.userId, error: messageOf(error)});
+    sendError(ws, ErrorCodes.SERVER_ERROR, 'Could not start a session');
+    return undefined;
+  }
+}
 
-    log.info('ws', 'connected', {sessionId, userId: ws.userId});
+// The close path erases nothing: the conversation outlives its socket, and `onDisconnect` is the consumer's seam.
+function endSession(
+  deps: ConnectionHandlerDeps,
+  sessionId: string,
+  state: {notified: boolean; delivered: boolean},
+  held: {session?: ChatSession}
+): void {
+  if (state.notified) return;
+  state.notified = true;
 
-    const connected: ConnectedMessage = {
-      type: 'connected',
-      sessionId,
-      message: 'Connected to HAL Engine',
-      examplePrompts,
-    };
-    ws.send(JSON.stringify(connected));
+  // The credentials were issued for a request that is over; the entries are what the consumer keeps.
+  if (held.session) held.session.authHeaders = undefined;
 
-    // Deferred, not inline: a synchronous throw in the `connection` listener corrupts an already-upgraded socket.
+  // Only for a session the consumer was actually handed: onDisconnect is the other half of onConnect, not of a socket.
+  if (!state.delivered) return;
 
-    // A microtask, not setImmediate: it drains before the loop delivers any inbound frame on this socket.
-    queueMicrotask(() => runHook('onConnect', sessionId, () => deps.onConnect?.(session)));
+  runHook('onDisconnect', sessionId, () => deps.onDisconnect?.(sessionId));
+}
 
-    ws.on('pong', () => {
-      ws.isAlive = true;
-    });
-
-    ws.on('message', (frame: Buffer | string) => {
-      const parsed = parseWsData(frame);
-      if (parsed === null) {
-        sendError(ws, ErrorCodes.INVALID_FORMAT, 'Invalid JSON');
-        return;
-      }
-      log.info('ws', 'message received', {sessionId, type: (parsed as Record<string, unknown>).type as string});
-      deps.handleMessage(ws, session, parsed);
-    });
-
-    ws.on('error', (error: Error) => {
-      log.error('ws', 'connection error', {sessionId, error: error.message});
-    });
-
-    ws.on('close', () => {
-      log.info('ws', 'disconnected', {sessionId});
-      deps.sessionStore.delete(sessionId);
-      runHook('onDisconnect', sessionId, () => deps.onDisconnect?.(sessionId));
-    });
-  };
+// Only for a session no client ever received: it has no entries and nothing to migrate.
+async function evictSession(deps: ConnectionHandlerDeps, sessionId: string): Promise<void> {
+  try {
+    await deps.sessionStore.evict?.(sessionId);
+  } catch (error) {
+    log.error('ws', 'session evict failed', {sessionId, error: messageOf(error)});
+  }
 }
 
 // Consumer hooks are fire-and-forget: the engine never awaits one and never lets one take the connection down.

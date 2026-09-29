@@ -1,5 +1,5 @@
 import type {ChatSession} from '../types/session.js';
-import type {ToolRegistry, ToolContext} from './tools/registry.js';
+import type {ToolRegistry, ToolContext, ToolResponse} from './tools/registry.js';
 import type {
   AIProvider,
   Message,
@@ -11,6 +11,7 @@ import type {
 } from '../types/ai.js';
 import type {OutgoingMessage} from '../types/messages.js';
 import type {PromptBuilder, PromptBuilderOptions} from '../infrastructure/builders/promptBuilder.js';
+import type {SessionStore} from '../types/sessionStore.js';
 import {toMessages, createContextConfig} from './conversationContext.js';
 import type {ContextConfig} from './conversationContext.js';
 import {
@@ -21,7 +22,7 @@ import {
   extractStopReason,
   extractUsage,
 } from './orchestratorHelpers.js';
-import {appendEntry} from './entryMutations.js';
+import {appendEntry, commitStreamingEntries} from './entryMutations.js';
 import {log} from '../shared/logger.js';
 
 const DEFAULT_MAX_TOOL_ROUNDS = 5;
@@ -34,7 +35,21 @@ export interface OrchestratorHooks {
   beforeModelResponse?: (session: ChatSession, systemPrompt: string) => Promise<string>;
   afterModelResponse?: (session: ChatSession, responseText: string, usage?: UsageMetadata) => Promise<void>;
   onError?: (session: ChatSession, error: Error) => Promise<void>;
+  /** The supported seam for an EU AI Act Art. 14 human-oversight control: fires before each known tool's executor, and a returned ToolResponse replaces the call (see docs/adding-a-tool.md); it receives the model's raw tool input and, through session, the caller's authHeaders, so a policy that logs either logs personal data and credential material; the engine asserts nothing about any policy installed here. */
+  beforeToolCall?: (session: ChatSession, call: ToolCall) => Promise<ToolResponse | undefined>;
+  /** Fires when the model asks for a tool round the budget refuses, after the last provider call and before afterModelResponse; a returned string reaches the user as the turn's closing text, and the engine writes none of its own (see specs/hal-engine-tool-budget/spec.md). */
+  onToolBudgetExhausted?: (session: ChatSession, budget: ToolBudgetInfo) => Promise<string | undefined>;
 }
+
+export interface ToolBudgetInfo {
+  maxToolRounds: number;
+  requestedTools: string[];
+}
+
+type BeforeToolCall = NonNullable<OrchestratorHooks['beforeToolCall']>;
+type OnToolBudgetExhausted = NonNullable<OrchestratorHooks['onToolBudgetExhausted']>;
+
+export const TOOL_BUDGET_EXHAUSTED = 'tool_budget_exhausted';
 
 export interface ChatOrchestrator {
   processMessage(session: ChatSession): Promise<string>;
@@ -46,6 +61,7 @@ export interface ChatOrchestratorOptions {
   contextConfig?: Partial<ContextConfig>;
   promptBuilderOptions?: PromptBuilderOptions;
   hooks?: OrchestratorHooks;
+  sessionStore?: SessionStore;
 }
 
 interface ToolExecutionResult {
@@ -58,12 +74,13 @@ export function createChatOrchestrator(
   toolRegistry?: ToolRegistry,
   options?: ChatOrchestratorOptions
 ): ChatOrchestrator {
-  const maxToolRounds = options?.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS;
+  const maxToolRounds = normalizeToolRounds(options?.maxToolRounds);
   const contextConfig = createContextConfig(options?.contextConfig);
   const toolInstructions = toolRegistry?.getPromptInstructions();
   const baseSystemPrompt = promptBuilder.build({...options?.promptBuilderOptions, toolInstructions});
   const tools = toolRegistry?.getDefinitions();
   const hooks = options?.hooks;
+  const sessionStore = options?.sessionStore;
 
   return {
     async processMessage(session: ChatSession): Promise<string> {
@@ -90,7 +107,8 @@ export function createChatOrchestrator(
         let lastUsage: UsageMetadata | undefined;
         let responseText = '';
 
-        for (let round = 0; round <= maxToolRounds; round++) {
+        // Bounded by the budget gate below, not the header: maxToolRounds executed rounds, maxToolRounds + 1 provider calls.
+        for (let round = 0; ; round++) {
           log.info('orchestrator', 'starting round', {round});
           const pendingToolCalls: ToolCall[] = [];
 
@@ -99,13 +117,18 @@ export function createChatOrchestrator(
           lastUsage = outcome.usage ?? lastUsage;
 
           if (!shouldContinueToolLoop(outcome.stopReason, pendingToolCalls, toolRegistry)) break;
+          if (budgetSpent(round, maxToolRounds, pendingToolCalls)) {
+            const budget = {maxToolRounds, requestedTools: pendingToolCalls.map(tc => tc.name)};
+            responseText += yield* closeExhaustedTurn(session, budget, hooks?.onToolBudgetExhausted);
+            break;
+          }
 
           log.info('orchestrator', 'executing tools', {tools: pendingToolCalls.map(tc => tc.name)});
           const {clientMessages, suppressOutput} = await executeToolCalls(
             pendingToolCalls,
             messages,
-            toolRegistry!,
-            session
+            session,
+            toolCallRunner(toolRegistry!, session, hooks?.beforeToolCall)
           );
           log.info('orchestrator', 'tool execution complete', {
             clientMessageCount: clientMessages.length,
@@ -129,10 +152,44 @@ export function createChatOrchestrator(
         }
         throw error;
       } finally {
-        if (hooks?.afterSession) await hooks.afterSession(session);
+        // Before both: a provider that threw mid-stream leaves an entry open, and nothing should persist it that way.
+        commitStreamingEntries(session);
+        try {
+          if (hooks?.afterSession) await hooks.afterSession(session);
+        } finally {
+          await saveSession(sessionStore, session);
+        }
       }
     },
   };
+}
+
+// A negative budget means no tool rounds; a non-finite one, NaN included, falls back to the default rather than never ending.
+function normalizeToolRounds(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value)) return DEFAULT_MAX_TOOL_ROUNDS;
+  return Math.max(0, Math.floor(value));
+}
+
+// Gates execution, not the provider call: a round nobody can read is never run, and the call that read the last one already has.
+function budgetSpent(round: number, maxToolRounds: number, pendingToolCalls: ToolCall[]): boolean {
+  if (round < maxToolRounds) return false;
+  log.warn('orchestrator', 'tool budget exhausted', {
+    maxToolRounds,
+    requestedTools: pendingToolCalls.map(tc => tc.name),
+  });
+  return true;
+}
+
+// The stop always follows the text: the round's own stop already committed its entry, and a bare text chunk would open one never committed.
+async function* closeExhaustedTurn(
+  session: ChatSession,
+  budget: ToolBudgetInfo,
+  hook?: OnToolBudgetExhausted
+): AsyncGenerator<MessageChunk, string> {
+  const sentence = (hook ? await hook(session, budget) : undefined) ?? '';
+  if (sentence !== '') yield {type: 'text', text: sentence};
+  yield {type: 'stop', stopReason: TOOL_BUDGET_EXHAUSTED};
+  return sentence;
 }
 
 interface RoundOutcome {
@@ -193,14 +250,8 @@ function updateLastUserContent(session: ChatSession, content: string): void {
   }
 }
 
-async function executeToolCalls(
-  pendingToolCalls: ToolCall[],
-  messages: Message[],
-  toolRegistry: ToolRegistry,
-  session: ChatSession
-): Promise<ToolExecutionResult> {
-  messages.push(buildToolCallMessages(pendingToolCalls));
-
+// One runner per round: the policy sees each known call before its executor, and an unknown name keeps the registry's own path.
+function toolCallRunner(toolRegistry: ToolRegistry, session: ChatSession, beforeToolCall?: BeforeToolCall) {
   const context: ToolContext = {
     userId: session.userId,
     sessionId: session.sessionId,
@@ -208,9 +259,41 @@ async function executeToolCalls(
     authHeaders: session.authHeaders,
   };
 
+  return async (tc: ToolCall): Promise<ToolResponse> => {
+    const declined =
+      beforeToolCall && toolRegistry.has(tc.name) ? await consultPolicy(beforeToolCall, session, tc) : undefined;
+    return declined ?? toolRegistry.execute(tc.name, tc.input, context);
+  };
+}
+
+// A throwing policy declines its call rather than failing the turn: every tool_use must still be answered.
+async function consultPolicy(
+  policy: BeforeToolCall,
+  session: ChatSession,
+  tc: ToolCall
+): Promise<ToolResponse | undefined> {
+  try {
+    return await policy(session, tc);
+  } catch (error) {
+    log.warn('orchestrator', 'beforeToolCall threw, so the call is declined', {
+      tool: tc.name,
+      errorType: error instanceof Error ? error.name : typeof error,
+    });
+    return {result: `The ${tc.name} call was declined and not performed.`};
+  }
+}
+
+async function executeToolCalls(
+  pendingToolCalls: ToolCall[],
+  messages: Message[],
+  session: ChatSession,
+  runToolCall: (tc: ToolCall) => Promise<ToolResponse>
+): Promise<ToolExecutionResult> {
+  messages.push(buildToolCallMessages(pendingToolCalls));
+
   const responses = await Promise.all(
     pendingToolCalls.map(async tc => {
-      const response = await toolRegistry.execute(tc.name, tc.input, context);
+      const response = await runToolCall(tc);
       return {tc, response};
     })
   );
@@ -236,4 +319,16 @@ function assignEntryIndices(clientMessages: OutgoingMessage[], session: ChatSess
     const index = appendEntry(session, msg.entry);
     return {...msg, index};
   });
+}
+
+// A store outage is not a reason to fail the turn the customer already received.
+async function saveSession(store: SessionStore | undefined, session: ChatSession): Promise<void> {
+  if (!store?.save) return;
+
+  try {
+    await store.save(session);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.error('orchestrator', 'session save failed', {sessionId: session.sessionId, error: message});
+  }
 }

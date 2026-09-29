@@ -192,7 +192,7 @@ If the AI streamed text *before* the tool call (which happens when the model exp
 
 ### stream_end and the spinner
 
-The server sends a `stream_end` message after every completed stream (see [websocket-protocol.md](../hal-engine-websocket-protocol/spec.md)). This is the client's signal to clear loading indicators.
+The server sends a `stream_end` message after every stream, including one that failed after an `error` frame (see [websocket-protocol.md](../hal-engine-websocket-protocol/spec.md)). This is the client's signal to clear loading indicators, so a failed stream clears the spinner the same way a completed one does.
 
 Without `stream_end`, suppression would cause the tool spinner to hang forever. When the assistant response is suppressed, no `entry_upsert` arrives after the tool entry, so the tool stays as the last entry in the array. The client tracks an `isProcessing` state: `true` when the user sends a message, `false` when `stream_end` arrives. The spinner only shows when the tool is both last in the list *and* the stream is still processing.
 
