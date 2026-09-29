@@ -31,6 +31,8 @@ The WebSocket `close` handler called `sessionStore.delete(sessionId)` unconditio
 
 ## Why it works this way
 
+The clearing is an in-memory measure. `authHeaders` is transport state rather than conversation content, and no store should persist it at all: the credentials reach a store only if that store writes them, and by then the close event has not yet fired, so no engine-side hook could un-write them. `MongoSessionStore` enforces the rule instead of advising it, stripping every credential key from what it writes, and `stripCredentialKeys` is exported for a store a consumer writes themselves.
+
 There is no timer. A library-owned `setInterval` keeps a consumer's process alive unless it is unref'd, and the engine already owns one interval; age is checked when the store is touched instead. The creation time is held in a record beside the session rather than as a field on `ChatSession`, because `ChatSession` is exported and a new field there would become public API every custom store had to populate — and because a separate map could desync, leaving a session that carries credentials with no timestamp and therefore no expiry. Insertion order only approximates age order: `Map.set` on an existing key keeps its original position, and the clock can step backwards. Both make the sweep stop early, which is conservative, and anything it skips is still collected when it is read.
 
 Renaming `delete` to `evict` outright was considered and rejected: that is a breaking interface change for the one live consumer that implements `SessionStore`, while dropping the call is not, since the interface itself does not change.
