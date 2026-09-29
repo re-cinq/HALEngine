@@ -38,8 +38,6 @@ export class MongoSessionStore implements SessionStore {
       authHeaders: options?.authHeaders,
       workspaceId: options?.workspaceId,
     };
-    this.cache.set(sessionId, session);
-
     const collection = await this.collection();
     const startedAt = this.now();
     await collection.updateOne(
@@ -47,6 +45,9 @@ export class MongoSessionStore implements SessionStore {
       {$set: {...persistedFields(session), createdAt: startedAt, updatedAt: startedAt}},
       {upsert: true}
     );
+
+    // Cached only once the write landed: a failing database would otherwise fill memory with sessions it never stored.
+    this.cache.set(sessionId, session);
     return session;
   }
 
