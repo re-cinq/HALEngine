@@ -147,8 +147,11 @@ export function createChatOrchestrator(
 
         if (hooks?.afterModelResponse) await hooks.afterModelResponse(session, responseText, totalUsage);
       } catch (error) {
-        if (hooks?.onError && error instanceof Error) {
-          await hooks.onError(session, error);
+        if (hooks?.onError) {
+          await hooks.onError(
+            session,
+            error instanceof Error ? error : new Error(describeRejection(error), {cause: error})
+          );
         }
         throw error;
       } finally {
@@ -341,5 +344,18 @@ async function saveSession(store: SessionStore | undefined, session: ChatSession
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     log.error('orchestrator', 'session save failed', {sessionId: session.sessionId, error: message});
+  }
+}
+
+function describeRejection(error: unknown): string {
+  return serializedOrNull(error) ?? String(error);
+}
+
+// A probe, not a fallback path: a circular or BigInt-bearing rejection has no JSON form.
+function serializedOrNull(value: unknown): string | null {
+  try {
+    return JSON.stringify(value) ?? null;
+  } catch {
+    return null;
   }
 }
