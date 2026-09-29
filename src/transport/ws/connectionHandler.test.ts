@@ -2,13 +2,16 @@ import {jest} from '@jest/globals';
 import {createConnectionHandler, type ConnectionHandlerDeps, type ExtWebSocket} from './connectionHandler.js';
 import type {ChatSession} from '../../types/session.js';
 import type {SessionStore} from '../../types/sessionStore.js';
+import {captureErrors} from '../../shared/logCaptureTestSupport.js';
 
 // Pins the lifecycle hooks: that onConnect is called at all, when, and that neither hook can kill a connection.
 
 // Drains the microtask queue the hook is deferred onto.
 const settle = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 
-const harness = (hooks: Partial<Pick<ConnectionHandlerDeps, 'onConnect' | 'onDisconnect'>> = {}) => {
+type HarnessOptions = Partial<Pick<ConnectionHandlerDeps, 'onConnect' | 'onDisconnect' | 'sessionStore'>>;
+
+const harness = (options: HarnessOptions = {}) => {
   const sent: string[] = [];
   const listeners = new Map<string, (arg?: unknown) => void>();
 
@@ -17,6 +20,10 @@ const harness = (hooks: Partial<Pick<ConnectionHandlerDeps, 'onConnect' | 'onDis
     isAlive: true,
     send: (raw: string) => sent.push(raw),
     on: (event: string, fn: (arg?: unknown) => void) => listeners.set(event, fn),
+    // The handler pauses the socket across an awaited create and resumes once its listeners are attached.
+    pause: () => undefined,
+    resume: () => undefined,
+    close: () => undefined,
   } as unknown as ExtWebSocket;
 
   const deleted: string[] = [];
@@ -30,7 +37,7 @@ const harness = (hooks: Partial<Pick<ConnectionHandlerDeps, 'onConnect' | 'onDis
     sessionStore,
     handleMessage: jest.fn(),
     basePath: '/hal',
-    ...hooks,
+    ...options,
   } as unknown as ConnectionHandlerDeps;
 
   const connect = () => createConnectionHandler(deps, [])(ws);
@@ -65,20 +72,23 @@ describe('the websocket connection handler', () => {
 
       first.connect();
       second.connect();
+      await settle();
 
       const id = (raw: string) => (JSON.parse(raw) as {sessionId: string}).sessionId;
       expect(id(first.sent[0]) === id(second.sent[0])).toBe(false);
     });
 
+    // Counted inside the hook: the connected frame is sent after an awaited create, so no synchronous read sees it.
     it('runs after the connected frame is sent, not before it', async () => {
-      const order: string[] = [];
-      const {connect, sent} = harness({onConnect: () => void order.push('hook')});
+      const framesAtHook: number[] = [];
+      let frames: string[] = [];
+      const {connect, sent} = harness({onConnect: () => void framesAtHook.push(frames.length)});
+      frames = sent;
 
       connect();
-      order.push(`frames:${sent.length}`);
       await settle();
 
-      expect(order).toEqual(['frames:1', 'hook']);
+      expect(framesAtHook).toEqual([1]);
     });
 
     it('is deferred, so it never runs inside the connection listener', () => {
@@ -126,6 +136,8 @@ describe('the websocket connection handler', () => {
       const {connect, close, deleted} = harness({onDisconnect: id => void seen.push(id)});
 
       connect();
+      // The session is delivered once the awaited create resolves; onDisconnect is the other half of that delivery.
+      await settle();
       close();
       await settle();
 
@@ -154,9 +166,11 @@ describe('the websocket connection handler', () => {
   });
 
   describe('inbound frames', () => {
-    it('answers unparseable JSON with INVALID_FORMAT alone and never dispatches it', () => {
+    it('answers unparseable JSON with INVALID_FORMAT alone and never dispatches it', async () => {
       const {connect, sent, receive, handleMessage} = harness();
       connect();
+      // The message listener is attached once the awaited create resolves.
+      await settle();
 
       receive('{"type": "user_message", "content": ');
 
@@ -167,5 +181,42 @@ describe('the websocket connection handler', () => {
         dispatched: 0,
       });
     });
+  });
+});
+
+// A durable erase that fails silently would be recorded as done, so the close path has to report it.
+describe('a session store that fails to release', () => {
+  const errors = captureErrors();
+
+  it('logs a rejecting delete with the session id rather than dropping it', async () => {
+    const sessionStore = {
+      create: (sessionId: string, userId: string | number): ChatSession => ({sessionId, userId, entries: []}),
+      delete: () => Promise.reject(new Error('store unreachable')),
+    } as unknown as SessionStore;
+    const {connect, sent, close} = harness({sessionStore});
+
+    connect();
+    await settle();
+    const {sessionId} = JSON.parse(sent[0]) as {sessionId: string};
+    close();
+    await settle();
+
+    expect(errors).toEqual([{category: 'ws', message: 'session delete failed', sessionId, error: 'store unreachable'}]);
+  });
+
+  it('stays silent for a connection that was never handed a session', async () => {
+    const seen: string[] = [];
+    const sessionStore = {
+      create: () => Promise.reject(new Error('store down')),
+      delete: () => true,
+    } as unknown as SessionStore;
+    const {connect, close} = harness({sessionStore, onDisconnect: id => void seen.push(id)});
+
+    connect();
+    await settle();
+    close();
+    await settle();
+
+    expect(seen).toEqual([]);
   });
 });

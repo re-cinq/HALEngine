@@ -95,6 +95,6 @@ export type {
 } from './types/messages.js';
 
 export type {WsAuthenticator, HttpAuthMiddleware, AuthenticatedRequest} from './types/auth.js';
-export type {SessionStore, SessionCreateOptions, BaseSession} from './types/sessionStore.js';
+export type {SessionStore, SessionCreateOptions, BaseSession, Awaitable} from './types/sessionStore.js';
 export type {PromptStore, PromptTemplate} from './types/promptStore.js';
 export type {UsageStore, UsageRecord} from './types/usageStore.js';

@@ -6,7 +6,7 @@ import {
   recordingSessionStore,
   writeSignalPromptBuilder,
 } from '../infrastructure/writeSignalTestSupport.js';
-import {setLogger} from '../shared/logger.js';
+import {captureErrors} from '../shared/logCaptureTestSupport.js';
 import type {AIProvider} from '../types/ai.js';
 import type {ChatSession} from '../types/session.js';
 import type {SessionStore} from '../types/sessionStore.js';
@@ -20,20 +20,7 @@ const sessionWith = (content: string): ChatSession => ({
 });
 
 describe('the session write signal', () => {
-  const errors: Array<Record<string, unknown>> = [];
-
-  beforeEach(() => {
-    errors.length = 0;
-    const quiet = () => undefined;
-    setLogger({
-      debug: quiet,
-      info: quiet,
-      warn: quiet,
-      error: (category, message, fields) => void errors.push({category, message, ...fields}),
-    });
-  });
-
-  afterEach(() => setLogger());
+  const errors = captureErrors();
 
   // One outcome value per turn, so each test below can assert with a single expect.
   const turn = async (sessionStore: SessionStore, provider: AIProvider = answering('hi')): Promise<string> => {
