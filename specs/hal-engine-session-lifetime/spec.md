@@ -16,7 +16,7 @@ The WebSocket `close` handler called `sessionStore.delete(sessionId)` unconditio
 ## Evicting what nobody received
 
 - A session whose socket closed while `create` was still pending is dropped through the optional `evict` member rather than `delete`: it has no entries and nothing to migrate, so dropping it erases nothing a consumer would want kept, and the close path of a delivered session calls no store method at all ([validated by: logs a rejecting evict rather than dropping it](../../src/transport/ws/connectionHandler.test.ts#L192)).
-- A session whose socket closed before it was delivered has its credentials cleared too, because `evict` is optional and a store that implements none still holds it ([validated by: clears the credentials of a session whose socket closed before it was delivered](../../src/transport/ws/connectionHandler.test.ts#L222)).
+- A session whose socket closed before it was delivered has its credentials cleared too, because `evict` is optional and a store that implements none still holds it ([validated by: clears the credentials of a session whose socket closed before it was delivered](../../src/transport/ws/connectionHandler.test.ts#L231)).
 - An `evict` that rejects is caught and logged with the session id rather than dropped, so a cleanup that failed is reported ([validated by: logs a rejecting evict rather than dropping it](../../src/transport/ws/connectionHandler.test.ts#L192)).
 
 ## The default store's memory bound
