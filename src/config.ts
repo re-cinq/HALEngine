@@ -71,6 +71,7 @@ export function createHalEngine(config: HalEngineConfig): HalEngine {
     maxToolRounds: config.orchestrator?.maxToolRounds,
     contextConfig: config.orchestrator?.contextConfig,
     hooks: config.orchestrator?.hooks,
+    sessionStore,
   });
 
   const app = createApp({

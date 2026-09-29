@@ -80,11 +80,15 @@ Controls where session data is stored: the default `InMemorySessionStore` keeps 
 <!-- doc-block: src/types/sessionStore.ts#SessionStore -->
 ```typescript
 interface SessionStore<T extends BaseSession = ChatSession> {
-  create(sessionId: string, userId: string | number, options?: SessionCreateOptions): T;
-  get(sessionId: string): T | undefined;
-  delete(sessionId: string): boolean;
-  count(): number;
-  clear(): void;
+  create(sessionId: string, userId: string | number, options?: SessionCreateOptions): Awaitable<T>;
+  get(sessionId: string): Awaitable<T | undefined>;
+  delete(sessionId: string): Awaitable<boolean>;
+  count(): Awaitable<number>;
+  clear(): Awaitable<void>;
+  /** Drops a session the client never received, without erasing anything a consumer would want kept. */
+  evict?(sessionId: string): Awaitable<boolean>;
+  /** Write signal: fires once per processed user message; failures are swallowed (specs/hal-engine-session-write-signal/spec.md). */
+  save?(session: T): Awaitable<void>;
 }
 ```
 
@@ -94,6 +98,7 @@ interface SessionStore<T extends BaseSession = ChatSession> {
 - `delete` reports `false` for an id the store was not holding ([validated by: returns false when deleting nonexistent session](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L42)).
 - `count` reflects creates and deletes as they happen ([validated by: tracks count correctly](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L46)).
 - `clear` empties the store, leaving `count` at zero and every previous id unresolvable ([validated by: clears all sessions](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L60)).
+- `save` is the optional write signal the engine calls once per processed user message, detailed in [the session write signal spec](../hal-engine-session-write-signal/spec.md); a store that omits it, as `InMemorySessionStore` does, is unaffected ([validated by: logs nothing for a store that implements no save](../../src/orchestration/sessionSave.test.ts#L67)).
 
 ### WsAuthenticator
 
@@ -112,7 +117,7 @@ interface AuthenticatedUser {
 }
 ```
 
-The connection handler takes `id` as the session's `userId` and picks up `workspaceId` when the returned user carries one. Separately, and regardless of what this function reads, the engine forwards the first `Sec-WebSocket-Protocol` value as `Bearer <token>` in the session's `authHeaders.authorization`, so a tool can proxy the caller's credentials upstream.
+The connection handler takes `id` as the session's `userId` and picks up `workspaceId` when the returned user carries one. Separately, and regardless of what this function reads, the engine forwards the first `Sec-WebSocket-Protocol` value that is not the `hal.v1` marker as `Bearer <token>` in the session's `authHeaders.authorization`, so a tool can proxy the caller's credentials upstream. The client offers two values, `hal.v1, <access-token>`, and the server answers only `hal.v1`.
 
 ### AIProvider
 
@@ -181,7 +186,7 @@ interface PromptBuilderConfig {
 
 ### OrchestratorHooks
 
-Async lifecycle hooks for customizing the orchestration flow. Every hook is optional and receives the current session, and an orchestrator built with none behaves exactly as one built with an empty set ([validated by: works without any hooks configured](../../src/orchestration/chatOrchestrator.test.ts#L359)). Install hooks through `HalEngineConfig.orchestrator.hooks`; `createHalEngine` forwards the set to the orchestrator ([validated by: forwards an orchestrator hook, so one passed through the config actually fires](../../src/config.test.ts#L18)).
+Async lifecycle hooks for customizing the orchestration flow. Every hook is optional and receives the current session, and an orchestrator built with none behaves exactly as one built with an empty set ([validated by: works without any hooks configured](../../src/orchestration/chatOrchestrator.test.ts#L386)). Install hooks through `HalEngineConfig.orchestrator.hooks`; `createHalEngine` forwards the set to the orchestrator ([validated by: forwards an orchestrator hook, so one passed through the config actually fires](../../src/config.test.ts#L19)).
 
 <!-- doc-block: src/orchestration/chatOrchestrator.ts#OrchestratorHooks -->
 ```typescript
@@ -191,30 +196,35 @@ interface OrchestratorHooks {
   beforeUserInput?: (session: ChatSession, userMessage: string) => Promise<string>;
   afterUserInput?: (session: ChatSession, userMessage: string) => Promise<void>;
   beforeModelResponse?: (session: ChatSession, systemPrompt: string) => Promise<string>;
-  afterModelResponse?: (session: ChatSession, responseText: string, usage?: UsageMetadata) => Promise<void>;
+  afterModelResponse?: (session: ChatSession, responseText: string, totalUsage?: UsageMetadata) => Promise<void>;
   onError?: (session: ChatSession, error: Error) => Promise<void>;
+  /** The supported seam for an EU AI Act Art. 14 human-oversight control: fires before each known tool's executor, and a returned ToolResponse replaces the call (see docs/adding-a-tool.md); it receives the model's raw tool input and, through session, the caller's authHeaders, so a policy that logs either logs personal data and credential material; the engine asserts nothing about any policy installed here. */
+  beforeToolCall?: (session: ChatSession, call: ToolCall) => Promise<ToolResponse | undefined>;
+  /** Fires when the model asks for a tool round the budget refuses, after the last provider call and before afterModelResponse; a returned string reaches the user as the turn's closing text, and the engine writes none of its own (see specs/hal-engine-tool-budget/spec.md). */
+  onToolBudgetExhausted?: (session: ChatSession, budget: ToolBudgetInfo) => Promise<string | undefined>;
 }
 ```
 
 The hooks fire in this order:
 
 ```
-beforeSession → beforeUserInput → afterUserInput → beforeModelResponse → ...streaming... → afterModelResponse → afterSession
+beforeSession → beforeUserInput → afterUserInput → beforeModelResponse → ...streaming (beforeToolCall × each tool call, each round)... → onToolBudgetExhausted (only on an exhausted budget) → afterModelResponse → afterSession
 ```
 
-- The order above holds for a successful pass ([validated by: calls all hooks in correct order](../../src/orchestration/chatOrchestrator.test.ts#L286)).
-- When the stream fails, `afterModelResponse` is skipped and the tail becomes `onError` then `afterSession` ([validated by: error path calls onError then afterSession](../../src/orchestration/chatOrchestrator.test.ts#L326)).
+- The order above holds for a successful pass ([validated by: calls all hooks in correct order](../../src/orchestration/chatOrchestrator.test.ts#L313)).
+- When the stream fails, `afterModelResponse` is skipped and the tail becomes `onError` then `afterSession` ([validated by: error path calls onError then afterSession](../../src/orchestration/chatOrchestrator.test.ts#L353)).
 - `beforeSession` runs before any other hook ([validated by: called before anything else](../../src/orchestration/chatOrchestrator.test.ts#L106)).
-- `beforeUserInput` receives the content of the last user message ([validated by: receives the last user message content](../../src/orchestration/chatOrchestrator.test.ts#L147)).
-- `beforeUserInput` can modify that message by returning a different string ([validated by: modifies user message when returning different value](../../src/orchestration/chatOrchestrator.test.ts#L162)).
-- `afterUserInput` receives the message as `beforeUserInput` left it, not as the client sent it ([validated by: receives user message after any beforeUserInput modification](../../src/orchestration/chatOrchestrator.test.ts#L177)).
-- `beforeModelResponse` can replace the system prompt, for example loading it from a `PromptStore` ([validated by: replaces system prompt with returned value](../../src/orchestration/chatOrchestrator.test.ts#L194)).
-- `afterModelResponse` receives the collected response text and the usage the provider reported ([validated by: receives collected response text and usage](../../src/orchestration/chatOrchestrator.test.ts#L209)).
-- `afterModelResponse` does not run when the stream throws, so it never reports a response that was not delivered ([validated by: not called when stream throws](../../src/orchestration/chatOrchestrator.test.ts#L229)).
-- `onError` receives the session and the error ([validated by: called with session and error when stream fails](../../src/orchestration/chatOrchestrator.test.ts#L251)).
-- `onError` observes rather than handles: the error still propagates to the caller after it returns ([validated by: error still propagates after onError hook](../../src/orchestration/chatOrchestrator.test.ts#L273)).
-- `afterSession` runs after everything else completes ([validated by: called after everything completes](../../src/orchestration/chatOrchestrator.test.ts#L118)).
-- `afterSession` fires even on error ([validated by: called even when an error occurs](../../src/orchestration/chatOrchestrator.test.ts#L128)).
+- `beforeUserInput` receives the content of the last user message ([validated by: receives the last user message content](../../src/orchestration/chatOrchestrator.test.ts#L174)).
+- `beforeUserInput` can modify that message by returning a different string ([validated by: modifies user message when returning different value](../../src/orchestration/chatOrchestrator.test.ts#L189)).
+- `afterUserInput` receives the message as `beforeUserInput` left it, not as the client sent it ([validated by: receives user message after any beforeUserInput modification](../../src/orchestration/chatOrchestrator.test.ts#L204)).
+- `beforeModelResponse` can replace the system prompt, for example loading it from a `PromptStore` ([validated by: replaces system prompt with returned value](../../src/orchestration/chatOrchestrator.test.ts#L221)).
+- `afterModelResponse` receives the collected response text and the usage the provider reported ([validated by: receives collected response text and usage](../../src/orchestration/chatOrchestrator.test.ts#L236)).
+- `afterModelResponse` does not run when the stream throws, so it never reports a response that was not delivered ([validated by: not called when stream throws](../../src/orchestration/chatOrchestrator.test.ts#L256)).
+- `onError` receives the session and the error ([validated by: called with session and error when stream fails](../../src/orchestration/chatOrchestrator.test.ts#L278)).
+- `onError` observes rather than handles: the error still propagates to the caller after it returns ([validated by: error still propagates after onError hook](../../src/orchestration/chatOrchestrator.test.ts#L300)).
+- `onToolBudgetExhausted` fires only when the model asks for a tool round the budget refuses: after the last provider call and before `afterModelResponse`, which then receives the hook's sentence at the end of the response text ([validated by: hands afterModelResponse text ending in the sentence, and the usage of a run without the hook](../../src/orchestration/toolBudget.test.ts#L214)).
+- `afterSession` runs after everything else completes ([validated by: called after everything completes](../../src/orchestration/chatOrchestrator.test.ts#L145)).
+- `afterSession` fires even on error ([validated by: called even when an error occurs](../../src/orchestration/chatOrchestrator.test.ts#L155)).
 
 A hook receives the full `session` object, so it has access to `session.authHeaders?.authorization` (the caller's bearer token forwarded from the WebSocket upgrade request) and every user message verbatim through `session.entries`; the engine redacts nothing before calling a hook. Anything a hook persists becomes the deployer's own data-retention obligation.
 
@@ -307,11 +317,11 @@ flowchart TD
     B --> C{stopReason?}
     C -->|end_turn| D[Done]
     C -->|tool_use| E[Collect tool calls]
-    E --> F[Execute tools in parallel via Promise.all]
+    E --> H{rounds executed < maxToolRounds?}
+    H -->|yes| F[Execute tools in parallel via Promise.all]
+    H -->|no: budget exhausted| X[Log tool budget exhausted and end the turn]
     F --> G[Add tool results to messages]
-    G --> H{round <= maxToolRounds?}
-    H -->|yes| A
-    H -->|no| D
+    G --> A
 ```
 
 Here is what the message handler does when a tool call comes through:
@@ -320,10 +330,10 @@ Here is what the message handler does when a tool call comes through:
 2. The handler creates a `ToolEntry` and sends it to the client via `entry_upsert`
 3. The orchestrator executes the tool (via `ToolRegistry.execute()`)
 4. Tool results get added to the conversation as a `tool_result` message
-5. If the tool returned `clientMessages`, they are forwarded to the frontend as-is, in one `tool_result` chunk ([validated by: forwards the client messages a tool returned as one tool_result chunk](../../src/orchestration/chatOrchestrator.test.ts#L436))
-6. If the tool set `suppressAssistantResponse`, the AI's next reply is kept in session context but hidden from the frontend ([validated by: asks for suppression when the tool says the reply is already handled](../../src/orchestration/chatOrchestrator.test.ts#L466))
-7. The orchestrator re-queries the AI provider with the updated messages, and the chunks of every round reach the client in order ([validated by: runs another round after a tool call and streams both rounds in order](../../src/orchestration/chatOrchestrator.test.ts#L401))
-8. This repeats while `round <= maxToolRounds`, counted from zero, so the default of 5 permits six model calls in total ([validated by: stops asking for tools once maxToolRounds is spent](../../src/orchestration/chatOrchestrator.test.ts#L422))
+5. If the tool returned `clientMessages`, they are forwarded to the frontend as-is, in one `tool_result` chunk ([validated by: forwards the client messages a tool returned as one tool_result chunk](../../src/orchestration/chatOrchestrator.test.ts#L463))
+6. If the tool set `suppressAssistantResponse`, the AI's next reply is kept in session context but hidden from the frontend ([validated by: asks for suppression when the tool says the reply is already handled](../../src/orchestration/chatOrchestrator.test.ts#L493))
+7. The orchestrator re-queries the AI provider with the updated messages, and the chunks of every round reach the client in order ([validated by: runs another round after a tool call and streams both rounds in order](../../src/orchestration/chatOrchestrator.test.ts#L428))
+8. This repeats until the budget is spent: at most `maxToolRounds` tool rounds are executed, and the provider is called at most `maxToolRounds + 1` times, so the default of 5 executes five rounds and makes six model calls, the last of which reads the fifth round's results. A round requested after that is not executed; see [the tool budget spec](../hal-engine-tool-budget/spec.md) ([validated by: executes 5 tool rounds and makes 6 provider calls at the default budget](../../src/orchestration/toolBudget.test.ts#L95), [validated by: stops asking for tools once maxToolRounds is spent](../../src/orchestration/chatOrchestrator.test.ts#L449))
 
 ### Whether a round continues
 
@@ -334,10 +344,12 @@ Here is what the message handler does when a tool call comes through:
 
 ### Across rounds
 
-- The loop ends as soon as a round stops with `end_turn`, and nothing further is asked of the provider ([validated by: stops after one round when nothing asked for a tool](../../src/orchestration/chatOrchestrator.test.ts#L413)).
-- An `entry_upsert` a tool returns is appended to the session and its index rewritten to the position it actually landed in, because a tool cannot know how long the session already is ([validated by: appends an upserted entry to the session and rewrites its index to match](../../src/orchestration/chatOrchestrator.test.ts#L449)).
-- The response text a hook sees is the text of every round joined, not only the last ([validated by: joins the text of every round, not only the last](../../src/orchestration/chatOrchestrator.test.ts#L478)).
-- Usage an earlier round reported is kept when a later round reports none, so a tool round does not erase the token count ([validated by: keeps the usage an earlier round reported when a later round reports none](../../src/orchestration/chatOrchestrator.test.ts#L500)).
+- The loop ends as soon as a round stops with `end_turn`, and nothing further is asked of the provider ([validated by: stops after one round when nothing asked for a tool](../../src/orchestration/chatOrchestrator.test.ts#L440)).
+- An `entry_upsert` a tool returns is appended to the session and its index rewritten to the position it actually landed in, because a tool cannot know how long the session already is ([validated by: appends an upserted entry to the session and rewrites its index to match](../../src/orchestration/chatOrchestrator.test.ts#L476)).
+- The response text a hook sees is the text of every round joined, not only the last ([validated by: joins the text of every round, not only the last](../../src/orchestration/chatOrchestrator.test.ts#L505)).
+- Usage an earlier round reported is kept when a later round reports none, so a tool round does not erase the token count ([validated by: keeps the usage an earlier round reported when a later round reports none](../../src/orchestration/chatOrchestrator.test.ts#L537)).
+- The usage `afterModelResponse` receives is `totalUsage`: the sum of what every provider call in the turn reported, so a turn that ran tools counts every round rather than the last one alone ([validated by: sums the usage of every round, not only the last](../../src/orchestration/chatOrchestrator.test.ts#L555)).
+- A round that reports no usage drops out of the sum rather than voiding it: the rounds that did report are still counted, and a turn where nothing reported reports nothing ([validated by: counts every reporting round even when a round between them reports none](../../src/orchestration/chatOrchestrator.test.ts#L577)).
 
 The frontend shows a spinner on the last tool entry while the stream is still processing (`isProcessing` is `true`). The `stream_end` message clears the processing state, which hides the spinner. This works correctly even when tool suppression prevents assistant entries from reaching the frontend. See [tool-responses.md](../hal-engine-tool-responses/spec.md) for details on client messages and suppression.
 
@@ -369,7 +381,7 @@ When a thinking block closes, the handler commits the `ThinkingEntry` before sta
 
 1. The client calls `POST {basePath}/chats` to create a chat, getting back a `chatId`
 2. The client builds a WebSocket URL: `wss://{host}{basePath}/ws/{chatId}`. The server checks only the `{basePath}/ws` prefix and never parses `{chatId}` -- the session is the `sessionId` it mints in step 5
-3. The access token is passed as a WebSocket subprotocol (no query string exposure)
+3. The client offers two WebSocket subprotocols, `hal.v1, <access-token>` (no query string exposure), and the server answers only the `hal.v1` marker, so the token never appears in the response
 4. The server's `handleUpgrade` passes the upgrade request to the configured `WsAuthenticator`, which returns a user or `null`, before completing the handshake; what it reads from that request - a header, a cookie, a subprotocol - is the consumer's business, not this package's
 5. On connection, the server creates a `ChatSession` and sends a `connected` message (including `examplePrompts` collected from the tool registry)
 
@@ -393,7 +405,7 @@ When a connection drops, the frontend reconnects automatically:
 ### Cleanup
 
 - On unmount, the client closes the socket and clears all timers
-- On disconnect, the server deletes the session from the session store
+- On disconnect, the server keeps the session and fires `onDisconnect`; it erases nothing, and the default store bounds its own memory by age instead
 - On `SIGTERM`, nothing happens: no signal handler is installed. `createServer` exposes `stop()`, which closes every socket with code 1001 and clears the heartbeat, but the engine never calls it (websocket-protocol spec, Section 11.2)
 
 ## App Extension Points
@@ -404,7 +416,7 @@ When a connection drops, the frontend reconnects automatically:
 
 - `HalAppOptions.rootRoutes?: (router: Router) => void` — a callback invoked with a fresh `Router` and mounted at the root of the app, after the `basePath` router and before the catch-all `404`, so a handler registered there can serve `GET /` while `GET {basePath}/health` still answers. ([validated by: mounts a rootRoutes handler at / before the catch-all 404](../../src/transport/createApp.test.ts#L128))
 - A `rootRoutes` route at a path that also appears under the `basePath` prefix answers independently: `GET /health` goes to the root handler and `GET {basePath}/health` goes to the engine's health route. ([validated by: lets rootRoutes at /health and the basePath health answer independently](../../src/transport/createApp.test.ts#L143))
-- `HalEngineConfig.transport.additionalRoutes` is forwarded to `createApp`, so a route registered there mounts under `basePath` in the server the engine builds. ([validated by: forwards transport.additionalRoutes to createApp so the route mounts under basePath](../../src/config.test.ts#L187))
+- `HalEngineConfig.transport.additionalRoutes` is forwarded to `createApp`, so a route registered there mounts under `basePath` in the server the engine builds. ([validated by: forwards transport.additionalRoutes to createApp so the route mounts under basePath](../../src/config.test.ts#L209))
 - Neither `additionalRoutes` nor `rootRoutes` is covered by `auth.http`; both receive requests before any authentication middleware the engine installs, so a consumer applies its own middleware inside the callback.
 - Both callbacks inherit the CORS, JSON body-parsing, and cookie-parsing middleware that `createApp` mounts unconditionally.
 - `engine.app` cannot be extended after `createHalEngine` returns: `createApp` registers a terminal `404` catch-all before returning, and Express matches routes in registration order, so a route added afterwards always returns `404`.
@@ -419,12 +431,12 @@ The default error behaviour: with no `errorHandler` supplied and `NODE_ENV` unse
 
 `createHalEngine` assembles every layer of the engine from the supplied configuration and exposes the result through a single object.
 
-- `orchestrator.hooks` passed in the configuration are forwarded to the orchestrator, so a hook fires during the message lifecycle exactly as if it had been passed to `createChatOrchestrator` directly. ([validated by: forwards an orchestrator hook, so one passed through the config actually fires](../../src/config.test.ts#L18))
-- `transport.port` is forwarded to the HTTP server: the server listens on the port the configuration declares. ([validated by: forwards transport.port, so the server listens where the config said](../../src/config.test.ts#L35))
-- An explicit port argument passed to `engine.start(port)` wins over `transport.port`, so the caller can override the configured port at runtime without changing the configuration. ([validated by: lets an explicit start(port) win over the configured one](../../src/config.test.ts#L46))
-- When a `logger` is supplied in the configuration, the engine routes its own log lines through it, so the caller receives the same lines they would otherwise see on `stdout`. ([validated by: delivers the package's own log lines to a supplied logger](../../src/config.test.ts#L64))
-- When no `logger` is named in the configuration, the engine leaves any already-installed logger in place, so a caller that set a logger before calling `createHalEngine` keeps their choice. ([validated by: leaves an already-supplied logger in place when the config names none](../../src/config.test.ts#L77))
-- When `start()` cannot bind the port (for example because another process holds it), it rejects the returned promise rather than emitting an unhandled `error` event, so the caller can handle the failure in a `catch` block. ([validated by: rejects instead of taking the process down with an unhandled error event](../../src/config.test.ts#L173))
+- `orchestrator.hooks` passed in the configuration are forwarded to the orchestrator, so a hook fires during the message lifecycle exactly as if it had been passed to `createChatOrchestrator` directly. ([validated by: forwards an orchestrator hook, so one passed through the config actually fires](../../src/config.test.ts#L19))
+- `transport.port` is forwarded to the HTTP server: the server listens on the port the configuration declares. ([validated by: forwards transport.port, so the server listens where the config said](../../src/config.test.ts#L36))
+- An explicit port argument passed to `engine.start(port)` wins over `transport.port`, so the caller can override the configured port at runtime without changing the configuration. ([validated by: lets an explicit start(port) win over the configured one](../../src/config.test.ts#L47))
+- When a `logger` is supplied in the configuration, the engine routes its own log lines through it, so the caller receives the same lines they would otherwise see on `stdout`. ([validated by: delivers the package's own log lines to a supplied logger](../../src/config.test.ts#L65))
+- When no `logger` is named in the configuration, the engine leaves any already-installed logger in place, so a caller that set a logger before calling `createHalEngine` keeps their choice. ([validated by: leaves an already-supplied logger in place when the config names none](../../src/config.test.ts#L78))
+- When `start()` cannot bind the port (for example because another process holds it), it rejects the returned promise rather than emitting an unhandled `error` event, so the caller can handle the failure in a `catch` block. ([validated by: rejects instead of taking the process down with an unhandled error event](../../src/config.test.ts#L195))
 
 ## Provider resilience
 
@@ -437,9 +449,11 @@ An `AIProvider` can fail transiently — a rate-limited vendor, a request that i
 - Once the first chunk has been handed to the caller the attempt is uninterruptible: a later failure propagates without a retry, because the chunks already streamed cannot be un-sent ([validated by: does not retry once the first chunk has been handed off, even on a retryable failure](../../src/providers/withRetry.test.ts#L74)).
 - When every attempt fails, `withRetry` throws an `AIError` carrying the last attempt's `code`, so the orchestrator's `error instanceof Error` guard passes and a later failover path can act on the final failure ([validated by: gives up after maxAttempts and throws an AIError carrying the last attempt code](../../src/providers/withRetry.test.ts#L104)).
 - `firstChunkTimeoutMs` bounds a hung request: an attempt whose first chunk never arrives is abandoned — its iterator's `return()` is called to release the generator — and retried ([validated by: abandons an attempt whose first chunk never arrives, calls return on it, and retries](../../src/providers/withRetry.test.ts#L127)).
-- `idleChunkTimeoutMs` bounds a stalled stream once output has begun: it surfaces as an `AIError` with code `TIMEOUT` and is not retried, because output has already reached the caller ([validated by: throws a TIMEOUT AIError without retrying when the stream stalls after its first chunk](../../src/providers/withRetry.test.ts#L166)).
-- Backoff is exponential with full jitter capped at `maxDelayMs`: the wait before attempt two falls within `[0, baseDelayMs]` and before attempt three within `[0, 2 × baseDelayMs]` ([validated by: backs off with full jitter, bounding attempt two to baseDelay and attempt three to twice it](../../src/providers/withRetry.test.ts#L206)).
-- `generateStructured` is wrapped by the same attempt-and-backoff loop; it returns a `Promise` rather than a stream, so the first-chunk rule does not apply and a retry there is unconditionally safe ([validated by: retries generateStructured under the same attempt-and-backoff loop](../../src/providers/withRetry.test.ts#L252)).
+- `idleChunkTimeoutMs` bounds a stalled stream once output has begun: it surfaces as an `AIError` with code `TIMEOUT` and is not retried, because output has already reached the caller, and the abandoned iterator’s `return()` is called so the generator is released ([validated by: throws a TIMEOUT AIError, calls return on the stalled iterator, and does not retry when the stream stalls after its first chunk](../../src/providers/withRetry.test.ts#L166)).
+- Backoff is exponential with full jitter capped at `maxDelayMs`: the wait before attempt two falls within `[0, baseDelayMs]` and before attempt three within `[0, 2 × baseDelayMs]` ([validated by: backs off with full jitter, bounding attempt two to baseDelay and attempt three to twice it](../../src/providers/withRetry.test.ts#L218)).
+- `generateStructured` is wrapped by the same attempt-and-backoff loop; it returns a `Promise` rather than a stream, so the first-chunk rule does not apply and a retry there is unconditionally safe ([validated by: retries generateStructured under the same attempt-and-backoff loop](../../src/providers/withRetry.test.ts#L264)).
+- An engine configured with no `resilience` block processes a message exactly as it does today, so the field is optional in fact and not only in the type ([validated by: processes a message unchanged when the config declares no resilience block](../../src/config.test.ts#L115)).
+- An engine configured with a `resilience` block answers the same message with the same reply, so wrapping the provider is invisible to a turn that does not fail ([validated by: processes a message to the same reply when the config declares a resilience block](../../src/config.test.ts#L121)).
 
 Each retry re-sends the entire conversation — every message verbatim — to the model vendor again, so `maxAttempts` multiplies the volume of personal data crossing any jurisdictional boundary the deployment sits across. The decorator logs the attempt number, the `AIError.code` and the delay only; it never logs message content, the system prompt, tool arguments, or any auth header field, consistent with the engine redacting nothing elsewhere.
 

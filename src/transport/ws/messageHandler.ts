@@ -14,7 +14,7 @@ import {
   createThinkingEntry,
   createToolEntry,
 } from '../../orchestration/entryFactories.js';
-import {appendEntry, appendDelta, commitEntry} from '../../orchestration/entryMutations.js';
+import {appendEntry, appendDelta, commitEntry, markTruncated} from '../../orchestration/entryMutations.js';
 import {sendJson, sendUpsert, sendDelta, sendCommit, sendSkip, sendError, sendStreamEnd} from './sender.js';
 import {log} from '../../shared/logger.js';
 
@@ -29,26 +29,45 @@ type StateIndexKey = 'thinkingIndex' | 'assistantIndex';
 type EntryFactory = typeof createThinkingEntry | typeof createAssistantEntry;
 export function createMessageHandler(orchestrator: ChatOrchestrator) {
   return async function handleMessage(ws: WebSocket, session: ChatSession, rawMessage: unknown): Promise<void> {
-    const validation = validateMessage(rawMessage);
+    try {
+      await dispatchMessage(ws, session, orchestrator, rawMessage);
+    } finally {
+      // Every user_message ends in exactly one stream_end, errored or not; a ping never gets one.
+      if (isUserMessageFrame(rawMessage)) sendStreamEnd(ws);
+    }
+  };
+}
 
-    if (!validation.valid) {
-      log.warn('message', 'validation failed', {error: validation.error});
-      sendError(ws, ErrorCodes.INVALID_MESSAGE, validation.error);
-      return;
+async function dispatchMessage(
+  ws: WebSocket,
+  session: ChatSession,
+  orchestrator: ChatOrchestrator,
+  rawMessage: unknown
+): Promise<void> {
+  const validation = validateMessage(rawMessage);
+
+  if (!validation.valid) {
+    log.warn('message', 'validation failed', {error: validation.error});
+    sendError(ws, ErrorCodes.INVALID_MESSAGE, validation.error);
+    return;
+  }
+
+  const message = validation.data;
+
+  await wsErrorHandler(ws, async () => {
+    if (message.type === 'user_message') {
+      await handleUserMessage(ws, session, orchestrator, message.content);
     }
 
-    const message = validation.data;
+    if (message.type === 'ping') {
+      handlePing(ws, message.timestamp);
+    }
+  });
+}
 
-    await wsErrorHandler(ws, async () => {
-      if (message.type === 'user_message') {
-        await handleUserMessage(ws, session, orchestrator, message.content);
-      }
-
-      if (message.type === 'ping') {
-        handlePing(ws, message.timestamp);
-      }
-    });
-  };
+// Read from the raw frame, so a user_message that fails validation still gets its stream_end.
+function isUserMessageFrame(rawMessage: unknown): boolean {
+  return typeof rawMessage === 'object' && rawMessage !== null && Reflect.get(rawMessage, 'type') === 'user_message';
 }
 
 async function wsErrorHandler(ws: WebSocket, action: () => Promise<void>): Promise<void> {
@@ -88,16 +107,22 @@ async function handleUserMessage(
 
   let textChunkCount = 0;
 
-  for await (const chunk of orchestrator.processMessageStream(session)) {
-    textChunkCount = logChunk(chunk, textChunkCount);
-    processChunk(ws, session, state, parser, chunk);
+  try {
+    for await (const chunk of orchestrator.processMessageStream(session)) {
+      textChunkCount = logChunk(chunk, textChunkCount);
+      processChunk(ws, session, state, parser, chunk);
+    }
+  } finally {
+    // Anything still open here was cut short: a stop has already flushed the parser and committed every entry it opened.
+    flushHeldText(ws, session, state, parser);
+    closeCutOff(ws, session, state, 'thinkingIndex');
+    closeCutOff(ws, session, state, 'assistantIndex');
   }
 
   if (textChunkCount > 0) {
     log.debug('stream', `received ${textChunkCount} text chunks`);
   }
   log.info('stream', 'stream completed', {suppressed: state.suppressOutput, entries: session.entries.length});
-  sendStreamEnd(ws);
 }
 
 // Diagnostics only: counts a run of text chunks so it is logged once, not per token.
@@ -224,11 +249,24 @@ function processSuppressChunk(ws: WebSocket, session: ChatSession, state: Stream
 }
 
 function processStopChunk(ws: WebSocket, session: ChatSession, state: StreamState, parser: ThinkingTagParser): void {
-  const remaining = parser.flush();
-  for (const segment of remaining) {
+  flushHeldText(ws, session, state, parser);
+  commitOpenEntries(ws, session, state);
+}
+
+// The parser holds back a tail that might open a tag; without this the tail of a cut-off answer would be lost.
+function flushHeldText(ws: WebSocket, session: ChatSession, state: StreamState, parser: ThinkingTagParser): void {
+  for (const segment of parser.flush()) {
     handleTextSegment(ws, session, state, segment);
   }
-  commitOpenEntries(ws, session, state);
+}
+
+// The flag lives on the stored entry even when suppressed; only a visible entry is re-sent, which is how a live client learns it.
+function closeCutOff(ws: WebSocket, session: ChatSession, state: StreamState, key: StateIndexKey): void {
+  const index = state[key];
+  if (index === null) return;
+  markTruncated(session, index);
+  if (!state.suppressOutput) sendUpsert(ws, index, session.entries[index]);
+  commitAndClear(ws, session, state, key);
 }
 
 function commitOpenEntries(ws: WebSocket, session: ChatSession, state: StreamState): void {

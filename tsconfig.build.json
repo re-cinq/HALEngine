@@ -6,5 +6,16 @@
     "declarationMap": false,
     "sourceMap": false
   },
-  "exclude": ["node_modules", "dist", "example", "smoke", "**/*.test.ts", "src/providers/providerTestSupport.ts"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "example",
+    "smoke",
+    "**/*.test.ts",
+    "src/providers/providerTestSupport.ts",
+    "src/infrastructure/writeSignalTestSupport.ts",
+    "src/infrastructure/stores/mongo/mongoTestSupport.ts",
+    "src/shared/logCaptureTestSupport.ts",
+    "src/transport/wsTestSupport.ts"
+  ]
 }

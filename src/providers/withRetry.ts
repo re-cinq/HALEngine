@@ -103,6 +103,7 @@ async function* streamWithIdleTimeout(
       idleTimeout.cancel();
     } catch (err) {
       idleTimeout.cancel();
+      void iter.return(undefined);
       throw err;
     }
     if (nextResult.done) return;

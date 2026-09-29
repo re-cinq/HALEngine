@@ -163,16 +163,25 @@ describe('withRetry', () => {
     }
   });
 
-  it('throws a TIMEOUT AIError without retrying when the stream stalls after its first chunk', async () => {
+  it('throws a TIMEOUT AIError, calls return on the stalled iterator, and does not retry when the stream stalls after its first chunk', async () => {
     jest.useFakeTimers();
     try {
       let calls = 0;
+      let returned = false;
+      let releaseStall = (): void => {};
+      const stallEnds = new Promise<void>(resolve => {
+        releaseStall = resolve;
+      });
       const provider: AIProvider = {
         async *sendMessage(_params: SendMessageParams): AsyncGenerator<MessageChunk> {
           calls++;
-          yield {type: 'text', text: 'first'};
-          await new Promise<never>(() => {});
-          yield {type: 'text', text: 'never'};
+          try {
+            yield {type: 'text', text: 'first'};
+            await stallEnds;
+            yield {type: 'text', text: 'never'};
+          } finally {
+            returned = true;
+          }
         },
         generateStructured: noopGenerateStructured,
       };
@@ -189,15 +198,18 @@ describe('withRetry', () => {
           thrown = error;
         }
       })();
+      await jest.advanceTimersByTimeAsync(1000);
+      releaseStall();
       await jest.runAllTimersAsync();
       await run;
 
       expect({
         received,
         calls,
+        returned,
         isAiError: thrown instanceof AIError,
         code: thrown instanceof AIError ? thrown.code : null,
-      }).toEqual({received: ['first'], calls: 1, isAiError: true, code: 'TIMEOUT'});
+      }).toEqual({received: ['first'], calls: 1, returned: true, isAiError: true, code: 'TIMEOUT'});
     } finally {
       jest.useRealTimers();
     }
