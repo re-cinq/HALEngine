@@ -83,7 +83,7 @@ export function createConnectionHandler(deps: ConnectionHandlerDeps, exampleProm
 
 async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[], ws: ExtWebSocket): Promise<void> {
   const sessionId = uuidv4();
-  const state = {closed: false, settled: false, notified: false};
+  const state = {closed: false, settled: false, notified: false, delivered: false};
 
   ws.on('error', (error: Error) => {
     log.error('ws', 'connection error', {sessionId, error: error.message});
@@ -127,6 +127,7 @@ async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[]
     examplePrompts,
   };
   ws.send(JSON.stringify(connected));
+  state.delivered = true;
 
   // Deferred, not inline: a synchronous throw in the `connection` listener corrupts an already-upgraded socket.
 
@@ -168,7 +169,7 @@ async function createSession(
 async function releaseSession(
   deps: ConnectionHandlerDeps,
   sessionId: string,
-  state: {notified: boolean}
+  state: {notified: boolean; delivered: boolean}
 ): Promise<void> {
   if (state.notified) return;
   state.notified = true;
@@ -178,6 +179,9 @@ async function releaseSession(
   } catch (error) {
     log.error('ws', 'session delete failed', {sessionId, error: messageOf(error)});
   }
+
+  // Only for a session the consumer was actually handed: onDisconnect is the other half of onConnect, not of a socket.
+  if (!state.delivered) return;
 
   runHook('onDisconnect', sessionId, () => deps.onDisconnect?.(sessionId));
 }

@@ -136,6 +136,8 @@ describe('the websocket connection handler', () => {
       const {connect, close, deleted} = harness({onDisconnect: id => void seen.push(id)});
 
       connect();
+      // The session is delivered once the awaited create resolves; onDisconnect is the other half of that delivery.
+      await settle();
       close();
       await settle();
 
@@ -200,5 +202,20 @@ describe('a session store that fails to release', () => {
     await settle();
 
     expect(errors).toEqual([{category: 'ws', message: 'session delete failed', sessionId, error: 'store unreachable'}]);
+  });
+
+  it('stays silent for a connection that was never handed a session', async () => {
+    const seen: string[] = [];
+    const sessionStore = {
+      create: () => Promise.reject(new Error('store down')),
+    } as unknown as SessionStore;
+    const {connect, close} = harness({sessionStore, onDisconnect: id => void seen.push(id)});
+
+    connect();
+    await settle();
+    close();
+    await settle();
+
+    expect(seen).toEqual([]);
   });
 });

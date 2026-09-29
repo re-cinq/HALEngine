@@ -19,11 +19,12 @@
 ## When the socket loses the race
 
 - A socket that closes while `create` is still pending leaves no session behind: the `close` listener is attached before the await rather than after it, since one attached afterwards would miss the event entirely, so the handler releases the session once the create resolves and sends no `connected` frame to a socket that is already gone ([validated by: leaves no session behind when the socket closes during create](../../src/transport/awaitedSessionCreate.test.ts#L97)).
+- `onDisconnect` is the other half of `onConnect` rather than of the socket: a connection that was never handed a session — because `create` rejected, or because the socket closed before the `connected` frame — fires neither hook ([validated by: stays silent for a connection that was never handed a session](../../src/transport/ws/connectionHandler.test.ts#L207)).
 
 ## When the store fails
 
 - **NIS-2 Article 21.** A `create` that rejects closes that one socket with an `error` frame carrying `SERVER_ERROR` and produces no `unhandledRejection`, since an async connection listener that rejects would otherwise end the process and take every other conversation on the server with it; the socket is resumed before it is closed, because `ws.close()` on a paused socket waits for a close frame it can never read and gives up only after the library's own thirty-second timeout ([validated by: answers a rejecting create with SERVER_ERROR rather than an unhandled rejection](../../src/transport/awaitedSessionCreate.test.ts#L111)).
-- **GDPR.** A `delete` that rejects on the close path is caught and logged with the session id, so a durable erase that failed is reported rather than silently recorded as done ([validated by: logs a rejecting delete with the session id rather than dropping it](../../src/transport/ws/connectionHandler.test.ts#L189)).
+- **GDPR.** A `delete` that rejects on the close path is caught and logged with the session id, so a durable erase that failed is reported rather than silently recorded as done ([validated by: logs a rejecting delete with the session id rather than dropping it](../../src/transport/ws/connectionHandler.test.ts#L191)).
 
 ## Compatibility
 
