@@ -33,7 +33,7 @@ export interface OrchestratorHooks {
   beforeUserInput?: (session: ChatSession, userMessage: string) => Promise<string>;
   afterUserInput?: (session: ChatSession, userMessage: string) => Promise<void>;
   beforeModelResponse?: (session: ChatSession, systemPrompt: string) => Promise<string>;
-  afterModelResponse?: (session: ChatSession, responseText: string, usage?: UsageMetadata) => Promise<void>;
+  afterModelResponse?: (session: ChatSession, responseText: string, totalUsage?: UsageMetadata) => Promise<void>;
   onError?: (session: ChatSession, error: Error) => Promise<void>;
   /** The supported seam for an EU AI Act Art. 14 human-oversight control: fires before each known tool's executor, and a returned ToolResponse replaces the call (see docs/adding-a-tool.md); it receives the model's raw tool input and, through session, the caller's authHeaders, so a policy that logs either logs personal data and credential material; the engine asserts nothing about any policy installed here. */
   beforeToolCall?: (session: ChatSession, call: ToolCall) => Promise<ToolResponse | undefined>;
@@ -104,7 +104,7 @@ export function createChatOrchestrator(
           : baseSystemPrompt;
 
         const messages: Message[] = toMessages(session.entries, contextConfig);
-        let lastUsage: UsageMetadata | undefined;
+        let totalUsage: UsageMetadata | undefined;
         let responseText = '';
 
         // Bounded by the budget gate below, not the header: maxToolRounds executed rounds, maxToolRounds + 1 provider calls.
@@ -114,7 +114,7 @@ export function createChatOrchestrator(
 
           const outcome = yield* streamRound(provider, {messages, systemPrompt, tools}, pendingToolCalls);
           responseText += outcome.text;
-          lastUsage = outcome.usage ?? lastUsage;
+          totalUsage = accumulateUsage(totalUsage, outcome.usage);
 
           if (!shouldContinueToolLoop(outcome.stopReason, pendingToolCalls, toolRegistry)) break;
           if (budgetSpent(round, maxToolRounds, pendingToolCalls)) {
@@ -145,7 +145,7 @@ export function createChatOrchestrator(
           }
         }
 
-        if (hooks?.afterModelResponse) await hooks.afterModelResponse(session, responseText, lastUsage);
+        if (hooks?.afterModelResponse) await hooks.afterModelResponse(session, responseText, totalUsage);
       } catch (error) {
         if (hooks?.onError && error instanceof Error) {
           await hooks.onError(session, error);
@@ -319,6 +319,17 @@ function assignEntryIndices(clientMessages: OutgoingMessage[], session: ChatSess
     const index = appendEntry(session, msg.entry);
     return {...msg, index};
   });
+}
+
+// Adds per-round token counts so the hook receives the total across all provider calls in the turn.
+function accumulateUsage(acc: UsageMetadata | undefined, next: UsageMetadata | undefined): UsageMetadata | undefined {
+  if (!acc) return next;
+  if (!next) return acc;
+  return {
+    inputTokens: acc.inputTokens + next.inputTokens,
+    outputTokens: acc.outputTokens + next.outputTokens,
+    totalTokens: acc.totalTokens + next.totalTokens,
+  };
 }
 
 // A store outage is not a reason to fail the turn the customer already received.
