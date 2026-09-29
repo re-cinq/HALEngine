@@ -11,6 +11,7 @@ import type {
 } from '../types/ai.js';
 import type {OutgoingMessage} from '../types/messages.js';
 import type {PromptBuilder, PromptBuilderOptions} from '../infrastructure/builders/promptBuilder.js';
+import type {SessionStore} from '../types/sessionStore.js';
 import {toMessages, createContextConfig} from './conversationContext.js';
 import type {ContextConfig} from './conversationContext.js';
 import {
@@ -21,7 +22,7 @@ import {
   extractStopReason,
   extractUsage,
 } from './orchestratorHelpers.js';
-import {appendEntry} from './entryMutations.js';
+import {appendEntry, commitStreamingEntries} from './entryMutations.js';
 import {log} from '../shared/logger.js';
 
 const DEFAULT_MAX_TOOL_ROUNDS = 5;
@@ -60,6 +61,7 @@ export interface ChatOrchestratorOptions {
   contextConfig?: Partial<ContextConfig>;
   promptBuilderOptions?: PromptBuilderOptions;
   hooks?: OrchestratorHooks;
+  sessionStore?: SessionStore;
 }
 
 interface ToolExecutionResult {
@@ -78,6 +80,7 @@ export function createChatOrchestrator(
   const baseSystemPrompt = promptBuilder.build({...options?.promptBuilderOptions, toolInstructions});
   const tools = toolRegistry?.getDefinitions();
   const hooks = options?.hooks;
+  const sessionStore = options?.sessionStore;
 
   return {
     async processMessage(session: ChatSession): Promise<string> {
@@ -149,7 +152,13 @@ export function createChatOrchestrator(
         }
         throw error;
       } finally {
-        if (hooks?.afterSession) await hooks.afterSession(session);
+        // Before both: a provider that threw mid-stream leaves an entry open, and nothing should persist it that way.
+        commitStreamingEntries(session);
+        try {
+          if (hooks?.afterSession) await hooks.afterSession(session);
+        } finally {
+          await saveSession(sessionStore, session);
+        }
       }
     },
   };
@@ -310,4 +319,16 @@ function assignEntryIndices(clientMessages: OutgoingMessage[], session: ChatSess
     const index = appendEntry(session, msg.entry);
     return {...msg, index};
   });
+}
+
+// A store outage is not a reason to fail the turn the customer already received.
+async function saveSession(store: SessionStore | undefined, session: ChatSession): Promise<void> {
+  if (!store?.save) return;
+
+  try {
+    await store.save(session);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.error('orchestrator', 'session save failed', {sessionId: session.sessionId, error: message});
+  }
 }
