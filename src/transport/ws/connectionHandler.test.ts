@@ -208,6 +208,8 @@ describe('a session store that fails to release', () => {
     const seen: string[] = [];
     const sessionStore = {
       create: () => Promise.reject(new Error('store down')),
+      delete: () => true,
+      evict: () => true,
     } as unknown as SessionStore;
     const {connect, close} = harness({sessionStore, onDisconnect: id => void seen.push(id)});
 
