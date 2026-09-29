@@ -260,7 +260,8 @@ path from `0.1.0` on the registry — only from the git specifier.
 - Resolved a high-severity advisory in `ws`, a direct runtime dependency. The full dependency audit went
   from 18 advisories (1 critical, 6 high) to 3 (2 moderate, 1 low), none at high or above.
 
-[Unreleased]: https://github.com/re-cinq/HALEngine/compare/v0.3.0...main
+[Unreleased]: https://github.com/re-cinq/HALEngine/compare/v0.4.0...main
+[0.4.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.4.0
 [0.3.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.3.0
 [0.2.1]: https://github.com/re-cinq/HALEngine/releases/tag/v0.2.1
 [0.2.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.2.0
