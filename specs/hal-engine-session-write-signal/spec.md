@@ -11,7 +11,7 @@
 
 - `save` fires exactly once for one processed user message ([validated by: saves once for one processed user message](../../src/orchestration/sessionSave.test.ts#L31)).
 - It is called from the orchestrator's `finally` path, the same one that runs `afterSession`, rather than from the success path, because a turn that ended in a provider error still produced a user entry worth keeping and a store that only heard about successes would silently lose exactly the conversations a customer complains about: a provider that rejects still produces one `save`, and the rejection still reaches the caller ([validated by: saves once and still rethrows when the provider fails](../../src/orchestration/sessionSave.test.ts#L39)).
-- The store reaches the orchestrator through `ChatOrchestratorOptions.sessionStore`, which `createHalEngine` forwards from `HalEngineConfig.session` — the same store the transport already received ([validated by: forwards the session store, so its write signal reaches the orchestrator](../../src/config.test.ts#L204)).
+- The store reaches the orchestrator through `ChatOrchestratorOptions.sessionStore`, which `createHalEngine` forwards from `HalEngineConfig.session` — the same store the transport already received ([validated by: forwards the session store, so its write signal reaches the orchestrator](../../src/config.test.ts#L225)).
 
 ## What it carries
 

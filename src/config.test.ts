@@ -105,6 +105,27 @@ describe('createHalEngine orchestrator hooks reach the orchestrator', () => {
     expect(reply).toContain('ping');
   });
 
+  const replyThrough = async (engine: ReturnType<typeof createHalEngine>, sessionId: string): Promise<string> =>
+    engine.orchestrator.processMessage({
+      sessionId,
+      userId: 'u1',
+      entries: [{role: 'user', content: 'unwrapped', timestamp: ''}],
+    });
+
+  it('processes a message unchanged when the config declares no resilience block', async () => {
+    const reply = await replyThrough(createHalEngine({...base}), 's-no-resilience');
+
+    expect(reply).toEqual('Mock response to: "unwrapped" ');
+  });
+
+  it('processes a message to the same reply when the config declares a resilience block', async () => {
+    const engine = createHalEngine({...base, resilience: {maxAttempts: 3, baseDelayMs: 0}});
+
+    const reply = await replyThrough(engine, 's-resilience');
+
+    expect(reply).toEqual('Mock response to: "unwrapped" ');
+  });
+
   it('hands a config-installed beforeModelResponse hook the built base system prompt, not merely storing it', async () => {
     let received = 'never called';
     const engine = createHalEngine({

@@ -372,7 +372,7 @@ The alias is removed. `user_message` is the only wire name, which is what the ex
 - `transport.port` reaches the server, and the resolution order is the `start(port)` argument, then `transport.port`, then `PORT`, then `8086` ([validated by: forwards transport.port, so the server listens where the config said](../../src/config.test.ts#L36)).
 - An explicit `start(port)` still wins over the configured one ([validated by: lets an explicit start(port) win over the configured one](../../src/config.test.ts#L47)).
 - The started line logs the bound port rather than the requested one, which is what a configured `0` makes visible.
-- A port that cannot be bound rejects the promise `start()` returned, rather than surfacing as an unhandled `error` event that ends the process ([validated by: rejects instead of taking the process down with an unhandled error event](../../src/config.test.ts#L174)).
+- A port that cannot be bound rejects the promise `start()` returned, rather than surfacing as an unhandled `error` event that ends the process ([validated by: rejects instead of taking the process down with an unhandled error event](../../src/config.test.ts#L195)).
 
 Removing that listener once `listen` succeeded left the running server with none, and an `EventEmitter` with no `error` listener throws - so a socket error on a started server ended the process. A persistent listener replaces it, and its lifetime is the part worth stating: it is removed before each bind attempt, and never on `stop()`.
 

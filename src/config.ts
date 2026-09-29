@@ -3,6 +3,8 @@ import type {SessionStore} from './types/sessionStore.js';
 import type {PromptBuilderConfig} from './infrastructure/builders/promptBuilder.js';
 import type {ContextConfig} from './orchestration/conversationContext.js';
 import type {ProviderConfig} from './providers/providerFactory.js';
+import {withRetry} from './providers/withRetry.js';
+import type {RetryPolicy} from './providers/withRetry.js';
 import type {Logger} from './shared/logger.js';
 import {setLogger} from './shared/logger.js';
 import type {ChatSession} from './types/session.js';
@@ -19,6 +21,7 @@ import {createServer} from './transport/createServer.js';
 
 export interface HalEngineConfig {
   provider: ProviderConfig;
+  resilience?: RetryPolicy;
   prompt: PromptBuilderConfig;
   tools?: ToolRegistry;
   session?: SessionStore;
@@ -61,7 +64,8 @@ export function createHalEngine(config: HalEngineConfig): HalEngine {
   const sessionStore = config.session ?? new InMemorySessionStore();
   const basePath = config.transport?.basePath ?? '/hal';
 
-  const provider = createProvider(config.provider);
+  const baseProvider = createProvider(config.provider);
+  const provider = config.resilience ? withRetry(baseProvider, config.resilience) : baseProvider;
   const promptBuilder = new PromptBuilder(config.prompt);
   const orchestrator = createChatOrchestrator(provider, promptBuilder, toolRegistry, {
     maxToolRounds: config.orchestrator?.maxToolRounds,
