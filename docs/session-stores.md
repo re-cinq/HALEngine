@@ -8,18 +8,26 @@ getting it wrong either destroys a customer's history or fails to honour their e
 
 | Method | Cache | Durable storage |
 |---|---|---|
-| `delete(sessionId)` | evicts | untouched — a later `get` reloads it |
+| `delete(sessionId)` | evicts | **erases** — the consumer's erasure primitive; the engine never calls it |
 | `clear()` | evicts everything | untouched |
 | `evict(sessionId)` | evicts | **erases** — only ever called for a session no client received |
 | `eraseConversation(sessionId)` | evicts | **erases that document, permanently** |
 | `eraseOlderThan(cutoff)` | evicts | **erases every document created before `cutoff`** |
 | `eraseAll()` | evicts everything | **erases every document** |
 
-`delete` is the interface's own member and the engine never calls it. It is yours, and a store may
-implement it as a durable deletion if that is what you want it to mean — but `MongoSessionStore`
-does not, because the engine's transport used to call it on every socket close.
+`delete` is the interface's own member and the engine never calls it, so `MongoSessionStore`
+implements it as a durable deletion — the same thing `eraseConversation` does, reachable by a
+consumer holding only the `SessionStore` interface. `eraseConversation` is what an erasure request
+under GDPR Article 17 calls for; `delete` is its synonym.
 
-`eraseConversation` is what an erasure request under GDPR Article 17 calls for.
+**`clear` is not.** Its in-memory twin is a harmless cache reset, so a durable `clear` would be an
+unguarded mass erasure reachable by a method name that gives no warning. `eraseAll` is the durable
+wipe, and it says so.
+
+**Read this before wiring `onDisconnect`.** Because `delete` erases here, the one-line migration
+that restores the pre-0.4 close behaviour — `onDisconnect: sessionId => store.delete(sessionId)` —
+destroys the conversation on every socket close when it is pointed at this store. Use `evict` if
+you want the old memory behaviour without the erasure.
 
 ## What is never persisted
 

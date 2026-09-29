@@ -21,19 +21,18 @@ describe('a session written to MongoDB', () => {
     expect(reloaded?.entries).toEqual([{role: 'user', content: 'hello', timestamp: SENT_AT}]);
   });
 
-  it('reloads from the collection after delete evicts the cache', async () => {
+  it('erases the document when the consumer calls delete', async () => {
     const store = new MongoSessionStore({collection: collectionFor()});
     const session = (await store.create('s1', 'u1')) as ChatSession;
     session.entries.push({role: 'user', content: 'hello', timestamp: SENT_AT});
     await store.save(session);
 
-    const evicted = store.delete('s1');
-    const reloaded = (await store.get('s1')) as ChatSession | undefined;
+    const deleted = await store.delete('s1');
 
-    expect({evicted, held: await store.count(), entries: reloaded?.entries.length}).toEqual({
-      evicted: true,
-      held: 1,
-      entries: 1,
+    expect({deleted, held: await store.count(), reread: await store.get('s1')}).toEqual({
+      deleted: true,
+      held: 0,
+      reread: undefined,
     });
   });
 
