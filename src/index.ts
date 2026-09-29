@@ -44,6 +44,19 @@ export type {
 
 export {InMemorySessionStore} from './infrastructure/stores/inMemorySessionStore.js';
 export type {InMemorySessionStoreOptions} from './infrastructure/stores/inMemorySessionStore.js';
+export {
+  MongoSessionStore,
+  createMongoSessionStore,
+  REDACTED_KEYS,
+  stripCredentialKeys,
+} from './infrastructure/stores/mongo/index.js';
+export type {
+  MongoSessionStoreOptions,
+  MongoSessionDocument,
+  CollectionLike,
+  DbLike,
+  MongoClientLike,
+} from './infrastructure/stores/mongo/index.js';
 export {InMemoryPromptStore} from './infrastructure/stores/inMemoryPromptStore.js';
 export {InMemoryUsageStore} from './infrastructure/stores/inMemoryUsageStore.js';
 export {ThinkingTagParser} from './infrastructure/parsers/thinkingTagParser.js';

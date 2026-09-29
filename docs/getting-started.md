@@ -267,27 +267,71 @@ ws.send(
 
 ## Custom Session Store
 
-Implement the `SessionStore` interface to persist sessions beyond in-memory storage:
+The package ships two stores. `InMemorySessionStore` is the default and keeps conversations for
+`maxAgeMs` (eight hours by default). `MongoSessionStore` keeps them in a collection, so a
+conversation outlives the process:
+
+<!-- doc-block: none -- a consumer's wiring, not code this repository ships -->
+```typescript
+import {createHalEngine, createMongoSessionStore} from '@re-cinq/hal-engine';
+
+const session = createMongoSessionStore({url: process.env.MONGODB_URL!, dbName: 'support'});
+
+const engine = createHalEngine({/* … */ session});
+```
+
+Which method erases, and which only evicts, is the thing to get right — see
+[session-stores.md](session-stores.md). In short: `delete` and `clear` touch the cache,
+`eraseConversation`, `eraseOlderThan` and `eraseAll` remove documents.
+
+To write your own, implement `SessionStore`. Every member may be synchronous or return a promise,
+and `save` is the write signal the engine calls once per processed user message:
 
 <!-- doc-block: none -- a Redis store a reader writes, not code this repository ships -->
 ```typescript
-import type {SessionStore} from '@re-cinq/hal-engine';
-import type {ChatSession} from '@re-cinq/hal-engine';
+import type {Awaitable, ChatSession, SessionCreateOptions, SessionStore} from '@re-cinq/hal-engine';
 
 class RedisSessionStore implements SessionStore {
+  private readonly cache = new Map<string, ChatSession>();
+
   constructor(private redis: RedisClient) {}
 
-  get(sessionId: string): ChatSession | undefined {
-    const data = this.redis.get(`session:${sessionId}`);
-    return data ? JSON.parse(data) : undefined;
+  create(sessionId: string, userId: string | number, options?: SessionCreateOptions): ChatSession {
+    const session: ChatSession = {sessionId, userId, entries: [], ...options};
+    this.cache.set(sessionId, session);
+    return session;
   }
 
-  set(sessionId: string, session: ChatSession): void {
-    this.redis.set(`session:${sessionId}`, JSON.stringify(session));
+  async get(sessionId: string): Promise<ChatSession | undefined> {
+    const cached = this.cache.get(sessionId);
+    if (cached) return cached;
+
+    const stored = await this.redis.get(`session:${sessionId}`);
+    return stored ? (JSON.parse(stored) as ChatSession) : undefined;
   }
 
-  delete(sessionId: string): void {
-    this.redis.del(`session:${sessionId}`);
+  // Eviction, not erasure: the engine never calls this, and a durable delete here would destroy history.
+  delete(sessionId: string): boolean {
+    return this.cache.delete(sessionId);
+  }
+
+  count(): Awaitable<number> {
+    return this.cache.size;
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+
+  // Never persist authHeaders: the credentials outlive the request they were issued for.
+  async save(session: ChatSession): Promise<void> {
+    const {authHeaders: _ignored, ...storable} = session;
+    await this.redis.set(`session:${session.sessionId}`, JSON.stringify(storable));
+  }
+
+  async eraseConversation(sessionId: string): Promise<void> {
+    this.cache.delete(sessionId);
+    await this.redis.del(`session:${sessionId}`);
   }
 }
 ```
