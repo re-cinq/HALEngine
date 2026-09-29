@@ -249,7 +249,8 @@ describe('a session store that fails to release', () => {
     expect(created.map(session => session.authHeaders)).toEqual([undefined]);
   });
 
-  it('does not strand a paused socket when connection setup throws', async () => {
+  // One socket whose send throws, driven twice: once for what the socket sees, once for what the store keeps.
+  const setupThatFails = (sessionStore: SessionStore) => {
     const calls: string[] = [];
     const listeners = new Map<string, (arg?: unknown) => void>();
     const ws = {
@@ -263,9 +264,6 @@ describe('a session store that fails to release', () => {
       resume: () => void calls.push('resume'),
       close: () => void calls.push('close'),
     } as unknown as ExtWebSocket;
-    const sessionStore = {
-      create: (sessionId: string, userId: string | number): ChatSession => ({sessionId, userId, entries: []}),
-    } as unknown as SessionStore;
     const deps = {
       wsAuth: jest.fn(),
       sessionStore,
@@ -274,8 +272,29 @@ describe('a session store that fails to release', () => {
     } as unknown as ConnectionHandlerDeps;
 
     createConnectionHandler(deps, [])(ws);
+    return calls;
+  };
+
+  const holdingStore = (evicted: string[]) =>
+    ({
+      create: (sessionId: string, userId: string | number): ChatSession => ({sessionId, userId, entries: []}),
+      evict: (sessionId: string) => (evicted.push(sessionId), true),
+    }) as unknown as SessionStore;
+
+  it('does not strand a paused socket when connection setup throws', async () => {
+    const calls = setupThatFails(holdingStore([]));
+
     await settle();
 
     expect(calls).toEqual(['pause', 'resume', 'close']);
+  });
+
+  it('evicts a session it created but could not hand over', async () => {
+    const evicted: string[] = [];
+
+    setupThatFails(holdingStore(evicted));
+    await settle();
+
+    expect(evicted).toHaveLength(1);
   });
 });

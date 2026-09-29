@@ -137,7 +137,18 @@ async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[]
     message: 'Connected to HAL Engine',
     examplePrompts,
   };
-  ws.send(JSON.stringify(connected));
+  // A socket that died between the check above and this frame must not leave the session it was created for behind.
+  try {
+    ws.send(JSON.stringify(connected));
+  } catch (error) {
+    log.error('ws', 'connected frame failed', {sessionId, error: messageOf(error)});
+    await evictSession(deps, sessionId);
+    endSession(deps, sessionId, state, held);
+    ws.resume();
+    ws.close(1011, 'Connection setup failed');
+    return;
+  }
+
   state.delivered = true;
 
   // Deferred, not inline: a synchronous throw in the `connection` listener corrupts an already-upgraded socket.
