@@ -10,7 +10,7 @@ getting it wrong either destroys a customer's history or fails to honour their e
 |---|---|---|
 | `delete(sessionId)` | evicts | untouched — a later `get` reloads it |
 | `clear()` | evicts everything | untouched |
-| `evict(sessionId)` | evicts | untouched |
+| `evict(sessionId)` | evicts | **erases** — only ever called for a session no client received |
 | `eraseConversation(sessionId)` | evicts | **erases that document, permanently** |
 | `eraseOlderThan(cutoff)` | evicts | **erases every document created before `cutoff`** |
 | `eraseAll()` | evicts everything | **erases every document** |

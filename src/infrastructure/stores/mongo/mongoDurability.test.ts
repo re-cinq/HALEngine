@@ -101,11 +101,13 @@ describe('a session written to MongoDB', () => {
     expect({held: await store.count(), reread: (await store.get('s1'))?.sessionId}).toEqual({held: 1, reread: 's1'});
   });
 
-  it('drops a session from the cache on evict without touching the collection', async () => {
+  it('leaves no document behind when a session the client never received is evicted', async () => {
     const store = new MongoSessionStore({collection: collectionFor()});
     await store.create('s1', 'u1');
 
-    expect({evicted: store.evict('s1'), held: await store.count()}).toEqual({evicted: true, held: 1});
+    const evicted = await store.evict('s1');
+
+    expect({evicted, held: await store.count()}).toEqual({evicted: true, held: 0});
   });
 
   it('erases every conversation on eraseAll', async () => {

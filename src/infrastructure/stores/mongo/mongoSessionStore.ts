@@ -69,8 +69,9 @@ export class MongoSessionStore implements SessionStore {
     return this.cache.delete(sessionId);
   }
 
-  evict(sessionId: string): boolean {
-    return this.cache.delete(sessionId);
+  // The engine evicts only a session no client ever received, so its document holds nothing worth keeping.
+  evict(sessionId: string): Promise<boolean> {
+    return this.eraseConversation(sessionId);
   }
 
   async count(): Promise<number> {
