@@ -8,6 +8,16 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-29
+
+**Upgrading from 0.3.x.** Nothing is removed and no existing signature changes, but check these before you bump:
+
+- The engine no longer erases a conversation when its socket closes. If you relied on that, pass `onDisconnect: sessionId => store.delete(sessionId)` — and do not point it at `MongoSessionStore`, where `delete` destroys the document.
+- `afterModelResponse` now receives the sum of every provider call in the turn, so a tool-heavy turn reports a larger number than it did on 0.3.x. Billing and audit consumers will see the totals rise; that is the corrected figure, not a regression.
+- `onError` now fires for rejections that are not `Error` instances, wrapped in an `Error` whose `cause` is the original value. A hook that counts failures will count calls it never saw before.
+- `SessionStore` members are now `Awaitable<T>`. A synchronous store needs no change.
+- New optional peer dependency: `mongodb`, loaded only if `MongoSessionStore` actually connects.
+
 ### Added
 
 - `SessionStore` gains an optional `save(session)` member: the write signal a durable store needs. The engine calls it once per processed user message, from the same `finally` path that runs `afterSession`, so it fires for a turn that ended in a provider error as well as one that succeeded — a store that only heard about successes would lose exactly the conversations a customer complains about. By the time it runs, the turn's entries are committed, so the assistant entry's `isStreaming` is already `false` — including when a provider threw mid-stream, where the engine now closes the open entry before saving, recording `truncated` on it, rather than persisting a half-streamed entry that looks finished. An `afterSession` hook that throws no longer costs the turn its write signal. What `save` throws or rejects with is caught and logged as one line carrying the session id, and the turn continues: the client still receives its full stream and `stream_end`, because a database outage is not a reason for the agent to stop answering. The member is typed `void | Promise<void>`, so a synchronous implementation and an `async` one both satisfy it. Additive: `InMemorySessionStore` does not implement `save` and is unchanged, and a store that omits it behaves exactly as before.
@@ -21,7 +31,6 @@ package, not for somebody reading this repository's commit log.
 - Every `SessionStore` member is now `Awaitable<T>` (`T | Promise<T>`) rather than a bare `T`, so a store backed by a database is expressible for the first time. `Awaitable` is exported from the package root. **A synchronous implementation needs no change** — `T` is assignable to `T | Promise<T>` in a return position — and `InMemorySessionStore` is unedited. The WebSocket connection handler now awaits `create` and the release that follows a close: it pauses the socket across the await so a frame sent before `connected` arrives is buffered rather than dropped, attaches its `close` listener before the await so a socket that closes mid-create leaves no session behind, and catches a rejection from either call so one store failure closes one socket instead of ending the process with an unhandled rejection. **Migration note**: the `connected` frame now arrives one tick later, after the awaited `create`, so a client that waits for it (as the protocol already requires) sees no difference; only code that assumed the frame was emitted synchronously with the upgrade does.
 - **The engine no longer erases a conversation when its socket closes.** The WebSocket close handler called `sessionStore.delete(sessionId)` unconditionally, which meant that behind a durable store every conversation was written and then destroyed the moment the customer closed their tab — the opposite of what this engine's own documentation promised. `SessionStore.delete` now has no engine-internal caller at all and is purely your erasure primitive. The credentials the socket carried are cleared from the session on close, since they were issued for a request that is over; the entries are untouched. **Migration note**: to restore the old behaviour exactly, pass `onDisconnect: sessionId => store.delete(sessionId)` — that one line is the whole migration. If you rely on the default store not growing, note that it is now bounded by `maxAgeMs` (eight hours) rather than by the close handler; that is a memory bound, not a retention policy, and the retention decision remains yours.
 - The `afterModelResponse` hook now receives the accumulated usage across every provider call in the turn, not only the last one. Existing consumers that use this hook for billing or audit will see larger totals for turns that called tools — this is the correct number. A turn with no tool calls is unchanged.
-
 - `onError` now fires for every rejection, not only those where the thrown value is an `Error` instance. A value that is not already an `Error` is wrapped in one whose `cause` is the original, so a hook typed against `Error` keeps compiling; a hook that wants the raw value can retrieve it via `error.cause`. **Migration note**: a deployer whose `onError` hook previously never fired for string or plain-object rejections will now see those calls; the caller-boundary rejection value is unchanged.
 
 ### Fixed
@@ -251,7 +260,8 @@ path from `0.1.0` on the registry — only from the git specifier.
 - Resolved a high-severity advisory in `ws`, a direct runtime dependency. The full dependency audit went
   from 18 advisories (1 critical, 6 high) to 3 (2 moderate, 1 low), none at high or above.
 
-[Unreleased]: https://github.com/re-cinq/HALEngine/compare/v0.3.0...main
+[Unreleased]: https://github.com/re-cinq/HALEngine/compare/v0.4.0...main
+[0.4.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.4.0
 [0.3.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.3.0
 [0.2.1]: https://github.com/re-cinq/HALEngine/releases/tag/v0.2.1
 [0.2.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.2.0
