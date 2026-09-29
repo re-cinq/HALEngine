@@ -26,6 +26,14 @@ import {log} from '../shared/logger.js';
 
 const DEFAULT_MAX_TOOL_ROUNDS = 5;
 
+function describeRejection(error: unknown): string {
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
 export interface OrchestratorHooks {
   beforeSession?: (session: ChatSession) => Promise<void>;
   afterSession?: (session: ChatSession) => Promise<void>;
@@ -125,7 +133,7 @@ export function createChatOrchestrator(
         if (hooks?.afterModelResponse) await hooks.afterModelResponse(session, responseText, lastUsage);
       } catch (error) {
         if (hooks?.onError) {
-          await hooks.onError(session, error instanceof Error ? error : new Error((() => { try { return JSON.stringify(error); } catch { return String(error); } })(), {cause: error}));
+          await hooks.onError(session, error instanceof Error ? error : new Error(describeRejection(error), {cause: error}));
         }
         throw error;
       } finally {
