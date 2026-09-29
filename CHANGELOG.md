@@ -8,18 +8,14 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
-### Changed
-
-- Every `SessionStore` member is now `Awaitable<T>` (`T | Promise<T>`) rather than a bare `T`, so a store backed by a database is expressible for the first time. `Awaitable` is exported from the package root. **A synchronous implementation needs no change** — `T` is assignable to `T | Promise<T>` in a return position — and `InMemorySessionStore` is unedited. The WebSocket connection handler now awaits `create` and the release that follows a close: it pauses the socket across the await so a frame sent before `connected` arrives is buffered rather than dropped, attaches its `close` listener before the await so a socket that closes mid-create leaves no session behind, and catches a rejection from either call so one store failure closes one socket instead of ending the process with an unhandled rejection. **Migration note**: the `connected` frame now arrives one tick later, after the awaited `create`, so a client that waits for it (as the protocol already requires) sees no difference; only code that assumed the frame was emitted synchronously with the upgrade does.
-
 ### Added
 
 - `SessionStore` gains an optional `save(session)` member: the write signal a durable store needs. The engine calls it once per processed user message, from the same `finally` path that runs `afterSession`, so it fires for a turn that ended in a provider error as well as one that succeeded — a store that only heard about successes would lose exactly the conversations a customer complains about. By the time it runs, the turn's entries are committed, so the assistant entry's `isStreaming` is already `false` — including when a provider threw mid-stream, where the engine now closes the open entry before saving, recording `truncated` on it, rather than persisting a half-streamed entry that looks finished. An `afterSession` hook that throws no longer costs the turn its write signal. What `save` throws or rejects with is caught and logged as one line carrying the session id, and the turn continues: the client still receives its full stream and `stream_end`, because a database outage is not a reason for the agent to stop answering. The member is typed `void | Promise<void>`, so a synchronous implementation and an `async` one both satisfy it. Additive: `InMemorySessionStore` does not implement `save` and is unchanged, and a store that omits it behaves exactly as before.
 - `SessionStore` gains an optional `evict(sessionId)` member, and `InMemorySessionStore` implements it. The engine calls it only for a session whose socket closed while `create` was still pending — one that no client ever received and that has no entries to keep. `InMemorySessionStore` now also takes `{maxAgeMs}` (default `28_800_000`, eight hours), exported as `InMemorySessionStoreOptions`. Expired sessions are evicted when read and swept at the head of `create`, which stops at the first live session, so the bound costs nothing on a busy store. There is no timer: a library-owned interval would keep your process alive.
 
+### Changed
 
-
-
+- Every `SessionStore` member is now `Awaitable<T>` (`T | Promise<T>`) rather than a bare `T`, so a store backed by a database is expressible for the first time. `Awaitable` is exported from the package root. **A synchronous implementation needs no change** — `T` is assignable to `T | Promise<T>` in a return position — and `InMemorySessionStore` is unedited. The WebSocket connection handler now awaits `create` and the release that follows a close: it pauses the socket across the await so a frame sent before `connected` arrives is buffered rather than dropped, attaches its `close` listener before the await so a socket that closes mid-create leaves no session behind, and catches a rejection from either call so one store failure closes one socket instead of ending the process with an unhandled rejection. **Migration note**: the `connected` frame now arrives one tick later, after the awaited `create`, so a client that waits for it (as the protocol already requires) sees no difference; only code that assumed the frame was emitted synchronously with the upgrade does.
 - **The engine no longer erases a conversation when its socket closes.** The WebSocket close handler called `sessionStore.delete(sessionId)` unconditionally, which meant that behind a durable store every conversation was written and then destroyed the moment the customer closed their tab — the opposite of what this engine's own documentation promised. `SessionStore.delete` now has no engine-internal caller at all and is purely your erasure primitive. The credentials the socket carried are cleared from the session on close, since they were issued for a request that is over; the entries are untouched. **Migration note**: to restore the old behaviour exactly, pass `onDisconnect: sessionId => store.delete(sessionId)` — that one line is the whole migration. If you rely on the default store not growing, note that it is now bounded by `maxAgeMs` (eight hours) rather than by the close handler; that is a memory bound, not a retention policy, and the retention decision remains yours.
 
 ## [0.3.0] - 2026-09-29
@@ -32,6 +28,7 @@ package, not for somebody reading this repository's commit log.
 - Offering a bare access token as the only WebSocket subprotocol still works but is deprecated: offer `hal.v1` beside it now, because the next minor release stops accepting a bare token.
 - New dependencies: `ajv`, and `cookie` moves from `^0.7` to `^2`.
 
+### Added
 
 - `VertexConfig` gains an optional `apiEndpoint` field, forwarded verbatim to the `@google-cloud/vertexai` SDK constructor. Deployers who must keep inference in the EU multi-region can set `apiEndpoint: 'aiplatform.eu.rep.googleapis.com'`; the change is additive and the default behaviour (endpoint derived from `location`) is unchanged.
 - `HalEngineConfig.transport` now accepts three optional extension points: `additionalRoutes` (mounts a router under `basePath`, unauthenticated), `rootRoutes` (mounts a router at `/`, after the `basePath` router and before the 404 catch-all), and `errorHandler` (replaces Express's default HTML error page). Pass none of them and the app is identical to before. See `docs/getting-started.md` for usage and the GDPR / NIS-2 notes that apply to unauthenticated routes.
@@ -39,6 +36,7 @@ package, not for somebody reading this repository's commit log.
 - `OrchestratorHooks` gains an optional `onToolBudgetExhausted(session, budget)` hook, and `ToolBudgetInfo` (`{maxToolRounds, requestedTools}`) and `TOOL_BUDGET_EXHAUSTED` are exported. It fires when the model asks for a tool round `maxToolRounds` refuses, after the last provider call and before `afterModelResponse`. Return a sentence and the turn ends on it as an ordinary assistant entry, so the user sees a degraded answer instead of silence; the engine writes no prose of its own. Every exhausted run now also ends with a `{type: 'stop', stopReason: 'tool_budget_exhausted'}` chunk, a new value for the existing field rather than a new type, which the WebSocket transport sends nothing for. The turn still ends with `stream_end`, never `error`. Additive: with no hook installed, the wire is unchanged.
 - `AssistantEntry` and `ThinkingEntry` gain an optional `truncated: true`, set on an entry the run could not finish: a provider failure mid-stream, or a round that ends on a tool call with no `stop`. The server re-sends such an entry as an `entry_upsert` carrying the flag just before its `entry_commit`, and the flag stays on the stored entry, so a client can render a cut-off answer as cut off live or on a replay, without relying on the transient `error` frame. An entry committed normally never carries it; a suppressed entry is flagged in the session but never re-sent. Text the thinking-tag parser was still holding back is now kept in a cut-off entry, as it already was on a normal stop. Additive: a client that ignores the field renders what it did before, and the extra `entry_upsert` replaces the entry with the content it already has.
 
+### Changed
 
 - Every `user_message` now ends in exactly one `stream_end`, including a run that fails and a message that fails validation; the `error` frame is advisory rather than terminal. Unparseable JSON remains the one frame answered with `INVALID_FORMAT` and no `stream_end`. **Migration note**: `stream_end` may now follow an `error` frame, so treat `stream_end` (or the socket closing) as the only end of a run. The one live consumer handles the two frame types independently, and both clear its processing state, so it keeps working unchanged and no deprecation period is served by delaying.
 - Every assistant and thinking entry a run opens is now committed when the run ends, however it ends: a provider that throws mid-stream, or a round that ends on a tool call with no `stop`, no longer leaves an entry with `isStreaming: true` in the session. The partial content is kept exactly as streamed, and on a throw its `entry_commit` arrives before the `error` frame. **Migration note**: `entry_commit` now arrives on paths that previously sent none, so a client counting commit frames sees more of them. No wire type changes, and a client that already stops streaming on `stream_end` renders the same result.
@@ -65,6 +63,7 @@ released through that publisher instead. There is nothing here to upgrade for.
 The first release under the `@re-cinq` scope. Nothing has been published before it, so there is no upgrade
 path from `0.1.0` on the registry — only from the git specifier.
 
+### Changed
 
 - The published package carries no source maps. `files` is `["dist"]`, so every `.js.map` and `.d.ts.map`
   named a `../src/*.ts` the tarball did not contain and carried no inlined sources — 98 files that resolved
@@ -132,6 +131,7 @@ path from `0.1.0` on the registry — only from the git specifier.
   that installs it, instead of a raw `MODULE_NOT_FOUND` from inside `dist/`.
 - Node 22 or newer is required, declared in `engines`.
 
+### Added
 
 - `LICENSE` (Apache-2.0), declared in `package.json`.
 - `exports`, `repository`, `engines` and `publishConfig` entries in the manifest.
