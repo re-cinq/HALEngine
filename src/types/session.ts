@@ -9,12 +9,16 @@ export interface AssistantEntry {
   content: string;
   timestamp: string;
   isStreaming: boolean;
+  /** Present only when the run ended before this entry finished: a provider failure or a round with no stop. */
+  truncated?: true;
 }
 
 export interface ThinkingEntry {
   role: 'thinking';
   content: string;
   isStreaming: boolean;
+  /** Present only when the run ended before this entry finished: a provider failure or a round with no stop. */
+  truncated?: true;
 }
 
 export interface ToolEntry {

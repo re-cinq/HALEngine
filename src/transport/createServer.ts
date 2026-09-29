@@ -7,6 +7,7 @@ import type {ChatOrchestrator} from '../orchestration/chatOrchestrator.js';
 import type {ToolRegistry} from '../orchestration/tools/registry.js';
 import {createUpgradeHandler, createConnectionHandler, ExtWebSocket} from './ws/connectionHandler.js';
 import {createMessageHandler} from './ws/messageHandler.js';
+import {selectSubprotocol} from './ws/subprotocol.js';
 import {log} from '../shared/logger.js';
 
 export interface HalServerOptions {
@@ -34,10 +35,7 @@ export function createServer(options: HalServerOptions): HalServer {
 
   const wss = new WebSocketServer({
     noServer: true,
-    handleProtocols: (protocols: Set<string>) => {
-      const [requested] = protocols;
-      return requested || false;
-    },
+    handleProtocols: selectSubprotocol,
   });
 
   const handleMessage = createMessageHandler(options.orchestrator);

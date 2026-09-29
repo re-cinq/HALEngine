@@ -1,5 +1,5 @@
 // #region quick-start
-import {createHalEngine, log, ToolRegistry} from '../src/index.js';
+import {createHalEngine, credentialFromSubprotocol, log, ToolRegistry} from '../src/index.js';
 
 const tools = new ToolRegistry();
 
@@ -33,7 +33,7 @@ const engine = createHalEngine({
   auth: {
     // No `http` middleware here, so the chat routes under /api/chats answer 401 rather than serving anyone.
     ws: async req => {
-      const token = req.headers.authorization;
+      const token = req.headers.authorization ?? credentialFromSubprotocol(req.headers['sec-websocket-protocol']);
       if (!token) return null;
       return {id: 'user-1'};
     },

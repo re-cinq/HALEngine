@@ -14,14 +14,14 @@ The simplest possible setup requires two things: an AI provider configuration an
 
 <!-- doc-block: example/minimal.ts#minimal -->
 ```typescript
-import {createHalEngine} from '@re-cinq/hal-engine';
+import {createHalEngine, credentialFromSubprotocol} from '@re-cinq/hal-engine';
 
 const engine = createHalEngine({
   provider: {type: 'mock'},
   prompt: {identity: 'You are a helpful assistant.'},
   auth: {
     ws: async req => {
-      const token = req.headers.authorization;
+      const token = req.headers.authorization ?? credentialFromSubprotocol(req.headers['sec-websocket-protocol']);
       if (!token) return null;
       return {id: 'user-1'};
     },
@@ -32,7 +32,7 @@ const engine = createHalEngine({
 await engine.start();
 ```
 
-`ws` receives the WebSocket upgrade request, not a token, so pull whatever you authenticate with off `req.headers` yourself. Return an `AuthenticatedUser` — `id` is the only required field, and anything else you put on it reaches tools through `ToolContext`. Returning `null` rejects the upgrade with `401`.
+`ws` receives the WebSocket upgrade request, not a token, so pull whatever you authenticate with off `req.headers` yourself. A browser cannot set `Authorization` on a WebSocket, so it offers its token beside `hal.v1` in `Sec-WebSocket-Protocol`; `credentialFromSubprotocol` reads it the way the engine does, skipping the marker. Return an `AuthenticatedUser` — `id` is the only required field, and anything else you put on it reaches tools through `ToolContext`. Returning `null` rejects the upgrade with `401`.
 
 This starts a server with:
 
@@ -51,7 +51,7 @@ Tools let the AI fetch data or perform actions. Register them on the engine's `t
 
 <!-- doc-block: example/with-tools.ts#with-tools -->
 ```typescript
-import {createHalEngine, ToolRegistry} from '@re-cinq/hal-engine';
+import {createHalEngine, credentialFromSubprotocol, ToolRegistry} from '@re-cinq/hal-engine';
 import type {ToolDefinition} from '@re-cinq/hal-engine';
 
 const weatherTool: ToolDefinition = {
@@ -89,7 +89,7 @@ const engine = createHalEngine({
   },
   tools: toolRegistry,
   auth: {
-    ws: async req => verifyToken(req.headers.authorization),
+    ws: async req => verifyToken(req.headers.authorization ?? credentialFromSubprotocol(req.headers['sec-websocket-protocol'])),
   },
 });
 ```
@@ -102,7 +102,14 @@ Here is every option available on `HalEngineConfig`:
 ```typescript
 import process from 'node:process';
 import {createHalEngine, InMemorySessionStore, ToolRegistry, log} from '@re-cinq/hal-engine';
-import type {AuthenticatedRequest, HttpAuthMiddleware, Logger, OrchestratorHooks} from '@re-cinq/hal-engine';
+import type {
+  AuthenticatedRequest,
+  HttpAuthMiddleware,
+  Logger,
+  OrchestratorHooks,
+  ToolCall,
+  ToolResponse,
+} from '@re-cinq/hal-engine';
 
 const toolRegistry = new ToolRegistry();
 
@@ -123,6 +130,13 @@ const hooks: OrchestratorHooks = {
   afterModelResponse: async (_session, _responseText, usage) => log.info('app', 'answered', {usage}),
   afterSession: async session => log.info('app', 'session closed', {sessionId: session.sessionId}),
   onError: async (_session, error) => log.error('app', 'orchestration failed', {error: error.message}),
+  // A human-oversight policy: a returned ToolResponse declines the call, and the model reads its result instead.
+  beforeToolCall: async (_session, call: ToolCall): Promise<ToolResponse | undefined> =>
+    call.name === 'send_notification'
+      ? {result: 'Not performed. A human reviewer has been asked to do it.'}
+      : undefined,
+  // The engine writes no user-facing prose: this sentence closes a turn whose tool budget ran out.
+  onToolBudgetExhausted: async () => 'I could not finish looking that up, so a colleague will follow up.',
 };
 
 // A Logger of your own; this one writes plain lines to stderr. Passing `log` itself here is treated as passing none.
@@ -177,7 +191,7 @@ const engine = createHalEngine({
 
   // OPTIONAL: Orchestrator settings
   orchestrator: {
-    maxToolRounds: 5, // Max tool execution rounds (default 5)
+    maxToolRounds: 5, // Max tool rounds executed (default 5); the provider is called at most maxToolRounds + 1 times
     contextConfig: {
       // How many messages are kept, and how much of each.
       maxMessages: 50,
@@ -197,14 +211,14 @@ const engine = createHalEngine({
 
 ### Message lifecycle hooks
 
-`orchestrator.hooks` takes an `OrchestratorHooks`: `beforeSession`, `beforeUserInput`, `afterUserInput`, `beforeModelResponse`, `afterModelResponse`, `afterSession` and `onError`. Every one is optional.
+`orchestrator.hooks` takes an `OrchestratorHooks`: `beforeSession`, `beforeUserInput`, `afterUserInput`, `beforeModelResponse`, `afterModelResponse`, `afterSession`, `onError`, `beforeToolCall` and `onToolBudgetExhausted`. Every one is optional.
 
-Two of them use their return value — `beforeUserInput` rewrites the user message, and `beforeModelResponse` replaces the system prompt. `afterSession` always fires, including on error.
+Four of them use their return value — `beforeUserInput` rewrites the user message, `beforeModelResponse` replaces the system prompt, `onToolBudgetExhausted` supplies the sentence that closes a turn whose tool budget ran out, and `beforeToolCall` can decline a tool call by returning the `ToolResponse` the model reads instead (see [adding a tool](adding-a-tool.md#what-happens-automatically)). `afterSession` always fires, including on error.
 
 They fire in this order:
 
 ```
-beforeSession → beforeUserInput → afterUserInput → beforeModelResponse → ...streaming... → afterModelResponse → afterSession
+beforeSession → beforeUserInput → afterUserInput → beforeModelResponse → ...streaming (beforeToolCall × each tool call, each round)... → onToolBudgetExhausted (only on an exhausted budget) → afterModelResponse → afterSession
 ```
 
 ## Connecting a Client
@@ -215,8 +229,10 @@ The demo chat routes are not part of this flow. A `POST /chats` id is not a WebS
 
 <!-- doc-block: none -- illustrates assembling the parts by hand, which no single declaration or example region carries -->
 ```typescript
-// 1. Connect. The server mints the session id and sends it back in the `connected` frame.
-const ws = new WebSocket('ws://localhost:8086/api/ws', [token]);
+// 1. Connect. Offer the `hal.v1` marker (exported as HAL_WS_SUBPROTOCOL) beside the token; the server answers
+// the marker, so the token never appears in the response. The server mints the session id and sends it back
+// in the `connected` frame.
+const ws = new WebSocket('ws://localhost:8086/api/ws', ['hal.v1', token]);
 
 ws.onmessage = event => {
   const message = JSON.parse(event.data);
@@ -251,27 +267,72 @@ ws.send(
 
 ## Custom Session Store
 
-Implement the `SessionStore` interface to persist sessions beyond in-memory storage:
+The package ships two stores. `InMemorySessionStore` is the default and keeps conversations for
+`maxAgeMs` (eight hours by default). `MongoSessionStore` keeps them in a collection, so a
+conversation outlives the process:
+
+<!-- doc-block: none -- a consumer's wiring, not code this repository ships -->
+```typescript
+import {createHalEngine, createMongoSessionStore} from '@re-cinq/hal-engine';
+
+const session = createMongoSessionStore({url: process.env.MONGODB_URL!, dbName: 'support'});
+
+const engine = createHalEngine({/* … */ session});
+```
+
+Which method erases, and which only evicts, is the thing to get right — see
+[session-stores.md](session-stores.md). In short: only `clear` is cache-only, while `delete`,
+`evict`, `eraseConversation`, `eraseOlderThan` and `eraseAll` all remove documents — so do not
+point `onDisconnect` at any of them.
+
+To write your own, implement `SessionStore`. Every member may be synchronous or return a promise,
+and `save` is the write signal the engine calls once per processed user message:
 
 <!-- doc-block: none -- a Redis store a reader writes, not code this repository ships -->
 ```typescript
-import type {SessionStore} from '@re-cinq/hal-engine';
-import type {ChatSession} from '@re-cinq/hal-engine';
+import type {Awaitable, ChatSession, SessionCreateOptions, SessionStore} from '@re-cinq/hal-engine';
 
 class RedisSessionStore implements SessionStore {
+  private readonly cache = new Map<string, ChatSession>();
+
   constructor(private redis: RedisClient) {}
 
-  get(sessionId: string): ChatSession | undefined {
-    const data = this.redis.get(`session:${sessionId}`);
-    return data ? JSON.parse(data) : undefined;
+  create(sessionId: string, userId: string | number, options?: SessionCreateOptions): ChatSession {
+    const session: ChatSession = {sessionId, userId, entries: [], ...options};
+    this.cache.set(sessionId, session);
+    return session;
   }
 
-  set(sessionId: string, session: ChatSession): void {
-    this.redis.set(`session:${sessionId}`, JSON.stringify(session));
+  async get(sessionId: string): Promise<ChatSession | undefined> {
+    const cached = this.cache.get(sessionId);
+    if (cached) return cached;
+
+    const stored = await this.redis.get(`session:${sessionId}`);
+    return stored ? (JSON.parse(stored) as ChatSession) : undefined;
   }
 
-  delete(sessionId: string): void {
-    this.redis.del(`session:${sessionId}`);
+  // Eviction, not erasure: the engine never calls this, and a durable delete here would destroy history.
+  delete(sessionId: string): boolean {
+    return this.cache.delete(sessionId);
+  }
+
+  count(): Awaitable<number> {
+    return this.cache.size;
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+
+  // Never persist authHeaders: the credentials outlive the request they were issued for.
+  async save(session: ChatSession): Promise<void> {
+    const {authHeaders: _ignored, ...storable} = session;
+    await this.redis.set(`session:${session.sessionId}`, JSON.stringify(storable));
+  }
+
+  async eraseConversation(sessionId: string): Promise<void> {
+    this.cache.delete(sessionId);
+    await this.redis.del(`session:${sessionId}`);
   }
 }
 ```
