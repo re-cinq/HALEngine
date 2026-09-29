@@ -48,4 +48,18 @@ describe('the Mongo store cache', () => {
       held: 1,
     });
   });
+
+  // The clock steps back afterwards so the entry would read as fresh: only a sweep can explain the reload.
+  it('sweeps a session nobody reads again when another is cached', async () => {
+    const reads = {findOne: 0};
+    const store = new MongoSessionStore({collection: countingCollection(reads), maxAgeMs: 1000});
+    await store.create('s1', 'u1');
+
+    jest.setSystemTime(new Date(START.getTime() + 1001));
+    await store.create('s2', 'u2');
+    jest.setSystemTime(new Date(START.getTime() + 500));
+    await store.get('s1');
+
+    expect(reads.findOne).toBe(1);
+  });
 });

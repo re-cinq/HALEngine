@@ -64,6 +64,8 @@ export class MongoSessionStore implements SessionStore {
   async get(sessionId: string): Promise<ChatSession | undefined> {
     const cached = this.cache.get(sessionId);
     if (cached !== undefined && !this.hasAged(cached)) return cached.session;
+    // Dropped on a stale read too: a document erased elsewhere would otherwise leave its entry cached for good.
+    this.cache.delete(sessionId);
 
     const collection = await this.collection();
     const document = await collection.findOne({_id: sessionId});
@@ -143,6 +145,8 @@ export class MongoSessionStore implements SessionStore {
       if (!this.hasAged(cached)) break;
       this.cache.delete(cachedId);
     }
+    // Deleted first: `set` on an existing key keeps its old position, which would break the sweep's age order.
+    this.cache.delete(sessionId);
     this.cache.set(sessionId, {session, cachedAt: this.now().getTime()});
   }
 
