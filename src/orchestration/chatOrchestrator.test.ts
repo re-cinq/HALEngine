@@ -112,6 +112,33 @@ describe('ChatOrchestrator hooks', () => {
 
       expect(callOrder[0]).toBe('beforeSession');
     });
+
+    it('runs onError then afterSession when it throws, and still rejects to the caller', async () => {
+      const callOrder: string[] = [];
+      let onErrorMessage: string | undefined;
+      const hooks: OrchestratorHooks = {
+        beforeSession: async () => {
+          callOrder.push('beforeSession');
+          throw new Error('beforeSession boom');
+        },
+        onError: async (_session, error) => {
+          callOrder.push('onError');
+          onErrorMessage = error.message;
+        },
+        afterSession: async () => {
+          callOrder.push('afterSession');
+        },
+      };
+
+      const orchestrator = createChatOrchestrator(createMockProvider('never'), promptBuilder, undefined, {hooks});
+      const outcome = await outcomeOf(orchestrator.processMessage(createSession('hello')));
+
+      expect({outcome, onErrorMessage, callOrder}).toEqual({
+        outcome: 'beforeSession boom',
+        onErrorMessage: 'beforeSession boom',
+        callOrder: ['beforeSession', 'onError', 'afterSession'],
+      });
+    });
   });
 
   describe('afterSession', () => {
