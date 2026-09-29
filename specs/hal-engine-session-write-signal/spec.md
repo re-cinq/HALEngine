@@ -15,13 +15,16 @@
 
 ## What it carries
 
-- The session handed to `save` carries the turn's user entry and its assistant entry, with the assistant's `isStreaming` already `false`, which is a property of where the call sits rather than anything this issue reordered: the assistant entry is committed by the transport, whose `processStopChunk` calls `commitOpenEntries` on the provider's `stop` chunk, and a generator's `finally` runs only when its consumer pulls after the last chunk, so that commit has already happened by the time `save` runs ([validated by: saves the user entry and the committed assistant entry](../../src/transport/ws/sessionSave.test.ts#L35)).
+- The session handed to `save` carries the turn's user entry and its assistant entry, with the assistant's `isStreaming` already `false` ([validated by: saves the user entry and the committed assistant entry](../../src/transport/ws/sessionSave.test.ts#L34)).
+- That holds however the turn ended. On the success path the transport has already committed the entry by then, because `processStopChunk` runs on the provider's `stop` chunk and a generator's `finally` only runs once its consumer pulls after the last chunk. When a provider throws mid-stream it has not: the throw reaches the orchestrator's `finally` first, so the orchestrator closes any entry still marked streaming before saving, and nothing persists a half-streamed entry ([validated by: saves a committed assistant entry even when the provider dies mid-stream](../../src/transport/ws/sessionSave.test.ts#L47)).
 - A turn driven through the orchestrator alone never produces an assistant entry at all, since the orchestrator only ever appends the user's, which is why the statement above is validated from the transport side rather than beside the other four ([validated by: saves once for one processed user message](../../src/orchestration/sessionSave.test.ts#L44)).
 
 ## When it fails
 
 - **NIS-2 Article 21.** A `save` that rejects does not fail the turn: the caller still receives the answer, and the failure becomes exactly one logged line under category `orchestrator`, message `session save failed`, carrying the session id and the error's message ([validated by: keeps the turn alive and logs once when save rejects](../../src/orchestration/sessionSave.test.ts#L61)).
 - A `save` that throws synchronously is handled identically, so an implementation that forgets to be async cannot take the turn down ([validated by: keeps the turn alive when save throws synchronously](../../src/orchestration/sessionSave.test.ts#L70)).
+- An `afterSession` hook that throws does not cost the turn its write signal: `save` still fires, and the hook's error still reaches the caller ([validated by: saves even when an afterSession hook throws](../../src/orchestration/sessionSave.test.ts#L86)).
+- An `afterSession` hook that throws does not cost the turn its write signal: `save` still fires, and the hook's error still reaches the caller ([validated by: saves even when an afterSession hook throws](../../src/orchestration/sessionSave.test.ts#L86)).
 
 ## Compatibility
 

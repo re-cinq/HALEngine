@@ -22,7 +22,7 @@ import {
   extractStopReason,
   extractUsage,
 } from './orchestratorHelpers.js';
-import {appendEntry} from './entryMutations.js';
+import {appendEntry, commitStreamingEntries} from './entryMutations.js';
 import {log} from '../shared/logger.js';
 
 const DEFAULT_MAX_TOOL_ROUNDS = 5;
@@ -152,8 +152,13 @@ export function createChatOrchestrator(
         }
         throw error;
       } finally {
-        if (hooks?.afterSession) await hooks.afterSession(session);
-        await saveSession(sessionStore, session);
+        // Before both: a provider that threw mid-stream leaves an entry open, and nothing should persist it that way.
+        commitStreamingEntries(session);
+        try {
+          if (hooks?.afterSession) await hooks.afterSession(session);
+        } finally {
+          await saveSession(sessionStore, session);
+        }
       }
     },
   };

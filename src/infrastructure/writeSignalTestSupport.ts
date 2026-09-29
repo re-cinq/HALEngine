@@ -37,5 +37,18 @@ export function failing(message: string): AIProvider {
   };
 }
 
+/** A provider that yields text and then throws, so the turn ends with an entry still open. */
+export function failingMidStream(message: string): AIProvider {
+  return {
+    async *sendMessage(): AsyncGenerator<MessageChunk> {
+      yield {type: 'text', text: 'partial answer'};
+      throw new Error(message);
+    },
+    async generateStructured<T>(): Promise<T> {
+      return {} as T;
+    },
+  };
+}
+
 /** The prompt builder both suites use; its content is irrelevant to the write signal. */
 export const writeSignalPromptBuilder = new PromptBuilder({identity: 'You are a test assistant.'});

@@ -82,4 +82,24 @@ describe('the session write signal', () => {
 
     expect({outcome, logged: errors.length}).toEqual({outcome: 'hi', logged: 0});
   });
+
+  it('saves even when an afterSession hook throws', async () => {
+    const saved: string[] = [];
+    const store = recordingSessionStore(session => void saved.push(session.sessionId));
+    const hooks = {
+      afterSession: () => {
+        throw new Error('hook exploded');
+      },
+    };
+    const orchestrator = createChatOrchestrator(answering('hi'), writeSignalPromptBuilder, undefined, {
+      sessionStore: store,
+      hooks: hooks as never,
+    });
+
+    const outcome = await orchestrator
+      .processMessage(sessionWith('hello'))
+      .catch((error: Error) => `threw: ${error.message}`);
+
+    expect({outcome, saved}).toEqual({outcome: 'threw: hook exploded', saved: ['s1']});
+  });
 });

@@ -3,6 +3,7 @@ import {createMessageHandler} from './messageHandler.js';
 import {createChatOrchestrator} from '../../orchestration/chatOrchestrator.js';
 import {
   answering,
+  failingMidStream,
   recordingSessionStore,
   writeSignalPromptBuilder,
 } from '../../infrastructure/writeSignalTestSupport.js';
@@ -17,13 +18,11 @@ const shape = (entry: SessionEntry): Record<string, unknown> =>
     ? {role: entry.role, content: entry.content, isStreaming: entry.isStreaming}
     : {role: entry.role, content: 'content' in entry ? entry.content : ''};
 
-const turn = async (onSave: (session: ChatSession) => void) => {
+const turn = async (onSave: (session: ChatSession) => void, provider = answering('hello back')) => {
   const sent: OutgoingMessage[] = [];
   const ws = {send: (raw: string) => sent.push(JSON.parse(raw) as OutgoingMessage)} as unknown as WebSocket;
   const sessionStore = recordingSessionStore(onSave);
-  const orchestrator = createChatOrchestrator(answering('hello back'), writeSignalPromptBuilder, undefined, {
-    sessionStore,
-  });
+  const orchestrator = createChatOrchestrator(provider, writeSignalPromptBuilder, undefined, {sessionStore});
   const session = sessionStore.create('s1', 'u1') as ChatSession;
 
   await createMessageHandler(orchestrator)(ws, session, {type: 'user_message', content: 'hello'});
@@ -41,6 +40,19 @@ describe('what the session write signal carries', () => {
       [
         {role: 'user', content: 'hello'},
         {role: 'assistant', content: 'hello back', isStreaming: false},
+      ],
+    ]);
+  });
+
+  it('saves a committed assistant entry even when the provider dies mid-stream', async () => {
+    const saved: Array<Record<string, unknown>[]> = [];
+
+    await turn(session => void saved.push(session.entries.map(shape)), failingMidStream('provider died'));
+
+    expect(saved).toEqual([
+      [
+        {role: 'user', content: 'hello'},
+        {role: 'assistant', content: 'partial answer', isStreaming: false},
       ],
     ]);
   });
