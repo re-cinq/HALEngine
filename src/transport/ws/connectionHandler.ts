@@ -77,7 +77,9 @@ function bearerFromWebSocketProtocol(req: IncomingMessage): string | undefined {
 export function createConnectionHandler(deps: ConnectionHandlerDeps, examplePrompts: string[]) {
   return function handleConnection(ws: ExtWebSocket): void {
     // The listener stays synchronous: an async one rejects into the emitter, and node ends the process on that.
-    void openSession(deps, examplePrompts, ws);
+    openSession(deps, examplePrompts, ws).catch((error: unknown) => {
+      log.error('ws', 'connection setup failed', {error: messageOf(error)});
+    });
   };
 }
 
@@ -113,7 +115,10 @@ async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[]
   }
 
   if (state.closed) {
-    await releaseSession(deps, sessionId, state);
+    // Held first: a store that implements no evict still holds this session, and it carries the caller's credentials.
+    held.session = session;
+    await evictSession(deps, sessionId);
+    endSession(deps, sessionId, state, held);
     ws.resume();
     return;
   }

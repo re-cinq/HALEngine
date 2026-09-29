@@ -219,4 +219,24 @@ describe('a session store that fails to release', () => {
 
     expect(seen).toEqual([]);
   });
+
+  it('clears the credentials of a session whose socket closed before it was delivered', async () => {
+    const created: ChatSession[] = [];
+    const sessionStore = {
+      create: async (sessionId: string, userId: string | number): Promise<ChatSession> => {
+        await settle();
+        const session: ChatSession = {sessionId, userId, entries: [], authHeaders: {authorization: 'Bearer t'}};
+        created.push(session);
+        return session;
+      },
+    } as unknown as SessionStore;
+    const {connect, close} = harness({sessionStore});
+
+    connect();
+    close();
+    await settle();
+    await settle();
+
+    expect(created.map(session => session.authHeaders)).toEqual([undefined]);
+  });
 });
