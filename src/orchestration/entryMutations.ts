@@ -31,6 +31,9 @@ export function commitEntry(session: ChatSession, index: number): void {
 // A turn ends with its entries closed however it ended, so nothing persists an entry still marked streaming.
 export function commitStreamingEntries(session: ChatSession): void {
   for (const entry of session.entries) {
-    if (entry.role === 'assistant' || entry.role === 'thinking') entry.isStreaming = false;
+    if (entry.role !== 'assistant' && entry.role !== 'thinking') continue;
+    // Still open when the turn ended means it was cut short, which is what the transport records a moment later.
+    if (entry.isStreaming) entry.truncated = true;
+    entry.isStreaming = false;
   }
 }

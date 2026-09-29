@@ -15,7 +15,7 @@ import type {OutgoingMessage} from '../../types/messages.js';
 // Timestamps are generated; no assertion should read one.
 const shape = (entry: SessionEntry): Record<string, unknown> =>
   entry.role === 'assistant'
-    ? {role: entry.role, content: entry.content, isStreaming: entry.isStreaming}
+    ? {role: entry.role, content: entry.content, isStreaming: entry.isStreaming, truncated: entry.truncated}
     : {role: entry.role, content: 'content' in entry ? entry.content : ''};
 
 const turn = async (onSave: (session: ChatSession) => void, provider = answering('hello back')) => {
@@ -39,7 +39,7 @@ describe('what the session write signal carries', () => {
     expect(saved).toEqual([
       [
         {role: 'user', content: 'hello'},
-        {role: 'assistant', content: 'hello back', isStreaming: false},
+        {role: 'assistant', content: 'hello back', isStreaming: false, truncated: undefined},
       ],
     ]);
   });
@@ -52,7 +52,7 @@ describe('what the session write signal carries', () => {
     expect(saved).toEqual([
       [
         {role: 'user', content: 'hello'},
-        {role: 'assistant', content: 'partial answer', isStreaming: false},
+        {role: 'assistant', content: 'partial answer', isStreaming: false, truncated: true},
       ],
     ]);
   });
