@@ -456,15 +456,27 @@ describe('the websocket message handler', () => {
       });
     });
 
-    it('neither flags nor re-sends a suppressed entry that a throw cut short', async () => {
+    it('flags a suppressed entry that a throw cut short in the session but never re-sends it', async () => {
       const h = harness([SUPPRESS, text('hidden')], {failWith: DROPPED});
 
       await h.send();
 
       const [, hidden] = h.session.entries;
-      expect({flagged: 'truncated' in hidden, upserts: upsertsOf(h.sent, 1).length}).toEqual({
-        flagged: false,
+      expect({hidden, upserts: upsertsOf(h.sent, 1).length}).toMatchObject({
+        hidden: {content: 'hidden', truncated: true},
         upserts: 0,
+      });
+    });
+
+    it('keeps the text the thinking-tag parser still held when a throw cuts the answer short', async () => {
+      const h = harness([text('Half <thi')], {failWith: DROPPED});
+
+      await h.send();
+
+      const [, stored] = h.session.entries;
+      expect({stored, resent: upsertsOf(h.sent, 1).at(-1)}).toMatchObject({
+        stored: {content: 'Half <thi', truncated: true},
+        resent: {content: 'Half <thi', truncated: true},
       });
     });
   });

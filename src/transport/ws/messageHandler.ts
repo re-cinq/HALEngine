@@ -113,7 +113,8 @@ async function handleUserMessage(
       processChunk(ws, session, state, parser, chunk);
     }
   } finally {
-    // Anything still open here was cut short: a stop has already committed every entry it opened.
+    // Anything still open here was cut short: a stop has already flushed the parser and committed every entry it opened.
+    flushHeldText(ws, session, state, parser);
     closeCutOff(ws, session, state, 'thinkingIndex');
     closeCutOff(ws, session, state, 'assistantIndex');
   }
@@ -248,21 +249,23 @@ function processSuppressChunk(ws: WebSocket, session: ChatSession, state: Stream
 }
 
 function processStopChunk(ws: WebSocket, session: ChatSession, state: StreamState, parser: ThinkingTagParser): void {
-  const remaining = parser.flush();
-  for (const segment of remaining) {
-    handleTextSegment(ws, session, state, segment);
-  }
+  flushHeldText(ws, session, state, parser);
   commitOpenEntries(ws, session, state);
 }
 
-// The re-sent upsert is how a live client learns the flag; a replay would carry it on the stored entry the same way.
+// The parser holds back a tail that might open a tag; without this the tail of a cut-off answer would be lost.
+function flushHeldText(ws: WebSocket, session: ChatSession, state: StreamState, parser: ThinkingTagParser): void {
+  for (const segment of parser.flush()) {
+    handleTextSegment(ws, session, state, segment);
+  }
+}
+
+// The flag lives on the stored entry even when suppressed; only a visible entry is re-sent, which is how a live client learns it.
 function closeCutOff(ws: WebSocket, session: ChatSession, state: StreamState, key: StateIndexKey): void {
   const index = state[key];
   if (index === null) return;
-  if (!state.suppressOutput) {
-    markTruncated(session, index);
-    sendUpsert(ws, index, session.entries[index]);
-  }
+  markTruncated(session, index);
+  if (!state.suppressOutput) sendUpsert(ws, index, session.entries[index]);
   commitAndClear(ws, session, state, key);
 }
 

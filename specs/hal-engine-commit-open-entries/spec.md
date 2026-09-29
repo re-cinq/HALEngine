@@ -30,8 +30,10 @@ A streaming entry is born with `isStreaming: true`, and only a commit flips it t
 - A thinking entry cut off mid-thought is flagged the same way ([validated by: flags an open thinking entry truncated when the provider throws mid-thought](../../src/transport/ws/messageHandler.test.ts#L438)).
 - A round that ends on a tool call with no `stop` flags its answer too ([validated by: commits the answer, flagged truncated, when a round ends on a tool call with no stop chunk](../../src/transport/ws/messageHandler.test.ts#L380)).
 - An entry committed on a `stop` never carries the field and is sent once ([validated by: leaves an entry committed on a stop chunk without the flag and sends it once](../../src/transport/ws/messageHandler.test.ts#L447)).
-- A suppressed entry is neither flagged nor re-sent: it is hidden from the customer, so there is nothing to show as cut off ([validated by: neither flags nor re-sends a suppressed entry that a throw cut short](../../src/transport/ws/messageHandler.test.ts#L459)).
+- A suppressed entry is flagged in the session like any other, since the flag describes the entry, but it is never re-sent: it is hidden from the customer, so nothing is shown as cut off ([validated by: flags a suppressed entry that a throw cut short in the session but never re-sends it](../../src/transport/ws/messageHandler.test.ts#L459)).
+
+- Text the thinking-tag parser still held back, a tail that might have opened a tag, is flushed into the entry before it is flagged, so a cut-off answer keeps everything the model produced, as a `stop` already did ([validated by: keeps the text the thinking-tag parser still held when a throw cuts the answer short](../../src/transport/ws/messageHandler.test.ts#L471)).
 
 ## Out of scope
 
-Which frames terminate a turn and the client's busy contract (re-cinq/HALEngine#60); what a replay does with the committed entries; flushing text the thinking-tag parser still buffers on a path with no `stop`, which the client never saw; and how a consuming client renders a partial entry.
+Which frames terminate a turn and the client's busy contract (re-cinq/HALEngine#60); what a replay does with the committed entries; and how a consuming client renders a partial entry.
