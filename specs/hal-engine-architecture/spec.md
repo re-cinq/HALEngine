@@ -86,7 +86,7 @@ interface SessionStore<T extends BaseSession = ChatSession> {
   count(): Awaitable<number>;
   clear(): Awaitable<void>;
   /** Write signal: fires once per processed user message; failures are swallowed (specs/hal-engine-session-write-signal/spec.md). */
-  save?(session: T): void | Promise<void>;
+  save?(session: T): Awaitable<void>;
 }
 ```
 
