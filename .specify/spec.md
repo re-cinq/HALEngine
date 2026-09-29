@@ -205,7 +205,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 
 - Sessions are created on first successful WebSocket connection
 - Sessions persist across disconnections (reconnection support)
-- `onDisconnect` hook fires when session is abandoned (configurable timeout)
+- `onDisconnect` hook fires when the socket closes, not on a delayed timer
 - Session entries are append-only (immutable history)
 - Session cleanup follows configurable eviction policy
 

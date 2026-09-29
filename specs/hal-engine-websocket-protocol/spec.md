@@ -592,7 +592,7 @@ The client SHOULD send a `ping` message (Section 4.2) every 5 seconds. The serve
 
 ### 11.1 Client Disconnect
 
-The client SHOULD close the WebSocket with code 1000 (Normal Closure). The server will delete the session from the session store.
+The client SHOULD close the WebSocket with code 1000 (Normal Closure). The server keeps the session: it erases nothing on close, and the credentials the socket carried are cleared from it.
 
 ### 11.2 Server Shutdown
 

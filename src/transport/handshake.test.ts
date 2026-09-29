@@ -7,7 +7,6 @@ import {createServer} from './createServer.js';
 import {HAL_WS_SUBPROTOCOL} from './ws/subprotocol.js';
 import {InMemorySessionStore} from '../infrastructure/stores/inMemorySessionStore.js';
 import {setLogger} from '../shared/logger.js';
-import type {ChatSession} from '../types/session.js';
 import type {ChatOrchestrator} from '../orchestration/chatOrchestrator.js';
 
 // Real upgrades over a real socket: what the 101 carries is the contract, and no double can observe it.
@@ -30,7 +29,8 @@ const signal = () => {
 };
 
 const engine = async () => {
-  const sessions: ChatSession[] = [];
+  // Read at connect: the close handler clears authHeaders, so a post-close read would see nothing.
+  const bearers: Array<string | undefined> = [];
   const serverSockets: WebSocket[] = [];
   const disconnected = signal();
   const hal = createServer({
@@ -38,13 +38,13 @@ const engine = async () => {
     wsAuth: async () => ({id: 'u1'}),
     sessionStore: new InMemorySessionStore(),
     orchestrator: {} as ChatOrchestrator,
-    onConnect: session => void sessions.push(session),
+    onConnect: session => void bearers.push(session.authHeaders?.authorization),
     onDisconnect: disconnected.release,
   });
   hal.wss.on('connection', socket => void serverSockets.push(socket));
   await hal.start(0);
   const {port} = hal.server.address() as AddressInfo;
-  return {hal, sessions, serverSockets, disconnected, url: `ws://127.0.0.1:${port}/hal/ws/c1`};
+  return {hal, bearers, serverSockets, disconnected, url: `ws://127.0.0.1:${port}/hal/ws/c1`};
 };
 
 // Connect, ping, close: the whole lifecycle a credential could be logged in.
@@ -62,19 +62,19 @@ const roundTrip = async (url: string, offer: string[], headers: Record<string, s
 };
 
 const handshake = async (offer: string[], headers: Record<string, string> = {}): Promise<Handshake> => {
-  const {hal, sessions, serverSockets, disconnected, url} = await engine();
+  const {hal, bearers, serverSockets, disconnected, url} = await engine();
   const response = await roundTrip(url, offer, headers);
   await disconnected.fired;
   await hal.stop();
 
-  const [session] = sessions;
+  const [bearer] = bearers;
   const [serverSocket] = serverSockets;
   const {rawHeaders} = response;
   return {
     answered: response.headers['sec-websocket-protocol'],
     leakedHeaders: rawHeaders.filter(value => value.includes(TOKEN)),
     socketProtocol: serverSocket.protocol,
-    authorization: session.authHeaders?.authorization,
+    authorization: bearer,
   };
 };
 

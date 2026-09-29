@@ -77,13 +77,19 @@ function bearerFromWebSocketProtocol(req: IncomingMessage): string | undefined {
 export function createConnectionHandler(deps: ConnectionHandlerDeps, examplePrompts: string[]) {
   return function handleConnection(ws: ExtWebSocket): void {
     // The listener stays synchronous: an async one rejects into the emitter, and node ends the process on that.
-    void openSession(deps, examplePrompts, ws);
+    openSession(deps, examplePrompts, ws).catch((error: unknown) => {
+      log.error('ws', 'connection setup failed', {error: messageOf(error)});
+      // Resumed before closing: a paused socket never reads the close frame it would be waiting for.
+      ws.resume();
+      ws.close(1011, 'Connection setup failed');
+    });
   };
 }
 
 async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[], ws: ExtWebSocket): Promise<void> {
   const sessionId = uuidv4();
   const state = {closed: false, settled: false, notified: false, delivered: false};
+  const held: {session?: ChatSession} = {};
 
   ws.on('error', (error: Error) => {
     log.error('ws', 'connection error', {sessionId, error: error.message});
@@ -96,7 +102,7 @@ async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[]
   ws.on('close', () => {
     state.closed = true;
     log.info('ws', 'disconnected', {sessionId});
-    if (state.settled) void releaseSession(deps, sessionId, state);
+    if (state.settled) endSession(deps, sessionId, state, held);
   });
 
   // Paused across the await so a frame arriving before the message listener exists is buffered, not dropped.
@@ -113,10 +119,15 @@ async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[]
   }
 
   if (state.closed) {
-    await releaseSession(deps, sessionId, state);
+    // Held first: a store that implements no evict still holds this session, and it carries the caller's credentials.
+    held.session = session;
+    await evictSession(deps, sessionId);
+    endSession(deps, sessionId, state, held);
     ws.resume();
     return;
   }
+
+  held.session = session;
 
   log.info('ws', 'connected', {sessionId, userId: ws.userId});
 
@@ -126,7 +137,18 @@ async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[]
     message: 'Connected to HAL Engine',
     examplePrompts,
   };
-  ws.send(JSON.stringify(connected));
+  // A socket that died between the check above and this frame must not leave the session it was created for behind.
+  try {
+    ws.send(JSON.stringify(connected));
+  } catch (error) {
+    log.error('ws', 'connected frame failed', {sessionId, error: messageOf(error)});
+    await evictSession(deps, sessionId);
+    endSession(deps, sessionId, state, held);
+    ws.resume();
+    ws.close(1011, 'Connection setup failed');
+    return;
+  }
+
   state.delivered = true;
 
   // Deferred, not inline: a synchronous throw in the `connection` listener corrupts an already-upgraded socket.
@@ -165,25 +187,32 @@ async function createSession(
   }
 }
 
-// The one cleanup path, so the socket that closed mid-create leaves no session behind.
-async function releaseSession(
+// The close path erases nothing: the conversation outlives its socket, and `onDisconnect` is the consumer's seam.
+function endSession(
   deps: ConnectionHandlerDeps,
   sessionId: string,
-  state: {notified: boolean; delivered: boolean}
-): Promise<void> {
+  state: {notified: boolean; delivered: boolean},
+  held: {session?: ChatSession}
+): void {
   if (state.notified) return;
   state.notified = true;
 
-  try {
-    await deps.sessionStore.delete(sessionId);
-  } catch (error) {
-    log.error('ws', 'session delete failed', {sessionId, error: messageOf(error)});
-  }
+  // The credentials were issued for a request that is over; the entries are what the consumer keeps.
+  if (held.session) held.session.authHeaders = undefined;
 
   // Only for a session the consumer was actually handed: onDisconnect is the other half of onConnect, not of a socket.
   if (!state.delivered) return;
 
   runHook('onDisconnect', sessionId, () => deps.onDisconnect?.(sessionId));
+}
+
+// Only for a session no client ever received: it has no entries and nothing to migrate.
+async function evictSession(deps: ConnectionHandlerDeps, sessionId: string): Promise<void> {
+  try {
+    await deps.sessionStore.evict?.(sessionId);
+  } catch (error) {
+    log.error('ws', 'session evict failed', {sessionId, error: messageOf(error)});
+  }
 }
 
 // Consumer hooks are fire-and-forget: the engine never awaits one and never lets one take the connection down.

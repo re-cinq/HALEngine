@@ -131,17 +131,18 @@ describe('the websocket connection handler', () => {
   });
 
   describe('onDisconnect', () => {
-    it('is called with the session id after the store entry is deleted', async () => {
+    // The close path erases nothing now, so the hook is the only thing a consumer can hang cleanup on.
+    it('is called with the session id while the store still holds the session', async () => {
       const seen: string[] = [];
-      const {connect, close, deleted} = harness({onDisconnect: id => void seen.push(id)});
+      const {connect, sent, close, deleted} = harness({onDisconnect: id => void seen.push(id)});
 
       connect();
-      // The session is delivered once the awaited create resolves; onDisconnect is the other half of that delivery.
       await settle();
+      const {sessionId} = JSON.parse(sent[0]) as {sessionId: string};
       close();
       await settle();
 
-      expect({seen, deleted}).toEqual({seen: deleted, deleted: [deleted[0]]});
+      expect({seen, deleted}).toEqual({seen: [sessionId], deleted: []});
     });
 
     it('does not let a throwing hook escape the close listener', () => {
@@ -188,20 +189,28 @@ describe('the websocket connection handler', () => {
 describe('a session store that fails to release', () => {
   const errors = captureErrors();
 
-  it('logs a rejecting delete with the session id rather than dropping it', async () => {
+  it('logs a rejecting evict rather than dropping it', async () => {
+    const evicted: string[] = [];
     const sessionStore = {
-      create: (sessionId: string, userId: string | number): ChatSession => ({sessionId, userId, entries: []}),
-      delete: () => Promise.reject(new Error('store unreachable')),
+      create: async (sessionId: string, userId: string | number): Promise<ChatSession> => {
+        await settle();
+        return {sessionId, userId, entries: []};
+      },
+      evict: (sessionId: string) => {
+        evicted.push(sessionId);
+        return Promise.reject(new Error('store unreachable'));
+      },
     } as unknown as SessionStore;
-    const {connect, sent, close} = harness({sessionStore});
+    const {connect, close} = harness({sessionStore});
 
     connect();
-    await settle();
-    const {sessionId} = JSON.parse(sent[0]) as {sessionId: string};
     close();
     await settle();
+    await settle();
 
-    expect(errors).toEqual([{category: 'ws', message: 'session delete failed', sessionId, error: 'store unreachable'}]);
+    expect(errors).toEqual([
+      {category: 'ws', message: 'session evict failed', sessionId: evicted[0], error: 'store unreachable'},
+    ]);
   });
 
   it('stays silent for a connection that was never handed a session', async () => {
@@ -218,5 +227,74 @@ describe('a session store that fails to release', () => {
     await settle();
 
     expect(seen).toEqual([]);
+  });
+
+  it('clears the credentials of a session whose socket closed before it was delivered', async () => {
+    const created: ChatSession[] = [];
+    const sessionStore = {
+      create: async (sessionId: string, userId: string | number): Promise<ChatSession> => {
+        await settle();
+        const session: ChatSession = {sessionId, userId, entries: [], authHeaders: {authorization: 'Bearer t'}};
+        created.push(session);
+        return session;
+      },
+    } as unknown as SessionStore;
+    const {connect, close} = harness({sessionStore});
+
+    connect();
+    close();
+    await settle();
+    await settle();
+
+    expect(created.map(session => session.authHeaders)).toEqual([undefined]);
+  });
+
+  // One socket whose send throws, driven twice: once for what the socket sees, once for what the store keeps.
+  const setupThatFails = (sessionStore: SessionStore) => {
+    const calls: string[] = [];
+    const listeners = new Map<string, (arg?: unknown) => void>();
+    const ws = {
+      userId: 'u1',
+      isAlive: true,
+      send: () => {
+        throw new Error('socket gone');
+      },
+      on: (event: string, fn: (arg?: unknown) => void) => listeners.set(event, fn),
+      pause: () => void calls.push('pause'),
+      resume: () => void calls.push('resume'),
+      close: () => void calls.push('close'),
+    } as unknown as ExtWebSocket;
+    const deps = {
+      wsAuth: jest.fn(),
+      sessionStore,
+      handleMessage: jest.fn(),
+      basePath: '/hal',
+    } as unknown as ConnectionHandlerDeps;
+
+    createConnectionHandler(deps, [])(ws);
+    return calls;
+  };
+
+  const holdingStore = (evicted: string[]) =>
+    ({
+      create: (sessionId: string, userId: string | number): ChatSession => ({sessionId, userId, entries: []}),
+      evict: (sessionId: string) => (evicted.push(sessionId), true),
+    }) as unknown as SessionStore;
+
+  it('does not strand a paused socket when connection setup throws', async () => {
+    const calls = setupThatFails(holdingStore([]));
+
+    await settle();
+
+    expect(calls).toEqual(['pause', 'resume', 'close']);
+  });
+
+  it('evicts a session it created but could not hand over', async () => {
+    const evicted: string[] = [];
+
+    setupThatFails(holdingStore(evicted));
+    await settle();
+
+    expect(evicted).toHaveLength(1);
   });
 });
