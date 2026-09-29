@@ -79,6 +79,9 @@ export function createConnectionHandler(deps: ConnectionHandlerDeps, exampleProm
     // The listener stays synchronous: an async one rejects into the emitter, and node ends the process on that.
     openSession(deps, examplePrompts, ws).catch((error: unknown) => {
       log.error('ws', 'connection setup failed', {error: messageOf(error)});
+      // Resumed before closing: a paused socket never reads the close frame it would be waiting for.
+      ws.resume();
+      ws.close(1011, 'Connection setup failed');
     });
   };
 }

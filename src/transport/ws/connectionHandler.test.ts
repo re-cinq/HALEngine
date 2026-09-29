@@ -248,4 +248,34 @@ describe('a session store that fails to release', () => {
 
     expect(created.map(session => session.authHeaders)).toEqual([undefined]);
   });
+
+  it('does not strand a paused socket when connection setup throws', async () => {
+    const calls: string[] = [];
+    const listeners = new Map<string, (arg?: unknown) => void>();
+    const ws = {
+      userId: 'u1',
+      isAlive: true,
+      send: () => {
+        throw new Error('socket gone');
+      },
+      on: (event: string, fn: (arg?: unknown) => void) => listeners.set(event, fn),
+      pause: () => void calls.push('pause'),
+      resume: () => void calls.push('resume'),
+      close: () => void calls.push('close'),
+    } as unknown as ExtWebSocket;
+    const sessionStore = {
+      create: (sessionId: string, userId: string | number): ChatSession => ({sessionId, userId, entries: []}),
+    } as unknown as SessionStore;
+    const deps = {
+      wsAuth: jest.fn(),
+      sessionStore,
+      handleMessage: jest.fn(),
+      basePath: '/hal',
+    } as unknown as ConnectionHandlerDeps;
+
+    createConnectionHandler(deps, [])(ws);
+    await settle();
+
+    expect(calls).toEqual(['pause', 'resume', 'close']);
+  });
 });
