@@ -65,7 +65,12 @@ export class MongoSessionStore implements SessionStore {
   }
 
   // Eviction, not erasure: the document survives and the next get reloads it.
-  delete(sessionId: string): boolean {
+  async delete(sessionId: string): Promise<boolean> {
+    this.cache.delete(sessionId);
+    const collection = await this.collection();
+    const {deletedCount} = await collection.deleteOne({_id: sessionId});
+    return deletedCount > 0;
+  }
     return this.cache.delete(sessionId);
   }
 
