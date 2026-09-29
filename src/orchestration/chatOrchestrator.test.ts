@@ -42,7 +42,7 @@ function createMockProvider(response: string, usage?: UsageMetadata): AIProvider
 
 function createErrorProvider(error: Error): AIProvider {
   return {
-    // eslint-disable-next-line require-yield
+    // eslint-disable-next-line require-yield -- generator throws without yielding; intentional for a stub that rejects immediately
     async *sendMessage(): AsyncGenerator<MessageChunk> {
       throw error;
     },
@@ -55,7 +55,7 @@ function createErrorProvider(error: Error): AIProvider {
 // Rejects the stream with a value that is not an Error, standing in for a library that rejects with its own shape.
 function createRejectingProvider(value: unknown): AIProvider {
   return {
-    // eslint-disable-next-line require-yield
+    // eslint-disable-next-line require-yield -- generator throws without yielding; intentional for a stub that rejects immediately
     async *sendMessage(): AsyncGenerator<MessageChunk> {
       throw value;
     },
@@ -322,7 +322,7 @@ describe('ChatOrchestrator hooks', () => {
           label,
           onErrorCallCount: received.length,
           isError: passed instanceof Error,
-          causeIsOriginal: passed instanceof Error && passed.cause === value,
+          causeIsOriginal: passed instanceof Error && ('cause' in passed) && passed.cause === value,
           callerReceivedOriginal: rejection === value,
         });
       }
