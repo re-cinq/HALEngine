@@ -24,7 +24,6 @@
 - **NIS-2 Article 21.** A `save` that rejects does not fail the turn: the caller still receives the answer, and the failure becomes exactly one logged line under category `orchestrator`, message `session save failed`, carrying the session id and the error's message ([validated by: keeps the turn alive and logs once when save rejects](../../src/orchestration/sessionSave.test.ts#L61)).
 - A `save` that throws synchronously is handled identically, so an implementation that forgets to be async cannot take the turn down ([validated by: keeps the turn alive when save throws synchronously](../../src/orchestration/sessionSave.test.ts#L70)).
 - An `afterSession` hook that throws does not cost the turn its write signal: `save` still fires, and the hook's error still reaches the caller ([validated by: saves even when an afterSession hook throws](../../src/orchestration/sessionSave.test.ts#L86)).
-- An `afterSession` hook that throws does not cost the turn its write signal: `save` still fires, and the hook's error still reaches the caller ([validated by: saves even when an afterSession hook throws](../../src/orchestration/sessionSave.test.ts#L86)).
 
 ## Compatibility
 
