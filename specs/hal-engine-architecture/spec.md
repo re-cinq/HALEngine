@@ -85,6 +85,8 @@ interface SessionStore<T extends BaseSession = ChatSession> {
   delete(sessionId: string): Awaitable<boolean>;
   count(): Awaitable<number>;
   clear(): Awaitable<void>;
+  /** Drops a session the client never received, without erasing anything a consumer would want kept. */
+  evict?(sessionId: string): Awaitable<boolean>;
   /** Write signal: fires once per processed user message; failures are swallowed (specs/hal-engine-session-write-signal/spec.md). */
   save?(session: T): Awaitable<void>;
 }
@@ -401,7 +403,7 @@ When a connection drops, the frontend reconnects automatically:
 ### Cleanup
 
 - On unmount, the client closes the socket and clears all timers
-- On disconnect, the server deletes the session from the session store
+- On disconnect, the server keeps the session and fires `onDisconnect`; it erases nothing, and the default store bounds its own memory by age instead
 - On `SIGTERM`, nothing happens: no signal handler is installed. `createServer` exposes `stop()`, which closes every socket with code 1001 and clears the heartbeat, but the engine never calls it (websocket-protocol spec, Section 11.2)
 
 ## App Extension Points

@@ -43,6 +43,7 @@ export type {
 } from './orchestration/tools/index.js';
 
 export {InMemorySessionStore} from './infrastructure/stores/inMemorySessionStore.js';
+export type {InMemorySessionStoreOptions} from './infrastructure/stores/inMemorySessionStore.js';
 export {InMemoryPromptStore} from './infrastructure/stores/inMemoryPromptStore.js';
 export {InMemoryUsageStore} from './infrastructure/stores/inMemoryUsageStore.js';
 export {ThinkingTagParser} from './infrastructure/parsers/thinkingTagParser.js';

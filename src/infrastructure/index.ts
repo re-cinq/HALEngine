@@ -1,4 +1,5 @@
 export {InMemorySessionStore} from './stores/inMemorySessionStore.js';
+export type {InMemorySessionStoreOptions} from './stores/inMemorySessionStore.js';
 export {InMemoryPromptStore} from './stores/inMemoryPromptStore.js';
 export {InMemoryUsageStore} from './stores/inMemoryUsageStore.js';
 export {PromptBuilder} from './builders/promptBuilder.js';
