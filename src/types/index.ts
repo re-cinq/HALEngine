@@ -46,7 +46,7 @@ export {AIError} from './ai.js';
 
 export type {WsAuthenticator, HttpAuthMiddleware, AuthenticatedRequest} from './auth.js';
 
-export type {SessionStore, SessionCreateOptions, BaseSession} from './sessionStore.js';
+export type {SessionStore, SessionCreateOptions, BaseSession, Awaitable} from './sessionStore.js';
 
 export type {PromptStore, PromptTemplate} from './promptStore.js';
 

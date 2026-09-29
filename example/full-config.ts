@@ -3,7 +3,14 @@
 // #region full-config
 import process from 'node:process';
 import {createHalEngine, InMemorySessionStore, ToolRegistry, log} from '../src/index.js';
-import type {AuthenticatedRequest, HttpAuthMiddleware, Logger, OrchestratorHooks} from '../src/index.js';
+import type {
+  AuthenticatedRequest,
+  HttpAuthMiddleware,
+  Logger,
+  OrchestratorHooks,
+  ToolCall,
+  ToolResponse,
+} from '../src/index.js';
 
 const toolRegistry = new ToolRegistry();
 
@@ -24,6 +31,13 @@ const hooks: OrchestratorHooks = {
   afterModelResponse: async (_session, _responseText, usage) => log.info('app', 'answered', {usage}),
   afterSession: async session => log.info('app', 'session closed', {sessionId: session.sessionId}),
   onError: async (_session, error) => log.error('app', 'orchestration failed', {error: error.message}),
+  // A human-oversight policy: a returned ToolResponse declines the call, and the model reads its result instead.
+  beforeToolCall: async (_session, call: ToolCall): Promise<ToolResponse | undefined> =>
+    call.name === 'send_notification'
+      ? {result: 'Not performed. A human reviewer has been asked to do it.'}
+      : undefined,
+  // The engine writes no user-facing prose: this sentence closes a turn whose tool budget ran out.
+  onToolBudgetExhausted: async () => 'I could not finish looking that up, so a colleague will follow up.',
 };
 
 // A Logger of your own; this one writes plain lines to stderr. Passing `log` itself here is treated as passing none.
@@ -78,7 +92,7 @@ const engine = createHalEngine({
 
   // OPTIONAL: Orchestrator settings
   orchestrator: {
-    maxToolRounds: 5, // Max tool execution rounds (default 5)
+    maxToolRounds: 5, // Max tool rounds executed (default 5); the provider is called at most maxToolRounds + 1 times
     contextConfig: {
       // How many messages are kept, and how much of each.
       maxMessages: 50,

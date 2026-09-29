@@ -32,6 +32,10 @@ const harness = (onConnect?: (session: ChatSession) => void) => {
     isAlive: true,
     send: () => undefined,
     on: () => undefined,
+    // The handler pauses the socket across an awaited create and resumes once its listeners are attached.
+    pause: () => undefined,
+    resume: () => undefined,
+    close: () => undefined,
   } as unknown as ExtWebSocket;
 
   return {hal, ws};

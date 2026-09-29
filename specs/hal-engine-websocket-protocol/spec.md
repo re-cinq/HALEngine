@@ -48,14 +48,20 @@ The server validates only that the path begins with `{basePath}/ws`; it does not
 
 ### 2.2 Authentication
 
-Authentication is performed during the WebSocket handshake. The client MUST pass the access token as a WebSocket subprotocol in the `Sec-WebSocket-Protocol` header:
+Authentication is performed during the WebSocket handshake. A browser WebSocket cannot set an `Authorization` header, so the client MUST offer two subprotocols in the `Sec-WebSocket-Protocol` header: the reserved marker `hal.v1` (exported as `HAL_WS_SUBPROTOCOL`) and the access token, in either order:
 
 ```text
 GET /hal/ws/abc-123 HTTP/1.1
 Upgrade: websocket
 Connection: Upgrade
-Sec-WebSocket-Protocol: <access-token>
+Sec-WebSocket-Protocol: hal.v1, <access-token>
 ```
+
+The server answers `Sec-WebSocket-Protocol: hal.v1` and never echoes the token. It reads the credential from the request header as the first offered value that is not the marker, and forwards it to the session as `Bearer <access-token>`. A client that can set headers MAY offer only the marker and send `Authorization` instead.
+
+A subprotocol is validated client-side as an HTTP token (RFC 7230 `tchar`), so a value carried this way can contain only letters, digits and ``!#$%&'*+-.^_`|~``: a JWT fits, but a padded base64 token (`=`, `/`) cannot use this carrier at all.
+
+A client that offers a bare token without the marker, the shape `0.2.x` documented, is deprecated: for one MINOR the server still echoes its offer and logs a warning that never includes the offered value. The MINOR after that answers such an offer with no `Sec-WebSocket-Protocol` header, which `ws` and Chromium both fail, so every client must offer `hal.v1` before then (see [the subprotocol marker spec](../hal-engine-subprotocol-marker/spec.md)).
 
 The server MUST validate the token via the configured `WsAuthenticator` before completing the upgrade. If authentication fails, the server MUST reject the connection with HTTP 401.
 
@@ -222,7 +228,7 @@ Semantics:
 
 ### 5.5 entry_skip
 
-Notifies the client that a session entry was created on the server and will never be sent. This happens under output suppression (see [tool-responses.md](../hal-engine-tool-responses/spec.md)): the server keeps the entry so the model retains context, and the client does not need it for display ([validated by: still records a suppressed reply in the session, so history keeps it](../../src/transport/ws/messageHandler.test.ts#L196)).
+Notifies the client that a session entry was created on the server and will never be sent. This happens under output suppression (see [tool-responses.md](../hal-engine-tool-responses/spec.md)): the server keeps the entry so the model retains context, and the client does not need it for display ([validated by: still records a suppressed reply in the session, so history keeps it](../../src/transport/ws/messageHandler.test.ts#L214)).
 
 ```json
 {
@@ -238,14 +244,14 @@ Notifies the client that a session entry was created on the server and will neve
 
 Suppression can begin before or after the server has started sending a reply, and the two cases produce different messages. This distinction is the whole of the protocol here:
 
-- An entry **opened while suppression is already active** is announced with `entry_skip` and nothing else: no `entry_upsert`, no `entry_delta`, no `entry_commit` follows it ([validated by: skips rather than upserts a segment opened after suppression](../../src/transport/ws/messageHandler.test.ts#L188)).
-- An entry **already sent before suppression began** cannot be skipped, because the client is displaying it. The server retracts it instead, by re-sending `entry_upsert` at the same index with the entry's `content` set to `""`. The client renders an empty assistant entry as nothing, so the text disappears ([validated by: blanks an assistant entry that was already sent](../../src/transport/ws/messageHandler.test.ts#L165)).
+- An entry **opened while suppression is already active** is announced with `entry_skip` and nothing else: no `entry_upsert`, no `entry_delta`, no `entry_commit` follows it ([validated by: skips rather than upserts a segment opened after suppression](../../src/transport/ws/messageHandler.test.ts#L206)).
+- An entry **already sent before suppression began** cannot be skipped, because the client is displaying it. The server retracts it instead, by re-sending `entry_upsert` at the same index with the entry's `content` set to `""`. The client renders an empty assistant entry as nothing, so the text disappears ([validated by: blanks an assistant entry that was already sent](../../src/transport/ws/messageHandler.test.ts#L183)).
 
 #### Limits of retraction
 
-- Only assistant entries are ever retracted; a thinking entry is never blanked, even when it was sent before suppression began ([validated by: never blanks a thinking entry, only assistant ones](../../src/transport/ws/messageHandler.test.ts#L180)).
-- Each sent entry is blanked once, so a second suppression in the same stream repeats nothing ([validated by: blanks each sent entry once, so a second suppression repeats nothing](../../src/transport/ws/messageHandler.test.ts#L214)).
-- An entry the client only ever saw as `entry_skip` is never retracted, because nothing is displayed to retract ([validated by: does not resurrect an entry the client only ever saw skipped](../../src/transport/ws/messageHandler.test.ts#L206)).
+- Only assistant entries are ever retracted; a thinking entry is never blanked, even when it was sent before suppression began ([validated by: never blanks a thinking entry, only assistant ones](../../src/transport/ws/messageHandler.test.ts#L198)).
+- Each sent entry is blanked once, so a second suppression in the same stream repeats nothing ([validated by: blanks each sent entry once, so a second suppression repeats nothing](../../src/transport/ws/messageHandler.test.ts#L232)).
+- An entry the client only ever saw as `entry_skip` is never retracted, because nothing is displayed to retract ([validated by: does not resurrect an entry the client only ever saw skipped](../../src/transport/ws/messageHandler.test.ts#L224)).
 
 Semantics:
 
@@ -284,13 +290,13 @@ Defined error codes:
 
 Semantics:
 
-- A message the server cannot parse into a known type is answered with `INVALID_MESSAGE`, and no message stream is started for it ([validated by: rejects an unparseable message and never starts a stream](../../src/transport/ws/messageHandler.test.ts#L56)).
-- A rate limit reported by the AI provider is surfaced as `RATE_LIMITED`, which tells the client the same request is worth retrying ([validated by: tells the client to retry when the provider is rate limited](../../src/transport/ws/messageHandler.test.ts#L224)).
-- Any other failure raised while processing a message is reported as `SERVER_ERROR` ([validated by: reports any other failure as a server error](../../src/transport/ws/messageHandler.test.ts#L233)).
+- A message the server cannot parse into a known type is answered with `INVALID_MESSAGE`, and no message stream is started for it ([validated by: rejects an unparseable message and never starts a stream](../../src/transport/ws/messageHandler.test.ts#L74)).
+- A rate limit reported by the AI provider is surfaced as `RATE_LIMITED`, which tells the client the same request is worth retrying ([validated by: tells the client to retry when the provider is rate limited](../../src/transport/ws/messageHandler.test.ts#L242)).
+- Any other failure raised while processing a message is reported as `SERVER_ERROR` ([validated by: reports any other failure as a server error](../../src/transport/ws/messageHandler.test.ts#L251)).
 
 ### 5.7 pong
 
-Response to a client `ping`. The server MUST echo the client's timestamp without modification ([validated by: answers a ping with the timestamp it was given](../../src/transport/ws/messageHandler.test.ts#L66)).
+Response to a client `ping`. The server MUST echo the client's timestamp without modification ([validated by: answers a ping with the timestamp it was given](../../src/transport/ws/messageHandler.test.ts#L84)).
 
 ```json
 {
@@ -306,7 +312,7 @@ Response to a client `ping`. The server MUST echo the client's timestamp without
 
 ### 5.8 stream_end
 
-Signals that the server has finished processing a user message. Sent exactly once after each completed message stream, after all `entry_commit` messages have been sent.
+Signals that the server has finished processing a user message. Sent exactly once for every `user_message` the server receives, after all `entry_commit` messages have been sent, whether the run succeeded or failed.
 
 ```json
 {
@@ -320,10 +326,11 @@ Signals that the server has finished processing a user message. Sent exactly onc
 
 Semantics:
 
-- The server MUST send `stream_end` after every successfully completed message stream, including streams where output was suppressed (see [tool-responses.md](../hal-engine-tool-responses/spec.md)).
-- The server MUST NOT send `stream_end` if the stream terminates due to an error. In that case, the `error` message (Section 5.6) serves as the terminal signal.
+- The server MUST send `stream_end` after every `user_message` it receives, including streams where output was suppressed (see [tool-responses.md](../hal-engine-tool-responses/spec.md)), streams that failed after an `error` frame, and a `user_message` that failed validation ([single-terminal-frame](../hal-engine-single-terminal-frame/spec.md)).
+- `stream_end` follows every stream even after an error: a failed run sends its `error` frame first and `stream_end` last.
+- An `error` frame does not by itself end a stream. It is advisory: it may concern the run in flight or an unrelated frame, such as a malformed `ping`.
 - The client SHOULD use this message to clear any "processing" or "loading" indicators.
-- The client MUST NOT assume the stream is complete until either `stream_end` or `error` is received.
+- The client MUST treat a run as complete only at `stream_end` or when the socket closes. Unparseable JSON is the one frame answered with `INVALID_FORMAT` and no `stream_end`, because the server cannot tell what it was meant to be; for it the client falls back on the socket closing.
 
 ## 6. SessionEntry Objects
 
@@ -366,6 +373,7 @@ A response generated by the AI model. Content is delivered incrementally via `en
 | `content`     | string  | Markdown text, built incrementally by deltas |
 | `timestamp`   | string  | ISO 8601 datetime                           |
 | `isStreaming`  | boolean | `true` while deltas are arriving            |
+| `truncated`    | `true`  | Optional. Present only when the run ended before this entry finished; see § 7.1 |
 
 ### 6.3 ThinkingEntry
 
@@ -384,6 +392,7 @@ Internal AI reasoning, separated from user-facing content by the server's thinki
 | `role`       | string  | `"thinking"`                              |
 | `content`    | string  | Reasoning text, built incrementally       |
 | `isStreaming` | boolean | `true` while deltas are arriving          |
+| `truncated`   | `true`  | Optional. Present only when the run ended before this entry finished; see § 7.1 |
 
 Note: ThinkingEntry does not include a `timestamp` field.
 
@@ -427,7 +436,9 @@ entry_upsert  -->  entry_delta (0..N)  -->  entry_commit
 
 1. The server sends `entry_upsert` with `isStreaming: true` and an empty `content`.
 2. The server sends zero or more `entry_delta` messages. The client MUST concatenate each `delta` to the entry's `content`.
-3. The server sends `entry_commit`. The client MUST set `isStreaming` to `false`, matching the committed entry the server keeps in the session. No further deltas will arrive for this entry ([validated by: leaves the committed assistant entry in the session, no longer streaming](../../src/transport/ws/messageHandler.test.ts#L90)).
+3. The server sends `entry_commit`. The client MUST set `isStreaming` to `false`, matching the committed entry the server keeps in the session. No further deltas will arrive for this entry ([validated by: leaves the committed assistant entry in the session, no longer streaming](../../src/transport/ws/messageHandler.test.ts#L108)).
+4. Every entry the server opens is committed by the time the turn ends, on every terminal path: a `stop`, a round that ends without one, and a provider that throws mid-stream. The partial content is committed exactly as streamed, and on a throw the `entry_commit` frames arrive before the `error` frame ([validated by: commits a partial answer as streamed, before the error, when the provider throws](../../src/transport/ws/messageHandler.test.ts#L345), [validated by: commits the answer, flagged truncated, when a round ends on a tool call with no stop chunk](../../src/transport/ws/messageHandler.test.ts#L380)).
+5. An entry committed because the run ended before it finished (a provider failure, or a round with no `stop`) carries `truncated: true`, in the session and on the wire: the server re-sends it as an `entry_upsert` with the flag just before its `entry_commit`, so a live client and a replay of the stored entry both see it, and a client can render a cut-off answer as cut off without the transient `error` frame. An entry committed on a `stop` never carries the field, and a suppressed entry is flagged in the session but never re-sent. Any text the thinking-tag parser still held is flushed into the entry first, as a `stop` does ([validated by: flags a partial answer truncated in the session and re-sends it with the flag before its commit](../../src/transport/ws/messageHandler.test.ts#L419), [validated by: leaves an entry committed on a stop chunk without the flag and sends it once](../../src/transport/ws/messageHandler.test.ts#L447), [validated by: flags a suppressed entry that a throw cut short in the session but never re-sends it](../../src/transport/ws/messageHandler.test.ts#L459), [validated by: keeps the text the thinking-tag parser still held when a throw cuts the answer short](../../src/transport/ws/messageHandler.test.ts#L471)).
 
 ### 7.2 Non-Streaming Entries (user, tool)
 
@@ -438,7 +449,7 @@ entry_upsert
    |  No delta or commit follows.
 ```
 
-The entry is fully formed in the `entry_upsert` message, so a tool call yields one `entry_upsert` and nothing further. The client MUST NOT expect `entry_delta` or `entry_commit` for these entries ([validated by: sends a tool entry for a tool call](../../src/transport/ws/messageHandler.test.ts#L146)).
+The entry is fully formed in the `entry_upsert` message, so a tool call yields one `entry_upsert` and nothing further. The client MUST NOT expect `entry_delta` or `entry_commit` for these entries ([validated by: sends a tool entry for a tool call](../../src/transport/ws/messageHandler.test.ts#L164)).
 
 ## 8. Conversation Sequence
 
@@ -453,8 +464,8 @@ Index 3: AssistantEntry    (AI response, streamed)
 
 In multi-tool scenarios, multiple ToolEntry objects may appear between the ThinkingEntry and AssistantEntry. The tool execution loop (Section 9) may produce additional entries.
 
-- A reply with no tool calls and no thinking produces, in order, the user entry, the assistant entry opened empty, one `entry_delta` per text chunk, its `entry_commit`, and `stream_end` ([validated by: sends the user entry, then the assistant entry, its delta, its commit and stream_end](../../src/transport/ws/messageHandler.test.ts#L76)).
-- A thinking block is committed before the assistant entry that follows it is opened, so the two never interleave ([validated by: commits the thinking entry before the assistant entry opens](../../src/transport/ws/messageHandler.test.ts#L102)).
+- A reply with no tool calls and no thinking produces, in order, the user entry, the assistant entry opened empty, one `entry_delta` per text chunk, its `entry_commit`, and `stream_end` ([validated by: sends the user entry, then the assistant entry, its delta, its commit and stream_end](../../src/transport/ws/messageHandler.test.ts#L94)).
+- A thinking block is committed before the assistant entry that follows it is opened, so the two never interleave ([validated by: commits the thinking entry before the assistant entry opens](../../src/transport/ws/messageHandler.test.ts#L120)).
 
 ### 8.1 Example: Full Conversation Exchange
 
@@ -477,7 +488,7 @@ In multi-tool scenarios, multiple ToolEntry objects may appear between the Think
 
 Notation: `-->` is client-to-server, `<--` is server-to-client.
 
-**Commit frames are not emitted in index order.** Above, `entry_commit` for index 1 arrives after `entry_upsert` for index 2. A thinking entry is committed when the next text segment arrives, not when a tool entry appears, so a tool call between thinking and the answer lands in the gap. A client that assumes commits arrive in ascending index order, or that an entry is committed before the next one opens, will mis-render this exchange ([validated by: commits the thinking entry when text resumes, not when a tool entry appears](../../src/transport/ws/messageHandler.test.ts#L119)).
+**Commit frames are not emitted in index order.** Above, `entry_commit` for index 1 arrives after `entry_upsert` for index 2. A thinking entry is committed when the next text segment arrives, not when a tool entry appears, so a tool call between thinking and the answer lands in the gap. A client that assumes commits arrive in ascending index order, or that an entry is committed before the next one opens, will mis-render this exchange ([validated by: commits the thinking entry when text resumes, not when a tool entry appears](../../src/transport/ws/messageHandler.test.ts#L137)).
 
 ### 8.2 Example: Tool with Suppression and Index Skip
 
@@ -527,9 +538,25 @@ A model often narrates before it calls a tool. That narration is streamed to the
 
 The second `entry_upsert` at index 1 is the retraction: same index, empty content. Index 1 is NOT tracked as skipped -- it still occupies its slot in the client array. Index 4, the model's suppressed follow-up, is.
 
+### 8.4 Example: Error During Streaming
+
+A provider fails after the answer has started. The partial answer is re-sent flagged `truncated` and committed as streamed, then the client receives the `error` frame, then `stream_end` as the last frame of the run, and clears its processing state on `stream_end`, not on `error`.
+
+```json
+--> {"type": "user_message", "content": "Where is my booking?"}
+
+<-- {"type": "entry_upsert", "index": 0, "entry": {"role": "user", ...}}
+<-- {"type": "entry_upsert", "index": 1, "entry": {"role": "assistant", "content": "", "isStreaming": true, ...}}
+<-- {"type": "entry_delta",  "index": 1, "delta": "Your booking is "}
+<-- {"type": "entry_upsert", "index": 1, "entry": {"role": "assistant", "content": "Your booking is ", "isStreaming": true, "truncated": true, ...}}
+<-- {"type": "entry_commit", "index": 1}
+<-- {"type": "error",        "code": "SERVER_ERROR", "message": "Failed to process message"}
+<-- {"type": "stream_end"}
+```
+
 ## 9. Tool Execution Loop
 
-When the AI model requests a tool invocation, the server executes the tool and re-queries the model with the result. The loop is bounded by `maxToolRounds` (default 5), counted from zero and inclusive, so the default permits six model calls: the first, plus five more after tool results.
+When the AI model requests a tool invocation, the server executes the tool and re-queries the model with the result. The loop is bounded by `maxToolRounds` (default 5): at most `maxToolRounds` tool rounds are executed, and the provider is called at most `maxToolRounds + 1` times, so the default permits six model calls: the first, plus five more that each read a round's tool results. A tool round the model requests once the budget is spent is not executed; the turn ends on that call's output. No new frame type is introduced for this outcome: a consumer's `onToolBudgetExhausted` sentence arrives as an ordinary assistant entry (`entry_upsert`, `entry_delta`, `entry_commit`), and the turn still ends with `stream_end`, never `error` ([validated by: renders the hook's sentence as its own committed entry, then stream_end, with no error](../../src/transport/ws/messageHandler.test.ts#L502)).
 
 ```text
 Round 1:  Model streams text + requests tool_use
@@ -547,7 +574,7 @@ Round N:  Model streams final text with stopReason "end_turn"
 
 The client observes this as a sequence of `entry_upsert`, `entry_delta`, and `entry_commit` messages, terminated by a `stream_end`. The tool loop is transparent to the client -- it does not need to track rounds.
 
-Messages a tool addresses to the client are forwarded verbatim, in the position the stream produced them, rather than being rewritten into entries of the server's own ([validated by: forwards a tool result to the client untouched](../../src/transport/ws/messageHandler.test.ts#L154)).
+Messages a tool addresses to the client are forwarded verbatim, in the position the stream produced them, rather than being rewritten into entries of the server's own ([validated by: forwards a tool result to the client untouched](../../src/transport/ws/messageHandler.test.ts#L172)).
 
 ## 10. Heartbeat
 
@@ -565,7 +592,7 @@ The client SHOULD send a `ping` message (Section 4.2) every 5 seconds. The serve
 
 ### 11.1 Client Disconnect
 
-The client SHOULD close the WebSocket with code 1000 (Normal Closure). The server will delete the session from the session store.
+The client SHOULD close the WebSocket with code 1000 (Normal Closure). The server keeps the session: it erases nothing on close, and the credentials the socket carried are cleared from it.
 
 ### 11.2 Server Shutdown
 
@@ -585,7 +612,9 @@ After 5 failed attempts, the client MUST stop reconnecting and report a disconne
 
 ## 12. Security Considerations
 
-- Access tokens are transmitted via the `Sec-WebSocket-Protocol` header during the handshake, avoiding exposure in URL query strings or server logs.
+- Access tokens are transmitted in the `Sec-WebSocket-Protocol` request header, which keeps them out of the request line and so out of a URL-based access log. They are not hidden from logging in general: an ingress or proxy that captures request headers records them, as it records an `Authorization` header, so header capture must redact `Sec-WebSocket-Protocol` too.
+- The server answers with the `hal.v1` marker, so the token is never written into the 101 response headers or held as the connected socket's `protocol` property; only a deprecated bare-token client still has its offer echoed, for one MINOR.
+- No offered subprotocol value is written to the engine's own log at any level. Every place a credential exists during a connection - request headers, the socket's and the session's `authHeaders`, and the tool context - is listed in [the subprotocol marker spec](../hal-engine-subprotocol-marker/spec.md#where-a-credential-exists).
 - Message content is validated at the server boundary. Content exceeding 10,000 characters is rejected.
 - The server validates all incoming messages against known types. Unrecognized types receive an `INVALID_MESSAGE` error.
 
