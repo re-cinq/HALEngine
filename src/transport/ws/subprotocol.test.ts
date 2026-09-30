@@ -1,6 +1,5 @@
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
-import {setLogger} from '../../shared/logger.js';
 import {HAL_WS_SUBPROTOCOL, credentialFromSubprotocol, selectSubprotocol} from './subprotocol.js';
 
 const TOKEN = 'super-secret-token';
@@ -21,15 +20,6 @@ describe('the hal.v1 marker', () => {
 });
 
 describe('selectSubprotocol', () => {
-  // The deprecation warning's wording and its silence about the offer are asserted over a real handshake.
-  beforeEach(() => {
-    setLogger({debug: () => undefined, info: () => undefined, warn: () => undefined, error: () => undefined});
-  });
-
-  afterEach(() => {
-    setLogger();
-  });
-
   it('answers the marker when it is offered first, never the token beside it', () => {
     expect(selectSubprotocol(new Set([HAL_WS_SUBPROTOCOL, TOKEN]))).toBe(HAL_WS_SUBPROTOCOL);
   });
@@ -38,8 +28,8 @@ describe('selectSubprotocol', () => {
     expect(selectSubprotocol(new Set([TOKEN, HAL_WS_SUBPROTOCOL]))).toBe(HAL_WS_SUBPROTOCOL);
   });
 
-  it('echoes a bare-token offer, the deprecated shape, for one minor', () => {
-    expect(selectSubprotocol(new Set([TOKEN]))).toBe(TOKEN);
+  it('answers nothing for a bare token offered without the marker', () => {
+    expect(selectSubprotocol(new Set([TOKEN]))).toBe(false);
   });
 
   it('answers nothing for an empty offer', () => {
@@ -60,8 +50,8 @@ describe('credentialFromSubprotocol', () => {
     expect(credentialFromSubprotocol(`${HAL_WS_SUBPROTOCOL}, first, second`)).toBe('first');
   });
 
-  it('reads a bare token, the deprecated shape', () => {
-    expect(credentialFromSubprotocol(TOKEN)).toBe(TOKEN);
+  it('reads nothing from a bare token offered without the marker', () => {
+    expect(credentialFromSubprotocol(TOKEN)).toBeUndefined();
   });
 
   it('reads nothing when only the marker is offered', () => {

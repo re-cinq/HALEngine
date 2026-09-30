@@ -8,6 +8,14 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+### Removed
+
+- **A bare-token subprotocol offer is no longer accepted.** `0.3.x` and `0.4.x` still echoed an offer without `hal.v1` for one MINOR, which put the access token in the 101 response headers and the socket's `protocol` property. Such an offer is now answered with no `Sec-WebSocket-Protocol` header, which `ws` and Chromium both fail, and the deprecation warning is gone. **Migration**: every client must offer `hal.v1` beside its token, `new WebSocket(url, ['hal.v1', token])`, the shape documented since `0.3.0`.
+
+### Changed
+
+- `credentialFromSubprotocol` returns `undefined` unless the offer includes `hal.v1`, so a bare-token offer no longer authenticates a connection its client is about to fail. A `WsAuthenticator` that already expects the marker needs no change.
+
 ## [0.4.0] - 2026-09-29
 
 **Upgrading from 0.3.x.** Nothing is removed and no existing signature changes, but check these before you bump:
