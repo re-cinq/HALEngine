@@ -5,7 +5,7 @@ import {v4 as uuidv4} from 'uuid';
 import type {WsAuthenticator} from '../../types/auth.js';
 import type {SessionStore} from '../../types/sessionStore.js';
 import type {ConnectedMessage} from '../../types/messages.js';
-import type {ChatSession} from '../../types/session.js';
+import type {AuthenticatedUser, ChatSession} from '../../types/session.js';
 import {ErrorCodes} from '../../types/session.js';
 import {sendError} from './sender.js';
 import {isValidWsPath, rejectSocket, parseWsData} from './helpers.js';
@@ -37,13 +37,13 @@ export interface ConnectionHandlerDeps {
 }
 export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandlerDeps) {
   return function handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
-    if (!isValidWsPath(request.url || '', request.headers.host || '', deps.basePath)) {
+    // Nothing may throw out of this listener: the `upgrade` event has no catch above it, so a throw ends the process.
+    if (!request.headers.host || !isValidWsPath(request.url || '', deps.basePath)) {
       rejectSocket(socket, '400 Bad Request');
       return;
     }
 
-    deps
-      .wsAuth(request)
+    authenticate(deps.wsAuth, request)
       .then(user => {
         if (!user) {
           rejectSocket(socket, '401 Unauthorized');
@@ -67,6 +67,15 @@ export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandl
         rejectSocket(socket, '500 Internal Server Error');
       });
   };
+}
+
+// An authenticator that throws synchronously becomes a rejection, which the upgrade answers with 500.
+function authenticate(wsAuth: WsAuthenticator, request: IncomingMessage): Promise<AuthenticatedUser | null> {
+  try {
+    return wsAuth(request);
+  } catch (error) {
+    return Promise.reject(error);
+  }
 }
 
 function bearerFromWebSocketProtocol(req: IncomingMessage): string | undefined {
