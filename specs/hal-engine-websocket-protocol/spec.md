@@ -61,7 +61,7 @@ The server answers `Sec-WebSocket-Protocol: hal.v1` and never echoes the token. 
 
 A subprotocol is validated client-side as an HTTP token (RFC 7230 `tchar`), so a value carried this way can contain only letters, digits and ``!#$%&'*+-.^_`|~``: a JWT fits, but a padded base64 token (`=`, `/`) cannot use this carrier at all.
 
-A client that offers a bare token without the marker, the shape `0.2.x` documented, is refused: `0.3.x` and `0.4.x` still echoed such an offer for one MINOR, and later releases answer it with no `Sec-WebSocket-Protocol` header and read no credential from it. `ws` and Chromium both fail that handshake, so every client must offer `hal.v1` beside its token (see [the subprotocol marker spec](../hal-engine-subprotocol-marker/spec.md)).
+A client that offers a bare token without the marker, the shape `0.2.x` documented, is refused: `0.3.x` and `0.4.x` still echoed such an offer for one MINOR, and later releases read no credential from it. An authenticator that reads the credential with `credentialFromSubprotocol` therefore rejects the upgrade with HTTP 401; one that admits the request anyway gets a 101 with no `Sec-WebSocket-Protocol` header, which `ws` and Chromium both fail. Either way every client must offer `hal.v1` beside its token (see [the subprotocol marker spec](../hal-engine-subprotocol-marker/spec.md)).
 
 The server MUST validate the token via the configured `WsAuthenticator` before completing the upgrade. If authentication fails, the server MUST reject the connection with HTTP 401.
 

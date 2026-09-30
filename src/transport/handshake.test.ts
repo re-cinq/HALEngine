@@ -4,7 +4,8 @@ import type {AddressInfo} from 'node:net';
 import {WebSocket} from 'ws';
 import type {Express} from 'express';
 import {createServer} from './createServer.js';
-import {HAL_WS_SUBPROTOCOL} from './ws/subprotocol.js';
+import {HAL_WS_SUBPROTOCOL, credentialFromSubprotocol} from './ws/subprotocol.js';
+import type {WsAuthenticator} from '../types/auth.js';
 import {InMemorySessionStore} from '../infrastructure/stores/inMemorySessionStore.js';
 import {setLogger} from '../shared/logger.js';
 import type {ChatOrchestrator} from '../orchestration/chatOrchestrator.js';
@@ -28,14 +29,16 @@ const signal = () => {
   return {fired, release: () => release()};
 };
 
-const engine = async () => {
+const admitEveryone: WsAuthenticator = async () => ({id: 'u1'});
+
+const engine = async (wsAuth: WsAuthenticator = admitEveryone) => {
   // Read at connect: the close handler clears authHeaders, so a post-close read would see nothing.
   const bearers: Array<string | undefined> = [];
   const serverSockets: WebSocket[] = [];
   const disconnected = signal();
   const hal = createServer({
     app: (() => undefined) as unknown as Express,
-    wsAuth: async () => ({id: 'u1'}),
+    wsAuth,
     sessionStore: new InMemorySessionStore(),
     orchestrator: {} as ChatOrchestrator,
     onConnect: session => void bearers.push(session.authHeaders?.authorization),
@@ -78,16 +81,23 @@ const handshake = async (offer: string[], headers: Record<string, string> = {}):
   };
 };
 
+// Raced against open, so a server that still accepts an offer fails the test instead of hanging it.
+const clientOutcome = (client: WebSocket): Promise<string> =>
+  Promise.race([
+    once(client, 'error').then(([error]) => (error as Error).message),
+    once(client, 'open').then(() => 'opened'),
+  ]);
+
+// The authenticator the docs recommend: it reads the credential the way the engine does.
+const readsSubprotocol: WsAuthenticator = async request =>
+  credentialFromSubprotocol(request.headers['sec-websocket-protocol']) ? {id: 'u1'} : null;
+
 // An offer without the marker is answered with no subprotocol, which the ws client fails after the 101.
 const refusedHandshake = async (offer: string[]) => {
   const {hal, disconnected, url} = await engine();
   const client = new WebSocket(url, offer);
   const upgraded = once(client, 'upgrade');
-  // Raced against open, so a server that still accepts the offer fails this test instead of hanging it.
-  const outcome = Promise.race([
-    once(client, 'error').then(([error]) => (error as Error).message),
-    once(client, 'open').then(() => 'opened'),
-  ]);
+  const outcome = clientOutcome(client);
   const [response] = (await upgraded) as [IncomingMessage];
   const clientError = await outcome;
   client.close();
@@ -138,6 +148,17 @@ describe('the WebSocket handshake', () => {
       leakedHeaders: [],
       clientError: 'Server sent no subprotocol',
     });
+  });
+
+  it('refuses a bare-token offer with 401 when the authenticator reads its credential with credentialFromSubprotocol', async () => {
+    const {hal, url} = await engine(readsSubprotocol);
+    const client = new WebSocket(url, [TOKEN]);
+
+    const clientError = await clientOutcome(client);
+    client.close();
+    await hal.stop();
+
+    expect(clientError).toBe('Unexpected server response: 401');
   });
 
   it('writes no offered value to any log line from connect to close, in either shape', async () => {
