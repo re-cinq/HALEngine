@@ -61,7 +61,7 @@ The server answers `Sec-WebSocket-Protocol: hal.v1` and never echoes the token. 
 
 A subprotocol is validated client-side as an HTTP token (RFC 7230 `tchar`), so a value carried this way can contain only letters, digits and ``!#$%&'*+-.^_`|~``: a JWT fits, but a padded base64 token (`=`, `/`) cannot use this carrier at all.
 
-A client that offers a bare token without the marker, the shape `0.2.x` documented, is deprecated: for one MINOR the server still echoes its offer and logs a warning that never includes the offered value. The MINOR after that answers such an offer with no `Sec-WebSocket-Protocol` header, which `ws` and Chromium both fail, so every client must offer `hal.v1` before then (see [the subprotocol marker spec](../hal-engine-subprotocol-marker/spec.md)).
+A client that offers a bare token without the marker, the shape `0.2.x` documented, is refused: `0.3.x` and `0.4.x` still echoed such an offer for one MINOR, and later releases answer it with no `Sec-WebSocket-Protocol` header and read no credential from it. `ws` and Chromium both fail that handshake, so every client must offer `hal.v1` beside its token (see [the subprotocol marker spec](../hal-engine-subprotocol-marker/spec.md)).
 
 The server MUST validate the token via the configured `WsAuthenticator` before completing the upgrade. If authentication fails, the server MUST reject the connection with HTTP 401.
 
@@ -613,7 +613,7 @@ After 5 failed attempts, the client MUST stop reconnecting and report a disconne
 ## 12. Security Considerations
 
 - Access tokens are transmitted in the `Sec-WebSocket-Protocol` request header, which keeps them out of the request line and so out of a URL-based access log. They are not hidden from logging in general: an ingress or proxy that captures request headers records them, as it records an `Authorization` header, so header capture must redact `Sec-WebSocket-Protocol` too.
-- The server answers with the `hal.v1` marker, so the token is never written into the 101 response headers or held as the connected socket's `protocol` property; only a deprecated bare-token client still has its offer echoed, for one MINOR.
+- The server answers with the `hal.v1` marker, so the token is never written into the 101 response headers or held as the connected socket's `protocol` property. An offer without the marker is answered with no subprotocol, so no offered value is ever echoed.
 - No offered subprotocol value is written to the engine's own log at any level. Every place a credential exists during a connection - request headers, the socket's and the session's `authHeaders`, and the tool context - is listed in [the subprotocol marker spec](../hal-engine-subprotocol-marker/spec.md#where-a-credential-exists).
 - Message content is validated at the server boundary. Content exceeding 10,000 characters is rejected.
 - The server validates all incoming messages against known types. Unrecognized types receive an `INVALID_MESSAGE` error.

@@ -78,6 +78,28 @@ const handshake = async (offer: string[], headers: Record<string, string> = {}):
   };
 };
 
+// An offer without the marker is answered with no subprotocol, which the ws client fails after the 101.
+const refusedHandshake = async (offer: string[]) => {
+  const {hal, disconnected, url} = await engine();
+  const client = new WebSocket(url, offer);
+  const upgraded = once(client, 'upgrade');
+  // Raced against open, so a server that still accepts the offer fails this test instead of hanging it.
+  const outcome = Promise.race([
+    once(client, 'error').then(([error]) => (error as Error).message),
+    once(client, 'open').then(() => 'opened'),
+  ]);
+  const [response] = (await upgraded) as [IncomingMessage];
+  const clientError = await outcome;
+  client.close();
+  await disconnected.fired;
+  await hal.stop();
+  return {
+    answered: response.headers['sec-websocket-protocol'],
+    leakedHeaders: response.rawHeaders.filter(value => value.includes(TOKEN)),
+    clientError,
+  };
+};
+
 describe('the WebSocket handshake', () => {
   const lines: string[] = [];
 
@@ -110,23 +132,18 @@ describe('the WebSocket handshake', () => {
     });
   });
 
-  it('still connects a bare-token client for one minor, echoing its offer as before', async () => {
-    const result = await handshake([TOKEN]);
-
-    expect({answered: result.answered, authorization: result.authorization}).toEqual({
-      answered: TOKEN,
-      authorization: `Bearer ${TOKEN}`,
+  it('answers a bare-token offer with no subprotocol, so the client fails it and no response header holds the token', async () => {
+    expect(await refusedHandshake([TOKEN])).toEqual({
+      answered: undefined,
+      leakedHeaders: [],
+      clientError: 'Server sent no subprotocol',
     });
   });
 
   it('writes no offered value to any log line from connect to close, in either shape', async () => {
     await handshake([HAL_WS_SUBPROTOCOL, TOKEN]);
-    await handshake([TOKEN]);
+    await refusedHandshake([TOKEN]);
 
-    const warned = lines.filter(line => line.includes(`subprotocol offered without ${HAL_WS_SUBPROTOCOL}`));
-    expect({warned: warned.length, leaked: lines.filter(line => line.includes(TOKEN))}).toEqual({
-      warned: 1,
-      leaked: [],
-    });
+    expect(lines.filter(line => line.includes(TOKEN))).toEqual([]);
   });
 });
