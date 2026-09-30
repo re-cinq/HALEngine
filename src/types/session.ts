@@ -11,6 +11,8 @@ export interface AssistantEntry {
   isStreaming: boolean;
   /** Present only when the run ended before this entry finished: a provider failure or a round with no stop. */
   truncated?: true;
+  /** Present only when a tool suppressed the response and the client was shown this entry blank or not at all. */
+  suppressed?: true;
 }
 
 export interface ThinkingEntry {
@@ -19,6 +21,8 @@ export interface ThinkingEntry {
   isStreaming: boolean;
   /** Present only when the run ended before this entry finished: a provider failure or a round with no stop. */
   truncated?: true;
+  /** Present only when a tool suppressed the response and the client was never sent this entry. */
+  suppressed?: true;
 }
 
 export interface ToolEntry {

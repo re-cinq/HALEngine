@@ -35,16 +35,17 @@ All messages are transmitted as UTF-8 encoded JSON over WebSocket (RFC 6455). Ea
 The WebSocket endpoint follows this URI pattern:
 
 ```text
-wss://{host}{basePath}/ws/{chatId}
+wss://{host}{basePath}/ws?sessionId={sessionId}
 ```
 
-Where `{basePath}` is the configurable path prefix (default `/hal`). For example, with default settings:
+Where `{basePath}` is the configurable path prefix (default `/hal`). A first connection has no id to offer and omits the query; a reconnect that wants its conversation back sends the `sessionId` from its previous `connected` frame. For example, with default settings:
 
 ```text
-wss://example.com/hal/ws/abc-123
+wss://example.com/hal/ws
+wss://example.com/hal/ws?sessionId=550e8400-e29b-41d4-a716-446655440000
 ```
 
-The server validates only that the path begins with `{basePath}/ws`; it does not parse or require the trailing `{chatId}`. Clients SHOULD still send one, because it is what makes a connection identifiable in logs and proxies, but it does not select or resume server state. The session is identified by the `sessionId` the server mints in the `connected` message, and a new one is minted per connection.
+The server validates only that the path begins with `{basePath}/ws`. The `sessionId` query parameter is read only when the server enables resume (`transport.resume`), and only if it is 1–128 characters of `[A-Za-z0-9_-]`. It is not a credential: the server rejoins that conversation only if it belongs to the connection's authenticated user, and answers any other id — someone else's, one it never issued, or one its store no longer holds — with a fresh session exactly as if no id had been sent. The server never adopts a requested id for a new session. See [the session resume spec](../hal-engine-session-resume/spec.md).
 
 ### 2.2 Authentication
 
@@ -82,7 +83,9 @@ Upon successful connection, the server MUST send a `connected` message before an
 }
 ```
 
-The `sessionId` is a UUID v4 assigned by the server. It uniquely identifies this session and is valid for the lifetime of the connection. The `examplePrompts` array contains example queries derived from the registered tool definitions, displayed in the client as clickable suggestions.
+The `sessionId` is a UUID v4 assigned by the server. It uniquely identifies this session; with resume enabled it outlives the connection and a reconnect can name it. The `examplePrompts` array contains example queries derived from the registered tool definitions, displayed in the client as clickable suggestions.
+
+With resume enabled, the frame also carries `resumed`. On `resumed: true` it carries `entryCount`, and the server then replays the stored conversation before any other frame: one `entry_upsert` per entry at its own index, or an `entry_skip` for an entry a tool suppressed, so the client sees the conversation it saw live. With resume disabled neither field is present.
 
 ## 3. Message Format
 
@@ -151,6 +154,8 @@ Sent exactly once after a successful handshake. See Section 2.3.
 | `sessionId`      | string   | UUID v4 identifying the session                        |
 | `message`        | string   | Human-readable greeting                                |
 | `examplePrompts` | string[] | Example queries derived from registered tool definitions |
+| `resumed`        | boolean  | Present only with resume enabled: whether the requested conversation was rejoined |
+| `entryCount`     | number   | Present only when `resumed` is `true`: how many stored entries the replay covers, skipped ones included |
 
 ### 5.2 entry_upsert
 
@@ -291,8 +296,8 @@ Defined error codes:
 Semantics:
 
 - A message the server cannot parse into a known type is answered with `INVALID_MESSAGE`, and no message stream is started for it ([validated by: rejects an unparseable message and never starts a stream](../../src/transport/ws/messageHandler.test.ts#L74)).
-- A rate limit reported by the AI provider is surfaced as `RATE_LIMITED`, which tells the client the same request is worth retrying ([validated by: tells the client to retry when the provider is rate limited](../../src/transport/ws/messageHandler.test.ts#L242)).
-- Any other failure raised while processing a message is reported as `SERVER_ERROR` ([validated by: reports any other failure as a server error](../../src/transport/ws/messageHandler.test.ts#L251)).
+- A rate limit reported by the AI provider is surfaced as `RATE_LIMITED`, which tells the client the same request is worth retrying ([validated by: tells the client to retry when the provider is rate limited](../../src/transport/ws/messageHandler.test.ts#L272)).
+- Any other failure raised while processing a message is reported as `SERVER_ERROR` ([validated by: reports any other failure as a server error](../../src/transport/ws/messageHandler.test.ts#L281)).
 
 ### 5.7 pong
 
@@ -437,8 +442,8 @@ entry_upsert  -->  entry_delta (0..N)  -->  entry_commit
 1. The server sends `entry_upsert` with `isStreaming: true` and an empty `content`.
 2. The server sends zero or more `entry_delta` messages. The client MUST concatenate each `delta` to the entry's `content`.
 3. The server sends `entry_commit`. The client MUST set `isStreaming` to `false`, matching the committed entry the server keeps in the session. No further deltas will arrive for this entry ([validated by: leaves the committed assistant entry in the session, no longer streaming](../../src/transport/ws/messageHandler.test.ts#L108)).
-4. Every entry the server opens is committed by the time the turn ends, on every terminal path: a `stop`, a round that ends without one, and a provider that throws mid-stream. The partial content is committed exactly as streamed, and on a throw the `entry_commit` frames arrive before the `error` frame ([validated by: commits a partial answer as streamed, before the error, when the provider throws](../../src/transport/ws/messageHandler.test.ts#L345), [validated by: commits the answer, flagged truncated, when a round ends on a tool call with no stop chunk](../../src/transport/ws/messageHandler.test.ts#L380)).
-5. An entry committed because the run ended before it finished (a provider failure, or a round with no `stop`) carries `truncated: true`, in the session and on the wire: the server re-sends it as an `entry_upsert` with the flag just before its `entry_commit`, so a live client and a replay of the stored entry both see it, and a client can render a cut-off answer as cut off without the transient `error` frame. An entry committed on a `stop` never carries the field, and a suppressed entry is flagged in the session but never re-sent. Any text the thinking-tag parser still held is flushed into the entry first, as a `stop` does ([validated by: flags a partial answer truncated in the session and re-sends it with the flag before its commit](../../src/transport/ws/messageHandler.test.ts#L419), [validated by: leaves an entry committed on a stop chunk without the flag and sends it once](../../src/transport/ws/messageHandler.test.ts#L447), [validated by: flags a suppressed entry that a throw cut short in the session but never re-sends it](../../src/transport/ws/messageHandler.test.ts#L459), [validated by: keeps the text the thinking-tag parser still held when a throw cuts the answer short](../../src/transport/ws/messageHandler.test.ts#L471)).
+4. Every entry the server opens is committed by the time the turn ends, on every terminal path: a `stop`, a round that ends without one, and a provider that throws mid-stream. The partial content is committed exactly as streamed, and on a throw the `entry_commit` frames arrive before the `error` frame ([validated by: commits a partial answer as streamed, before the error, when the provider throws](../../src/transport/ws/messageHandler.test.ts#L375), [validated by: commits the answer, flagged truncated, when a round ends on a tool call with no stop chunk](../../src/transport/ws/messageHandler.test.ts#L410)).
+5. An entry committed because the run ended before it finished (a provider failure, or a round with no `stop`) carries `truncated: true`, in the session and on the wire: the server re-sends it as an `entry_upsert` with the flag just before its `entry_commit`, so a live client and a replay of the stored entry both see it, and a client can render a cut-off answer as cut off without the transient `error` frame. An entry committed on a `stop` never carries the field, and a suppressed entry is flagged in the session but never re-sent. Any text the thinking-tag parser still held is flushed into the entry first, as a `stop` does ([validated by: flags a partial answer truncated in the session and re-sends it with the flag before its commit](../../src/transport/ws/messageHandler.test.ts#L449), [validated by: leaves an entry committed on a stop chunk without the flag and sends it once](../../src/transport/ws/messageHandler.test.ts#L477), [validated by: flags a suppressed entry that a throw cut short in the session but never re-sends it](../../src/transport/ws/messageHandler.test.ts#L489), [validated by: keeps the text the thinking-tag parser still held when a throw cuts the answer short](../../src/transport/ws/messageHandler.test.ts#L501)).
 
 ### 7.2 Non-Streaming Entries (user, tool)
 
@@ -556,7 +561,7 @@ A provider fails after the answer has started. The partial answer is re-sent fla
 
 ## 9. Tool Execution Loop
 
-When the AI model requests a tool invocation, the server executes the tool and re-queries the model with the result. The loop is bounded by `maxToolRounds` (default 5): at most `maxToolRounds` tool rounds are executed, and the provider is called at most `maxToolRounds + 1` times, so the default permits six model calls: the first, plus five more that each read a round's tool results. A tool round the model requests once the budget is spent is not executed; the turn ends on that call's output. No new frame type is introduced for this outcome: a consumer's `onToolBudgetExhausted` sentence arrives as an ordinary assistant entry (`entry_upsert`, `entry_delta`, `entry_commit`), and the turn still ends with `stream_end`, never `error` ([validated by: renders the hook's sentence as its own committed entry, then stream_end, with no error](../../src/transport/ws/messageHandler.test.ts#L502)).
+When the AI model requests a tool invocation, the server executes the tool and re-queries the model with the result. The loop is bounded by `maxToolRounds` (default 5): at most `maxToolRounds` tool rounds are executed, and the provider is called at most `maxToolRounds + 1` times, so the default permits six model calls: the first, plus five more that each read a round's tool results. A tool round the model requests once the budget is spent is not executed; the turn ends on that call's output. No new frame type is introduced for this outcome: a consumer's `onToolBudgetExhausted` sentence arrives as an ordinary assistant entry (`entry_upsert`, `entry_delta`, `entry_commit`), and the turn still ends with `stream_end`, never `error` ([validated by: renders the hook's sentence as its own committed entry, then stream_end, with no error](../../src/transport/ws/messageHandler.test.ts#L532)).
 
 ```text
 Round 1:  Model streams text + requests tool_use
@@ -606,7 +611,7 @@ If the connection drops unexpectedly, the client SHOULD reconnect using exponent
 - Formula: `min(1000 * 2^retryCount + jitter, 31000)` where jitter is 0-1000 ms random
 - Maximum retries: 5
 - On reconnection success, any queued `user_message` messages MUST be flushed immediately.
-- On reconnection, the client MUST clear its local entries array. The server will re-send the conversation state for the new session.
+- On reconnection, the client MUST clear its local entries array and SHOULD send `?sessionId=` with the id from its last `connected` frame. When the server has resume enabled and the conversation is the user's own, it answers `resumed: true` and replays the conversation; otherwise the client is starting a new session.
 
 After 5 failed attempts, the client MUST stop reconnecting and report a disconnected state.
 

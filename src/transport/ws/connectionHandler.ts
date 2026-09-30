@@ -8,8 +8,10 @@ import type {ConnectedMessage} from '../../types/messages.js';
 import type {ChatSession} from '../../types/session.js';
 import {ErrorCodes} from '../../types/session.js';
 import {sendError} from './sender.js';
-import {isValidWsPath, rejectSocket, parseWsData} from './helpers.js';
+import {isValidWsPath, rejectSocket, parseWsData, sessionIdFromUpgrade} from './helpers.js';
 import {credentialFromSubprotocol} from './subprotocol.js';
+import {replayEntries, resumableSession, resumeFields} from './sessionResume.js';
+import type {SessionResumeOptions} from './sessionResume.js';
 import {log} from '../../shared/logger.js';
 
 export interface ExtWebSocket extends WebSocket {
@@ -21,6 +23,7 @@ export interface ExtWebSocket extends WebSocket {
     authorization?: string;
     host?: string;
   };
+  requestedSessionId?: string;
 }
 
 export interface ConnectionHandlerDeps {
@@ -34,6 +37,7 @@ export interface ConnectionHandlerDeps {
   basePath: string;
   onConnect?: (session: import('../../types/session.js').ChatSession) => void | Promise<void>;
   onDisconnect?: (sessionId: string) => void | Promise<void>;
+  resume?: SessionResumeOptions;
 }
 export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandlerDeps) {
   return function handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
@@ -60,6 +64,13 @@ export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandl
             host: (request.headers['x-forwarded-host'] as string | undefined) ?? request.headers.host,
           };
           extWs.isAlive = true;
+          if (deps.resume?.enabled) {
+            extWs.requestedSessionId = sessionIdFromUpgrade(
+              request.url || '',
+              request.headers.host || '',
+              deps.basePath
+            );
+          }
           wss.emit('connection', extWs, request);
         });
       })
@@ -87,7 +98,8 @@ export function createConnectionHandler(deps: ConnectionHandlerDeps, exampleProm
 }
 
 async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[], ws: ExtWebSocket): Promise<void> {
-  const sessionId = uuidv4();
+  // A requested id is never adopted for a new session: that would be session fixation.
+  let sessionId = uuidv4();
   const state = {closed: false, settled: false, notified: false, delivered: false};
   const held: {session?: ChatSession} = {};
 
@@ -108,7 +120,13 @@ async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[]
   // Paused across the await so a frame arriving before the message listener exists is buffered, not dropped.
   ws.pause();
 
-  const session = await createSession(deps, sessionId, ws);
+  const resumed = await resumableSession(deps.sessionStore, ws);
+  if (resumed) {
+    sessionId = resumed.sessionId;
+    // Re-captured from this upgrade, as a new session's would be: the close of the old socket cleared them.
+    resumed.authHeaders = ws.authHeaders;
+  }
+  const session = resumed ?? (await createSession(deps, sessionId, ws));
   state.settled = true;
 
   if (session === undefined) {
@@ -121,7 +139,7 @@ async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[]
   if (state.closed) {
     // Held first: a store that implements no evict still holds this session, and it carries the caller's credentials.
     held.session = session;
-    await evictSession(deps, sessionId);
+    await evictUnlessResumed(deps, sessionId, resumed);
     endSession(deps, sessionId, state, held);
     ws.resume();
     return;
@@ -136,13 +154,15 @@ async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[]
     sessionId,
     message: 'Connected to HAL Engine',
     examplePrompts,
+    ...resumeFields(deps.resume, resumed),
   };
   // A socket that died between the check above and this frame must not leave the session it was created for behind.
   try {
     ws.send(JSON.stringify(connected));
+    if (resumed) replayEntries(ws, resumed);
   } catch (error) {
     log.error('ws', 'connected frame failed', {sessionId, error: messageOf(error)});
-    await evictSession(deps, sessionId);
+    await evictUnlessResumed(deps, sessionId, resumed);
     endSession(deps, sessionId, state, held);
     ws.resume();
     ws.close(1011, 'Connection setup failed');
@@ -204,6 +224,15 @@ function endSession(
   if (!state.delivered) return;
 
   runHook('onDisconnect', sessionId, () => deps.onDisconnect?.(sessionId));
+}
+
+// Never a resumed session: evict erases, and a resumed session holds the conversation being rejoined.
+async function evictUnlessResumed(
+  deps: ConnectionHandlerDeps,
+  sessionId: string,
+  resumed: ChatSession | undefined
+): Promise<void> {
+  if (!resumed) await evictSession(deps, sessionId);
 }
 
 // Only for a session no client ever received: it has no entries and nothing to migrate.

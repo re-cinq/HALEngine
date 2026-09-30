@@ -18,6 +18,7 @@ import {InMemorySessionStore} from './infrastructure/stores/inMemorySessionStore
 import {createApp} from './transport/createApp.js';
 import type {HalAppOptions} from './transport/createApp.js';
 import {createServer} from './transport/createServer.js';
+import type {SessionResumeOptions} from './transport/ws/sessionResume.js';
 
 export interface HalEngineConfig {
   provider: ProviderConfig;
@@ -33,6 +34,7 @@ export interface HalEngineConfig {
     additionalRoutes?: HalAppOptions['additionalRoutes'];
     rootRoutes?: HalAppOptions['rootRoutes'];
     errorHandler?: HalAppOptions['errorHandler'];
+    resume?: SessionResumeOptions;
   };
   auth: {
     ws: WsAuthenticator;
@@ -96,6 +98,7 @@ export function createHalEngine(config: HalEngineConfig): HalEngine {
     heartbeatIntervalMs: config.transport?.heartbeatIntervalMs,
     onConnect: config.onConnect,
     onDisconnect: config.onDisconnect,
+    resume: config.transport?.resume,
   });
 
   return {

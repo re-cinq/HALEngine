@@ -236,6 +236,36 @@ describe('the websocket message handler', () => {
 
       expect(h.frames().filter(frame => frame === 'upsert 1 assistant ""')).toHaveLength(2);
     });
+
+    it('marks a sent assistant entry it blanked as suppressed in the session, keeping its text', async () => {
+      const h = harness([text('leaked'), STOP, SUPPRESS]);
+
+      await h.send();
+
+      const [, answer] = h.session.entries;
+      expect(answer).toMatchObject({role: 'assistant', content: 'leaked', suppressed: true});
+    });
+
+    it('marks a segment opened after suppression as suppressed in the session', async () => {
+      const h = harness([SUPPRESS, text('hidden'), STOP]);
+
+      await h.send();
+
+      const [, answer] = h.session.entries;
+      expect(answer).toMatchObject({role: 'assistant', content: 'hidden', suppressed: true});
+    });
+
+    it('leaves a thinking entry the client kept seeing unmarked, and marks the blanked answer', async () => {
+      const h = harness([text('<thinking>private</thinking>said'), STOP, SUPPRESS]);
+
+      await h.send();
+
+      const [, thinking, answer] = h.session.entries;
+      expect({thinking: 'suppressed' in thinking, answer}).toMatchObject({
+        thinking: false,
+        answer: {role: 'assistant', content: 'said', suppressed: true},
+      });
+    });
   });
 
   describe('failures', () => {

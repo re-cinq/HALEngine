@@ -8,6 +8,7 @@ import type {ToolRegistry} from '../orchestration/tools/registry.js';
 import {createUpgradeHandler, createConnectionHandler, ExtWebSocket} from './ws/connectionHandler.js';
 import {createMessageHandler} from './ws/messageHandler.js';
 import {selectSubprotocol} from './ws/subprotocol.js';
+import type {SessionResumeOptions} from './ws/sessionResume.js';
 import {log} from '../shared/logger.js';
 
 export interface HalServerOptions {
@@ -21,6 +22,7 @@ export interface HalServerOptions {
   heartbeatIntervalMs?: number;
   onConnect?: (session: import('../types/session.js').ChatSession) => void | Promise<void>;
   onDisconnect?: (sessionId: string) => void | Promise<void>;
+  resume?: SessionResumeOptions;
 }
 
 export interface HalServer {
@@ -48,6 +50,7 @@ export function createServer(options: HalServerOptions): HalServer {
     basePath,
     onConnect: options.onConnect,
     onDisconnect: options.onDisconnect,
+    resume: options.resume,
   };
 
   const handleUpgrade = createUpgradeHandler(wss, deps);

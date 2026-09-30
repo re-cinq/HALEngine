@@ -8,6 +8,11 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+### Added
+
+- **Session resume**, opt-in via `transport: {resume: {enabled: true}}` and exported as `SessionResumeOptions`. A client that reconnects to `{basePath}/ws?sessionId=<id>`, with the id from its last `connected` frame, gets its conversation back: the frame carries `resumed: true` and `entryCount`, and each stored entry is replayed as an `entry_upsert` at its index. The id is not a credential. It is resumed only for the stored session's own user; any other id, whether another user's, one never issued or one the store no longer holds, gets a fresh session and `resumed: false`, and the three are indistinguishable, so the answer reveals nothing about which ids exist. A requested id is never adopted for a new session. With resume off, nothing changes: the `connected` frame carries neither new field. **GDPR**: with resume on, conversations outlive their sockets, so bound retention yourself, with `maxAgeMs` on `InMemorySessionStore` or `MongoSessionStore`'s erasure methods.
+- Stored assistant and thinking entries gain an optional `suppressed: true` when a tool suppressed the response and the client was shown the entry blank or not at all. A resumed session replays such an entry as `entry_skip`, so a reconnecting client never sees text a tool hid. The entry keeps its text for the model's history.
+
 ### Removed
 
 - **A bare-token subprotocol offer is no longer accepted.** `0.3.x` and `0.4.x` still echoed an offer without `hal.v1` for one MINOR, which put the access token in the 101 response headers and the socket's `protocol` property. Such an offer is now answered with no `Sec-WebSocket-Protocol` header, which `ws` and Chromium both fail, and the deprecation warning is gone. **Migration**: every client must offer `hal.v1` beside its token, `new WebSocket(url, ['hal.v1', token])`, the shape documented since `0.3.0`.

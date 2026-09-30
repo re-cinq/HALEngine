@@ -17,6 +17,8 @@ export interface ConnectedMessage {
   sessionId: string;
   message: string;
   examplePrompts: string[];
+  resumed?: boolean;
+  entryCount?: number;
 }
 
 export interface EntryUpsertMessage {

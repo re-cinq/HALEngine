@@ -380,10 +380,10 @@ When a thinking block closes, the handler commits the `ThinkingEntry` before sta
 ### Establishing a connection
 
 1. The client calls `POST {basePath}/chats` to create a chat, getting back a `chatId`
-2. The client builds a WebSocket URL: `wss://{host}{basePath}/ws/{chatId}`. The server checks only the `{basePath}/ws` prefix and never parses `{chatId}` -- the session is the `sessionId` it mints in step 5
+2. The client builds a WebSocket URL: `wss://{host}{basePath}/ws`, adding `?sessionId={sessionId}` on a reconnect that wants its conversation back. The server checks only the `{basePath}/ws` prefix; the query parameter is not a credential, and with `transport.resume` enabled it is honoured only for the connection's own authenticated user (step 5)
 3. The client offers two WebSocket subprotocols, `hal.v1, <access-token>` (no query string exposure), and the server answers only the `hal.v1` marker, so the token never appears in the response
 4. The server's `handleUpgrade` passes the upgrade request to the configured `WsAuthenticator`, which returns a user or `null`, before completing the handshake; what it reads from that request - a header, a cookie, a subprotocol - is the consumer's business, not this package's
-5. On connection, the server creates a `ChatSession` and sends a `connected` message (including `examplePrompts` collected from the tool registry)
+5. On connection, the server creates a `ChatSession` and sends a `connected` message (including `examplePrompts` collected from the tool registry). With resume enabled, a requested id whose stored session belongs to the connecting user is rejoined instead: the frame carries `resumed: true` and `entryCount`, and the stored entries are replayed; any other id gets a fresh, server-minted session and `resumed: false`
 
 ### Heartbeat
 
