@@ -70,7 +70,8 @@ No upgrade request can end the server process: the `upgrade` event has nothing a
 - An upgrade whose `Host` header is missing or empty (RFC 6455 §4.1 requires one), or whose request-target is not a URL, such as `//`, is answered with HTTP 400 ([validated by: answers an empty Host, a missing Host and a // target with 400 instead of throwing out of the upgrade listener](../../src/transport/malformedUpgrade.test.ts#L58)).
 - The path check reads the target alone and never throws: `{basePath}/ws` with or without a trailing segment passes, and any other path, an empty target or `//` fails ([validated by: accepts /hal/ws with or without a trailing segment and refuses another path, an empty target and //, without throwing](../../src/transport/ws/wsPath.test.ts#L4)).
 - A `WsAuthenticator` that throws synchronously, rather than returning a rejected promise, is answered with HTTP 500, as a rejection is ([validated by: answers 500 when the authenticator throws synchronously instead of rejecting](../../src/transport/malformedUpgrade.test.ts#L72)).
-- A well-formed upgrade is unaffected ([validated by: still upgrades a well-formed request](../../src/transport/malformedUpgrade.test.ts#L82)).
+- A `WsAuthenticator` that returns a user directly, not in a promise, is treated like one that resolves to it, rather than failing inside the listener ([validated by: upgrades a request whose authenticator returns a user without a promise](../../src/transport/malformedUpgrade.test.ts#L82)).
+- A well-formed upgrade is unaffected ([validated by: still upgrades a well-formed request](../../src/transport/malformedUpgrade.test.ts#L90)).
 
 ### 2.3 Session Initialization
 

@@ -69,13 +69,9 @@ export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandl
   };
 }
 
-// An authenticator that throws synchronously becomes a rejection, which the upgrade answers with 500.
-function authenticate(wsAuth: WsAuthenticator, request: IncomingMessage): Promise<AuthenticatedUser | null> {
-  try {
-    return wsAuth(request);
-  } catch (error) {
-    return Promise.reject(error);
-  }
+// Async, so a synchronous throw becomes a rejection (answered 500) and a user returned without a promise still resolves.
+async function authenticate(wsAuth: WsAuthenticator, request: IncomingMessage): Promise<AuthenticatedUser | null> {
+  return wsAuth(request);
 }
 
 function bearerFromWebSocketProtocol(req: IncomingMessage): string | undefined {

@@ -18,7 +18,7 @@ package, not for somebody reading this repository's commit log.
 
 ### Security
 
-- **One malformed WebSocket upgrade could end the process.** An upgrade request with an empty or missing `Host` header, or with a request-target that is not a URL such as `//`, threw from the server's `upgrade` listener, where nothing catches it, so a single request with no credentials ended the process and every conversation on it. Such a request is now answered `400 Bad Request`. A `WsAuthenticator` that throws synchronously, instead of rejecting, is now answered `500` rather than ending the process too. Every release up to and including `0.4.0` is affected. A proxy in front that always sets `Host` does not close this on its own, since a `//` target with a valid `Host` is enough.
+- **One malformed WebSocket upgrade could end the process.** An upgrade request with an empty or missing `Host` header, or with a request-target that is not a URL such as `//`, threw from the server's `upgrade` listener, where nothing catches it, so a single request with no credentials ended the process and every conversation on it. Such a request is now answered `400 Bad Request`. A `WsAuthenticator` that throws synchronously, instead of rejecting, is now answered `500` rather than ending the process too, and one that returns a user without a promise is accepted as if it had resolved to it. Every release up to and including `0.4.0` is affected. A proxy in front that always sets `Host` does not close this on its own, since a `//` target with a valid `Host` is enough.
 
 ## [0.4.0] - 2026-09-29
 

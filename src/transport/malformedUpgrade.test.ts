@@ -79,6 +79,14 @@ describe('an upgrade request the server cannot read', () => {
     expect(reply).toBe('HTTP/1.1 500 Internal Server Error');
   });
 
+  it('upgrades a request whose authenticator returns a user without a promise', async () => {
+    const returnsPlainUser = (() => ({id: 'u1'})) as unknown as WsAuthenticator;
+
+    const reply = await statusLineFor(returnsPlainUser, upgradeRequest('/hal/ws', 'Host: example.com\r\n'));
+
+    expect(reply).toBe('HTTP/1.1 101 Switching Protocols');
+  });
+
   it('still upgrades a well-formed request', async () => {
     const reply = await statusLineFor(admitEveryone, upgradeRequest('/hal/ws', 'Host: example.com\r\n'));
 
