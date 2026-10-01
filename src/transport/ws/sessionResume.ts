@@ -10,6 +10,12 @@ export interface SessionResumeOptions {
   enabled: boolean;
 }
 
+/** What `onConnect` learns about a connection besides its session. */
+export interface ConnectInfo {
+  /** `true` when the connection rejoined a stored session through `?sessionId=`; `false` for a new session. */
+  resumed: boolean;
+}
+
 interface Requester {
   requestedSessionId?: string;
   userId: string | number;

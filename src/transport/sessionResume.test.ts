@@ -78,6 +78,7 @@ const startEngine = async (
   orchestrator: ChatOrchestrator = answeringOrchestrator
 ) => {
   const auth = {userId: 'u1'};
+  const connects: Array<{sessionId: string; resumed: boolean}> = [];
   const disconnected: string[] = [];
   const hal = createServer({
     app: (() => undefined) as unknown as Express,
@@ -85,6 +86,7 @@ const startEngine = async (
     sessionStore: store,
     orchestrator,
     resume,
+    onConnect: (session, {resumed}) => void connects.push({sessionId: session.sessionId, resumed}),
     onDisconnect: sessionId => void disconnected.push(sessionId),
   });
   // Resolves once the server itself has seen its first socket close, which the client's own close can precede.
@@ -94,7 +96,7 @@ const startEngine = async (
   await hal.start(0);
   servers.push(hal);
   const {port} = hal.server.address() as AddressInfo;
-  return {auth, disconnected, firstServerClose, base: `ws://127.0.0.1:${port}/hal/ws`};
+  return {auth, connects, disconnected, firstServerClose, base: `ws://127.0.0.1:${port}/hal/ws`};
 };
 
 const open = (url: string, token = 't'): WebSocket => {
@@ -251,6 +253,38 @@ describe('resuming a conversation on reconnect', () => {
       disconnected: [sessionId],
       authorization: 'Bearer new',
     });
+  });
+
+  it('gives a session back the credentials of a socket still open when the socket that resumed it closes', async () => {
+    const store = new InMemorySessionStore();
+    const {base} = await startEngine(store, RESUME_ON);
+    const first = open(base, 'first');
+    const [greeting] = (await once(first, 'message')) as [Buffer];
+    const sessionId = (JSON.parse(String(greeting)) as Frame).sessionId ?? '';
+    const second = open(`${base}?sessionId=${sessionId}`, 'second');
+    await once(second, 'message');
+    const held = await store.get(sessionId);
+    const whileBothOpen = held?.authHeaders?.authorization;
+
+    second.close();
+    await eventually(() => held?.authHeaders?.authorization !== whileBothOpen);
+
+    expect({whileBothOpen, afterSecondCloses: held?.authHeaders?.authorization}).toEqual({
+      whileBothOpen: 'Bearer second',
+      afterSecondCloses: 'Bearer first',
+    });
+  });
+
+  it('tells onConnect whether a connection started its session or resumed it', async () => {
+    const {base, connects} = await startEngine(new InMemorySessionStore(), RESUME_ON);
+    const first = await firstTurn(base);
+
+    await connectAndSettle(`${base}?sessionId=${first}`);
+
+    expect(connects).toEqual([
+      {sessionId: first, resumed: false},
+      {sessionId: first, resumed: true},
+    ]);
   });
 
   it('resumes the id its store knows and starts fresh for one it does not', async () => {

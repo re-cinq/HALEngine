@@ -11,7 +11,7 @@ import {sendError} from './sender.js';
 import {isValidWsPath, rejectSocket, parseWsData, sessionIdFromUpgrade} from './helpers.js';
 import {credentialFromSubprotocol} from './subprotocol.js';
 import {replayEntries, resumableSession, resumeFields} from './sessionResume.js';
-import type {SessionResumeOptions} from './sessionResume.js';
+import type {ConnectInfo, SessionResumeOptions} from './sessionResume.js';
 import {log} from '../../shared/logger.js';
 
 export interface ExtWebSocket extends WebSocket {
@@ -35,7 +35,7 @@ export interface ConnectionHandlerDeps {
     rawMessage: unknown
   ) => Promise<void>;
   basePath: string;
-  onConnect?: (session: import('../../types/session.js').ChatSession) => void | Promise<void>;
+  onConnect?: (session: import('../../types/session.js').ChatSession, connection: ConnectInfo) => void | Promise<void>;
   onDisconnect?: (sessionId: string) => void | Promise<void>;
   resume?: SessionResumeOptions;
 }
@@ -100,14 +100,14 @@ export function createConnectionHandler(deps: ConnectionHandlerDeps, exampleProm
   };
 }
 
-// The socket whose upgrade a session's credentials came from: a resumed session outlives the socket that held it.
-const holders = new WeakMap<ChatSession, WebSocket>();
+// The sockets open on each session, oldest first: a resumed session can be open on more than one at once.
+const openSockets = new WeakMap<ChatSession, ExtWebSocket[]>();
 
 async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[], ws: ExtWebSocket): Promise<void> {
   // A requested id is never adopted for a new session: that would be session fixation.
   let sessionId = uuidv4();
   const state = {closed: false, settled: false, notified: false, delivered: false};
-  const held: {session?: ChatSession; socket: WebSocket} = {socket: ws};
+  const held: {session?: ChatSession; socket: ExtWebSocket} = {socket: ws};
 
   ws.on('error', (error: Error) => {
     log.error('ws', 'connection error', {sessionId, error: error.message});
@@ -139,7 +139,7 @@ async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[]
   }
 
   // A new session is this socket's from the start; a resumed one only once this socket is known to be open.
-  if (!resumed) holders.set(session, ws);
+  if (!resumed) join(session, ws);
 
   if (state.closed) {
     // Held first: a store that implements no evict still holds this session, and it carries the caller's credentials.
@@ -150,7 +150,7 @@ async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[]
     return;
   }
 
-  if (resumed) holdResumed(resumed, ws);
+  if (resumed) join(resumed, ws);
   held.session = session;
 
   log.info('ws', 'connected', {sessionId, userId: ws.userId});
@@ -180,7 +180,9 @@ async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[]
   // Deferred, not inline: a synchronous throw in the `connection` listener corrupts an already-upgraded socket.
 
   // A microtask, not setImmediate: it drains before the loop delivers any inbound frame on this socket.
-  queueMicrotask(() => runHook('onConnect', sessionId, () => deps.onConnect?.(session)));
+  queueMicrotask(() =>
+    runHook('onConnect', sessionId, () => deps.onConnect?.(session, {resumed: resumed !== undefined}))
+  );
 
   ws.on('message', (frame: Buffer | string) => {
     const parsed = parseWsData(frame);
@@ -195,10 +197,10 @@ async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[]
   ws.resume();
 }
 
-// Re-captured from this upgrade, as a new session's would be, and held by this socket from here on.
-function holdResumed(session: ChatSession, ws: ExtWebSocket): void {
+// Joined as the newest socket on the session, which carries this upgrade's credentials from here on.
+function join(session: ChatSession, ws: ExtWebSocket): void {
+  openSockets.set(session, [...(openSockets.get(session) ?? []), ws]);
   session.authHeaders = ws.authHeaders;
-  holders.set(session, ws);
 }
 
 // `undefined` rather than a throw: one store failure closes one socket instead of ending the process.
@@ -224,21 +226,32 @@ function endSession(
   deps: ConnectionHandlerDeps,
   sessionId: string,
   state: {notified: boolean; delivered: boolean},
-  held: {session?: ChatSession; socket: WebSocket}
+  held: {session?: ChatSession; socket: ExtWebSocket}
 ): void {
   if (state.notified) return;
   state.notified = true;
 
-  // Only the socket still holding the session releases it: its credentials, and the reference that kept it alive.
-  if (held.session && holders.get(held.session) === held.socket) {
-    held.session.authHeaders = undefined;
-    holders.delete(held.session);
-  }
+  if (held.session) leave(held.session, held.socket);
 
   // Only for a session the consumer was actually handed: onDisconnect is the other half of onConnect, not of a socket.
   if (!state.delivered) return;
 
   runHook('onDisconnect', sessionId, () => deps.onDisconnect?.(sessionId));
+}
+
+// The newest socket still open lends the session its credentials; with none left, nothing keeps them or a closed socket.
+function leave(session: ChatSession, ws: ExtWebSocket): void {
+  const open = openSockets.get(session) ?? [];
+  if (!open.includes(ws)) return;
+  const remaining = open.filter(socket => socket !== ws);
+  const newest = remaining.at(-1);
+  if (newest === undefined) {
+    openSockets.delete(session);
+    session.authHeaders = undefined;
+    return;
+  }
+  openSockets.set(session, remaining);
+  session.authHeaders = newest.authHeaders;
 }
 
 // Never a resumed session: evict erases, and a resumed session holds the conversation being rejoined.

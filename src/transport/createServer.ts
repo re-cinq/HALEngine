@@ -8,7 +8,7 @@ import type {ToolRegistry} from '../orchestration/tools/registry.js';
 import {createUpgradeHandler, createConnectionHandler, ExtWebSocket} from './ws/connectionHandler.js';
 import {createMessageHandler} from './ws/messageHandler.js';
 import {selectSubprotocol} from './ws/subprotocol.js';
-import type {SessionResumeOptions} from './ws/sessionResume.js';
+import type {ConnectInfo, SessionResumeOptions} from './ws/sessionResume.js';
 import {log} from '../shared/logger.js';
 
 export interface HalServerOptions {
@@ -20,7 +20,7 @@ export interface HalServerOptions {
   basePath?: string;
   port?: number;
   heartbeatIntervalMs?: number;
-  onConnect?: (session: import('../types/session.js').ChatSession) => void | Promise<void>;
+  onConnect?: (session: import('../types/session.js').ChatSession, connection: ConnectInfo) => void | Promise<void>;
   onDisconnect?: (sessionId: string) => void | Promise<void>;
   resume?: SessionResumeOptions;
 }
