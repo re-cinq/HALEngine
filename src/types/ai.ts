@@ -56,6 +56,8 @@ export interface SendMessageParams {
   systemPrompt: string;
   tools?: ToolDefinition[];
   maxTokens?: number;
+  /** Once aborted, the provider yields nothing more and ends without an error; whether the vendor stops too depends on its SDK (specs/hal-engine-providers/spec.md § Cancellation). */
+  signal?: AbortSignal;
 }
 
 export interface StructuredOutputParams<_T> {

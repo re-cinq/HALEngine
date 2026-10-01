@@ -1,5 +1,5 @@
 import {createMockProvider} from './mockProvider.js';
-import {collectChunks, userMessage} from '../providerTestSupport.js';
+import {collectAbortingAfter, collectChunks, userMessage} from '../providerTestSupport.js';
 import type {AIProvider, SendMessageParams, ResponseSchema} from '../../types/ai.js';
 
 describe('createMockProvider', () => {
@@ -37,6 +37,16 @@ describe('createMockProvider', () => {
         .map(c => (c.type === 'text' ? c.text : ''))
         .join('');
       expect(fullText).toContain('Hello');
+    });
+
+    it('stops yielding once its signal aborts, so an abort after two words leaves two chunks and no stop chunk', async () => {
+      const controller = new AbortController();
+      const stream = createMockProvider().sendMessage({...userMessage('hi'), signal: controller.signal});
+
+      expect(await collectAbortingAfter(stream, controller, 2)).toEqual([
+        {type: 'text', text: 'Mock '},
+        {type: 'text', text: 'response '},
+      ]);
     });
   });
 

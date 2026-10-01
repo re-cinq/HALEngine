@@ -33,7 +33,8 @@ export function createBedrockProvider(config: BedrockConfig): AIProvider {
     },
 
     async *sendMessage(params: SendMessageParams): AsyncGenerator<MessageChunk> {
-      const {messages, systemPrompt, tools, maxTokens} = params;
+      const {messages, systemPrompt, tools, maxTokens, signal} = params;
+      if (signal?.aborted) return;
 
       log.info('bedrock', 'sending message', {
         modelId: config.modelId,
@@ -50,13 +51,19 @@ export function createBedrockProvider(config: BedrockConfig): AIProvider {
           ...(tools && {toolConfig: mapToolConfig(tools)}),
         });
 
-        const response = await client.send(command);
+        // Without a signal, send gets the command alone, exactly as before the signal existed.
+        const response = await (signal ? client.send(command, {abortSignal: signal}) : client.send(command));
 
         if (response.stream) {
           log.info('bedrock', 'stream started');
-          yield* parseStreamEvents(response.stream);
+          yield* parseStreamEvents(response.stream, signal);
         }
       } catch (error) {
+        // An abort is the engine's own decision, not a vendor failure, so it ends the stream instead of raising.
+        if (signal?.aborted) {
+          log.info('bedrock', 'request aborted');
+          return;
+        }
         log.error('bedrock', 'error', {error: error instanceof Error ? error.message : 'Unknown'});
         if (error instanceof AIError) throw error;
         throw mapBedrockError(error);
@@ -65,10 +72,15 @@ export function createBedrockProvider(config: BedrockConfig): AIProvider {
   };
 }
 
-async function* parseStreamEvents(stream: AsyncIterable<ConverseStreamOutput>): AsyncGenerator<MessageChunk> {
+// The abort closes the HTTP/2 stream, but events already received could still be read, so each one checks first.
+async function* parseStreamEvents(
+  stream: AsyncIterable<ConverseStreamOutput>,
+  signal: AbortSignal | undefined
+): AsyncGenerator<MessageChunk> {
   let acc = emptyToolAccumulator();
 
   for await (const event of stream) {
+    if (signal?.aborted) return;
     const text = handleTextDelta(event);
     if (text) yield text;
 

@@ -28,7 +28,8 @@ export function withRetry(provider: AIProvider, policy: RetryPolicy = {}): AIPro
       for (let attempt = 1; attempt <= p.maxAttempts; attempt++) {
         if (attempt > 1) await applyBackoff(attempt, lastError, p);
 
-        const iter = provider.sendMessage(params);
+        const attemptControl = new AbortController();
+        const iter = provider.sendMessage({...params, signal: attemptSignal(attemptControl, params.signal)});
         let firstChunkHandedOff = false;
 
         try {
@@ -39,7 +40,7 @@ export function withRetry(provider: AIProvider, policy: RetryPolicy = {}): AIPro
             firstTimeout.cancel();
           } catch (err) {
             firstTimeout.cancel();
-            void iter.return(undefined);
+            abandon(iter, attemptControl);
             if (!(err instanceof AIError)) throw err;
             if (err.code === 'TIMEOUT') {
               // eslint-disable-next-line re-lint/no-flag-params -- AIError's retryable flag; see adrs/ADR-006-lint-suppressions.md
@@ -55,7 +56,7 @@ export function withRetry(provider: AIProvider, policy: RetryPolicy = {}): AIPro
 
           firstChunkHandedOff = true;
           yield firstResult.value;
-          yield* streamWithIdleTimeout(iter, p.idleChunkTimeoutMs);
+          yield* streamWithIdleTimeout(iter, p.idleChunkTimeoutMs, attemptControl);
           return;
         } catch (err) {
           if (firstChunkHandedOff) throw err;
@@ -91,9 +92,21 @@ async function applyBackoff(attempt: number, lastError: AIError | undefined, p: 
   await sleep(wait);
 }
 
+// The caller's own signal still reaches the provider: it is composed with the attempt's, never replaced by it.
+function attemptSignal(attemptControl: AbortController, callerSignal: AbortSignal | undefined): AbortSignal {
+  return callerSignal ? AbortSignal.any([callerSignal, attemptControl.signal]) : attemptControl.signal;
+}
+
+// Aborting first lets a provider that honours the signal stop the vendor request; return() then releases the generator.
+function abandon(iter: AsyncGenerator<MessageChunk>, attemptControl: AbortController): void {
+  attemptControl.abort();
+  void iter.return(undefined);
+}
+
 async function* streamWithIdleTimeout(
   iter: AsyncGenerator<MessageChunk>,
-  idleChunkTimeoutMs: number
+  idleChunkTimeoutMs: number,
+  attemptControl: AbortController
 ): AsyncGenerator<MessageChunk> {
   while (true) {
     const idleTimeout = makeTimeout(idleChunkTimeoutMs);
@@ -103,7 +116,7 @@ async function* streamWithIdleTimeout(
       idleTimeout.cancel();
     } catch (err) {
       idleTimeout.cancel();
-      void iter.return(undefined);
+      abandon(iter, attemptControl);
       throw err;
     }
     if (nextResult.done) return;

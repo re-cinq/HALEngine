@@ -14,12 +14,18 @@ export function createMockProvider(config?: MockConfig): AIProvider {
       const userText = typeof lastMessage?.content === 'string' ? lastMessage.content : 'Hello';
 
       const response = `Mock response to: "${userText}"`;
+      const words: MessageChunk[] = response.split(' ').map(word => ({type: 'text', text: word + ' '}));
+      const stop: MessageChunk = {
+        type: 'stop',
+        stopReason: 'end_turn',
+        usage: {inputTokens: 10, outputTokens: 20, totalTokens: 30},
+      };
 
-      for (const word of response.split(' ')) {
-        yield {type: 'text', text: word + ' '};
+      // Checked before every chunk, so an abort ends the stream at once and no stop chunk follows it.
+      for (const chunk of [...words, stop]) {
+        if (params.signal?.aborted) return;
+        yield chunk;
       }
-
-      yield {type: 'stop', stopReason: 'end_turn', usage: {inputTokens: 10, outputTokens: 20, totalTokens: 30}};
     },
 
     async generateStructured<T>(params: StructuredOutputParams<T>): Promise<T> {

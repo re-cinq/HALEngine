@@ -27,13 +27,13 @@ const noopGenerateStructured = async <T>(_params: StructuredOutputParams<T>): Pr
 };
 
 describe('withRetry', () => {
-  it('retries a retryable failure and streams the eventual success, calling the provider three times', async () => {
-    let calls = 0;
+  it('retries a retryable failure, aborting each failed attempt, and streams the success of the third call', async () => {
+    const signals: (AbortSignal | undefined)[] = [];
     const provider: AIProvider = {
-      async *sendMessage(_params: SendMessageParams): AsyncGenerator<MessageChunk> {
-        calls++;
+      async *sendMessage(params: SendMessageParams): AsyncGenerator<MessageChunk> {
+        signals.push(params.signal);
         // eslint-disable-next-line re-lint/no-flag-params -- AIError's retryable flag; see adrs/ADR-006-lint-suppressions.md
-        if (calls < 3) throw new AIError('rate limited', 'RATE_LIMIT', true);
+        if (signals.length < 3) throw new AIError('rate limited', 'RATE_LIMIT', true);
         yield* successStream();
       },
       generateStructured: noopGenerateStructured,
@@ -42,7 +42,31 @@ describe('withRetry', () => {
     const wrapped = withRetry(provider, {baseDelayMs: 0, maxDelayMs: 0});
     const chunks = await collectChunks(wrapped.sendMessage(userMessage('hi')));
 
-    expect({text: textOf(chunks), calls}).toEqual({text: 'recovered', calls: 3});
+    expect({text: textOf(chunks), aborted: signals.map(signal => signal?.aborted)}).toEqual({
+      text: 'recovered',
+      aborted: [true, true, false],
+    });
+  });
+
+  it('composes a caller signal with each attempt signal, so a caller abort still reaches the provider', async () => {
+    const caller = new AbortController();
+    let received: AbortSignal | undefined;
+    const provider: AIProvider = {
+      async *sendMessage(params: SendMessageParams): AsyncGenerator<MessageChunk> {
+        received = params.signal;
+        yield* successStream();
+      },
+      generateStructured: noopGenerateStructured,
+    };
+
+    await collectChunks(withRetry(provider).sendMessage({...userMessage('hi'), signal: caller.signal}));
+    const beforeCallerAbort = received?.aborted;
+    caller.abort();
+
+    expect({beforeCallerAbort, afterCallerAbort: received?.aborted}).toEqual({
+      beforeCallerAbort: false,
+      afterCallerAbort: true,
+    });
   });
 
   it('does not retry a non-retryable failure and propagates the same error unchanged', async () => {
@@ -124,19 +148,21 @@ describe('withRetry', () => {
     }).toEqual({isError: true, isAiError: true, code: 'CODE_3', calls: 3});
   });
 
-  it('abandons an attempt whose first chunk never arrives, calls return on it, and retries', async () => {
+  it('abandons an attempt whose first chunk never arrives, aborts its signal, calls return on it, and retries', async () => {
     jest.useFakeTimers();
     try {
       let calls = 0;
       let returned = false;
+      let firstSignal: AbortSignal | undefined;
       let release = (): void => {};
       const firstChunkArrives = new Promise<void>(resolve => {
         release = resolve;
       });
       const provider: AIProvider = {
-        async *sendMessage(_params: SendMessageParams): AsyncGenerator<MessageChunk> {
+        async *sendMessage(params: SendMessageParams): AsyncGenerator<MessageChunk> {
           calls++;
           if (calls === 1) {
+            firstSignal = params.signal;
             try {
               await firstChunkArrives;
               yield {type: 'text', text: 'late'};
@@ -153,28 +179,36 @@ describe('withRetry', () => {
       const wrapped = withRetry(provider, {firstChunkTimeoutMs: 1000, baseDelayMs: 0});
       const collected = collectChunks(wrapped.sendMessage(userMessage('hi')));
       await jest.advanceTimersByTimeAsync(1000);
+      const abortedAtTimeout = firstSignal?.aborted;
       release();
       await jest.runAllTimersAsync();
       const chunks = await collected;
 
-      expect({text: textOf(chunks), calls, returned}).toEqual({text: 'recovered', calls: 2, returned: true});
+      expect({text: textOf(chunks), calls, returned, abortedAtTimeout}).toEqual({
+        text: 'recovered',
+        calls: 2,
+        returned: true,
+        abortedAtTimeout: true,
+      });
     } finally {
       jest.useRealTimers();
     }
   });
 
-  it('throws a TIMEOUT AIError, calls return on the stalled iterator, and does not retry when the stream stalls after its first chunk', async () => {
+  it('throws a TIMEOUT AIError, aborts and returns the stalled attempt, and does not retry when the stream stalls after its first chunk', async () => {
     jest.useFakeTimers();
     try {
       let calls = 0;
       let returned = false;
+      let signal: AbortSignal | undefined;
       let releaseStall = (): void => {};
       const stallEnds = new Promise<void>(resolve => {
         releaseStall = resolve;
       });
       const provider: AIProvider = {
-        async *sendMessage(_params: SendMessageParams): AsyncGenerator<MessageChunk> {
+        async *sendMessage(params: SendMessageParams): AsyncGenerator<MessageChunk> {
           calls++;
+          signal = params.signal;
           try {
             yield {type: 'text', text: 'first'};
             await stallEnds;
@@ -207,9 +241,10 @@ describe('withRetry', () => {
         received,
         calls,
         returned,
+        aborted: signal?.aborted,
         isAiError: thrown instanceof AIError,
         code: thrown instanceof AIError ? thrown.code : null,
-      }).toEqual({received: ['first'], calls: 1, returned: true, isAiError: true, code: 'TIMEOUT'});
+      }).toEqual({received: ['first'], calls: 1, returned: true, aborted: true, isAiError: true, code: 'TIMEOUT'});
     } finally {
       jest.useRealTimers();
     }
