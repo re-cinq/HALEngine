@@ -53,4 +53,14 @@ describe('the in-memory store latest session', () => {
       stranger: undefined,
     });
   });
+
+  it('reads a conversation too long to spread into a function call', () => {
+    const store = new InMemorySessionStore();
+    const long = store.create('long', 'u1');
+    const sentAt = later(5000).toISOString();
+    long.entries = Array.from({length: 200_000}, () => ({role: 'user' as const, content: 'hi', timestamp: sentAt}));
+    store.create('empty', 'u1');
+
+    expect(store.latestFor('u1')?.sessionId).toBe('long');
+  });
 });

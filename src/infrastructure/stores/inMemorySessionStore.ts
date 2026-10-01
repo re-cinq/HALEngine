@@ -88,5 +88,6 @@ export class InMemorySessionStore implements SessionStore {
 function lastActivity(held: HeldSession): number {
   const {entries} = held.session;
   const stamps = entries.map(entry => ('timestamp' in entry ? Date.parse(entry.timestamp) : Number.NaN));
-  return Math.max(0, ...[held.createdAt, ...stamps].filter(Number.isFinite));
+  // Folded rather than spread into Math.max, whose argument list runs out past about 150,000 entries.
+  return [held.createdAt, ...stamps].filter(Number.isFinite).reduce((latest, time) => Math.max(latest, time), 0);
 }
