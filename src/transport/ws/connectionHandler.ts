@@ -8,7 +8,7 @@ import type {ConnectedMessage} from '../../types/messages.js';
 import type {AuthenticatedUser, ChatSession} from '../../types/session.js';
 import {ErrorCodes} from '../../types/session.js';
 import {sendError} from './sender.js';
-import {isValidWsPath, rejectSocket, parseWsData, sessionIdFromUpgrade} from './helpers.js';
+import {isValidWsPath, rejectSocket, parseWsData, sessionIdFromUpgrade, newSessionRequested} from './helpers.js';
 import {credentialFromSubprotocol} from './subprotocol.js';
 import {replayEntries, resumableSession, resumeFields} from './sessionResume.js';
 import type {ConnectInfo, SessionResumeOptions} from './sessionResume.js';
@@ -24,6 +24,7 @@ export interface ExtWebSocket extends WebSocket {
     host?: string;
   };
   requestedSessionId?: string;
+  startNewSession?: boolean;
 }
 
 export interface ConnectionHandlerDeps {
@@ -66,6 +67,7 @@ export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandl
           extWs.isAlive = true;
           if (deps.resume?.enabled) {
             extWs.requestedSessionId = sessionIdFromUpgrade(request.url || '', deps.basePath);
+            extWs.startNewSession = newSessionRequested(request.url || '', deps.basePath);
           }
           wss.emit('connection', extWs, request);
         });
@@ -126,7 +128,7 @@ async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[]
   // Paused across the await so a frame arriving before the message listener exists is buffered, not dropped.
   ws.pause();
 
-  const resumed = await resumableSession(deps.sessionStore, ws);
+  const resumed = await resumableSession(deps.sessionStore, ws, deps.resume);
   if (resumed) sessionId = resumed.sessionId;
   const session = resumed ?? (await createSession(deps, sessionId, ws));
   state.settled = true;

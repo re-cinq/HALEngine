@@ -85,7 +85,7 @@ const engine = createHalEngine({
     // basePath defaults to '/hal' and the heartbeat to 30s.
     basePath: '/hal',
     heartbeatIntervalMs: 30_000,
-    resume: {enabled: true}, // a reconnect sending ?sessionId= rejoins its own conversation; off by default, see Session Resume
+    resume: {enabled: true, latest: true}, // rejoin the conversation ?sessionId= names, else the user's latest; ?new=1 starts one; off by default, see Session Resume
     additionalRoutes: router => router.get('/ping', (_req, res) => res.json({ok: true})),
     rootRoutes: router => router.get('/', (_req, res) => res.send('<h1>Hello</h1>')),
     errorHandler: (err, _req, res, _next) => res.status(500).json({error: String(err)}), // replaces Express's default HTML error page

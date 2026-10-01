@@ -22,6 +22,11 @@ export function sessionIdFromUpgrade(url: string, basePath: string): string | un
   return typeof requested === 'string' && SESSION_ID_PATTERN.test(requested) ? requested : undefined;
 }
 
+// `?new=1` exactly: a client starting a new conversation where the user's latest one would otherwise be rejoined.
+export function newSessionRequested(url: string, basePath: string): boolean {
+  return isValidWsPath(url, basePath) && targetOf(url)?.searchParams.get('new') === '1';
+}
+
 export function rejectSocket(socket: Duplex, statusLine: string): void {
   socket.write(`HTTP/1.1 ${statusLine}\r\n\r\n`);
   socket.destroy();

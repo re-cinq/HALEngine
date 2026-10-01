@@ -45,7 +45,7 @@ wss://example.com/hal/ws
 wss://example.com/hal/ws?sessionId=550e8400-e29b-41d4-a716-446655440000
 ```
 
-The server validates only that the path begins with `{basePath}/ws`. The `sessionId` query parameter is read only when the server enables resume (`transport.resume`), and only if it is 1–128 characters of `[A-Za-z0-9_-]`. It is not a credential: the server rejoins that conversation only if it belongs to the connection's authenticated user, and answers any other id — someone else's, one it never issued, or one its store no longer holds — with a fresh session exactly as if no id had been sent. The server never adopts a requested id for a new session. See [the session resume spec](../hal-engine-session-resume/spec.md).
+The server validates only that the path begins with `{basePath}/ws`. The `sessionId` query parameter is read only when the server enables resume (`transport.resume`), and only if it is 1–128 characters of `[A-Za-z0-9_-]`. It is not a credential: the server rejoins that conversation only if it belongs to the connection's authenticated user, and answers any other id — someone else's, one it never issued, or one its store no longer holds — with a fresh session exactly as if no id had been sent. With `transport.resume.latest`, a connect that sends no id rejoins the user's most recently active conversation instead, unless it sends `?new=1`, which starts a new one. The server never adopts a requested id for a new session. See [the session resume spec](../hal-engine-session-resume/spec.md).
 
 ### 2.2 Authentication
 
@@ -622,7 +622,8 @@ If the connection drops unexpectedly, the client SHOULD reconnect using exponent
 - Maximum retries: 5
 - On reconnection success, any queued `user_message` messages MUST be flushed immediately.
 - On reconnection, the client MUST clear its local entries array and SHOULD send `?sessionId=` with the id from its last `connected` frame. When the server has resume enabled and the conversation is the user's own, it answers `resumed: true` and replays the conversation; otherwise the client is starting a new session.
-- An entry still streaming when its conversation is resumed is replayed with `isStreaming: false` and `truncated: true`: the rest of its turn streams to the connection that started it, so this one would wait for a commit that never comes ([validated by: replays an entry whose turn is still running as finished and truncated, leaving the stored entry as it is](../../src/transport/sessionResume.test.ts#L341)).
+- An entry still streaming when its conversation is resumed is replayed with `isStreaming: false` and `truncated: true`: the rest of its turn streams to the connection that started it, so this one would wait for a commit that never comes ([validated by: replays an entry whose turn is still running as finished and truncated, leaving the stored entry as it is](../../src/transport/sessionResume.test.ts#L361)).
+- With the server's `latest` option, a client that has lost the id, after a page refresh for instance, MAY connect without one and still rejoin its user's most recent conversation, and sends `?new=1` to start a new conversation instead ([validated by: with latest on, rejoins the most recently active session of a user whose connect names none](../../src/transport/sessionResume.test.ts#L425), [validated by: with latest on, starts a new session for a user with none, and on ?new=1 even when one exists](../../src/transport/sessionResume.test.ts#L442)).
 
 After 5 failed attempts, the client MUST stop reconnecting and report a disconnected state.
 

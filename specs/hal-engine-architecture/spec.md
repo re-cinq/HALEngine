@@ -89,6 +89,8 @@ interface SessionStore<T extends BaseSession = ChatSession> {
   evict?(sessionId: string): Awaitable<boolean>;
   /** Write signal: fires once per processed user message; failures are swallowed (specs/hal-engine-session-write-signal/spec.md). */
   save?(session: T): Awaitable<void>;
+  /** The user's most recently active session the store still holds, so a connect that names none can continue it (specs/hal-engine-session-resume/spec.md). */
+  latestFor?(userId: string | number): Awaitable<T | undefined>;
 }
 ```
 

@@ -1,4 +1,4 @@
-import {sessionIdFromUpgrade} from './helpers.js';
+import {newSessionRequested, sessionIdFromUpgrade} from './helpers.js';
 
 const read = (url: string): string | undefined => sessionIdFromUpgrade(url, '/hal');
 
@@ -33,5 +33,27 @@ describe('sessionIdFromUpgrade', () => {
 
   it('reads nothing, without throwing, from a target that is not a URL or is empty', () => {
     expect({doubleSlash: read('//'), empty: read('')}).toStrictEqual({doubleSlash: undefined, empty: undefined});
+  });
+});
+
+describe('newSessionRequested', () => {
+  it('reads exactly ?new=1 inside the base path as a request for a new session, and nothing else', () => {
+    expect({
+      asked: newSessionRequested('/hal/ws?new=1', '/hal'),
+      besideAnId: newSessionRequested('/hal/ws?sessionId=abc-123&new=1', '/hal'),
+      absent: newSessionRequested('/hal/ws', '/hal'),
+      zero: newSessionRequested('/hal/ws?new=0', '/hal'),
+      word: newSessionRequested('/hal/ws?new=true', '/hal'),
+      elsewhere: newSessionRequested('/elsewhere/ws?new=1', '/hal'),
+      doubleSlash: newSessionRequested('//', '/hal'),
+    }).toStrictEqual({
+      asked: true,
+      besideAnId: true,
+      absent: false,
+      zero: false,
+      word: false,
+      elsewhere: false,
+      doubleSlash: false,
+    });
   });
 });

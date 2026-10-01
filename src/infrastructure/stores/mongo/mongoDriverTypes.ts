@@ -4,8 +4,13 @@ export interface DeleteOutcome {
   deletedCount: number;
 }
 
+export interface FindOneOptions {
+  sort?: Record<string, 1 | -1>;
+  projection?: Record<string, 0 | 1>;
+}
+
 export interface CollectionLike<T> {
-  findOne(filter: Record<string, unknown>): Promise<T | null>;
+  findOne(filter: Record<string, unknown>, options?: FindOneOptions): Promise<T | null>;
   updateOne(
     filter: Record<string, unknown>,
     update: Record<string, unknown>,

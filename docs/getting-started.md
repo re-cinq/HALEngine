@@ -184,7 +184,7 @@ const engine = createHalEngine({
     // basePath defaults to '/hal' and the heartbeat to 30s.
     basePath: '/hal',
     heartbeatIntervalMs: 30_000,
-    resume: {enabled: true}, // a reconnect sending ?sessionId= rejoins its own conversation; off by default, see Session Resume
+    resume: {enabled: true, latest: true}, // rejoin the conversation ?sessionId= names, else the user's latest; ?new=1 starts one; off by default, see Session Resume
     additionalRoutes: router => router.get('/ping', (_req, res) => res.json({ok: true})),
     rootRoutes: router => router.get('/', (_req, res) => res.send('<h1>Hello</h1>')),
     errorHandler: (err, _req, res, _next) => res.status(500).json({error: String(err)}), // replaces Express's default HTML error page
@@ -273,6 +273,8 @@ By default every connection gets a new, empty session. With `transport: {resume:
 An answer still streaming when the client reconnects, because its turn is running on the connection that dropped, is replayed finished and flagged `truncated`. The rest of that turn still goes to the old connection (re-cinq/HALEngine#49).
 
 **Hooks.** `onConnect` and `onDisconnect` fire per connection, not per conversation: a resumed conversation gets its own `onConnect`, with `{resumed: true}` as its second argument, and the connection it replaced can report `onDisconnect` after that. The two come in exact pairs, both only for a connection that was handed its session, so to know when a conversation has no connection left, count them per session id. With resume on, do not erase a conversation in `onDisconnect`, as the `0.4.0` upgrade note suggests for consumers who relied on erase-on-close: the conversation erased may be the one a reconnect has just rejoined. Bound retention through the store instead.
+
+**Latest session.** A page refresh or a new tab has no id to send. With `resume: {enabled: true, latest: true}`, a connect that names no id continues the user's most recently active conversation instead of starting an empty one, and a client starts a new conversation on purpose by connecting with `?new=1`, for a "new conversation" button. The store decides what "latest" means through its optional `latestFor(userId)`: `InMemorySessionStore` goes by the newest entry, `MongoSessionStore` by `updatedAt` (create the index in [session stores](session-stores.md#latest-session)). Two tabs share the conversation but do not sync live: a reply streams to the tab that asked, and the other shows it on its next connect. "Latest" is keyed on the authenticated user's id, so it assumes one login per person.
 
 **GDPR.** With resume on, a conversation outlives its socket, so you own the retention bound: set `maxAgeMs` on `InMemorySessionStore` (eight hours by default), use `MongoSessionStore`'s erasure methods, and see _Control what the engine keeps in server-side conversation history_ (re-cinq/HALEngine#41). An unbounded retained store is a retention breach, not a memory leak.
 
