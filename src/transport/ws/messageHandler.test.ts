@@ -691,19 +691,19 @@ describe('one message at a time per session', () => {
     expect(beforeTheRunEnds).toEqual(['upsert 0 user "A"', 'upsert 1 assistant ""', 'delta 1 "answer 0"', 'pong 7']);
   });
 
-  it("answers a frame that fails validation at once while a run is pending, its stream_end after the run's", async () => {
+  it('answers an invalid ping at once but an invalid user_message in turn, after the run in progress', async () => {
     const h = gated(1);
-    const run = h.send(userMessage('A'));
+    const sends = [h.send(userMessage('A'))];
     await afterPendingWork();
-    const invalid = h.send(userMessage(''));
+    sends.push(h.send({type: 'ping'}), h.send(userMessage('')));
     await afterPendingWork();
     const beforeTheRunEnds = h.frames();
     h.release(0);
-    await Promise.all([run, invalid]);
+    await Promise.all(sends);
 
     expect({beforeTheRunEnds, after: h.frames().slice(beforeTheRunEnds.length)}).toEqual({
       beforeTheRunEnds: ['upsert 0 user "A"', 'upsert 1 assistant ""', 'delta 1 "answer 0"', 'error INVALID_MESSAGE'],
-      after: ['commit 1', 'stream_end', 'stream_end'],
+      after: ['commit 1', 'stream_end', 'error INVALID_MESSAGE', 'stream_end'],
     });
   });
 

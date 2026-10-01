@@ -34,34 +34,41 @@ export function createMessageHandler(orchestrator: ChatOrchestrator) {
   const lock = new PerSessionLock();
   return function handleMessage(ws: WebSocket, session: ChatSession, rawMessage: unknown): Promise<void> {
     const validation = validateMessage(rawMessage);
-    const message = validation.valid ? validation.data : undefined;
-    // Queued with no await before it, so frames keep their arrival order; a ping or an invalid frame never waits.
-    if (message?.type === 'user_message') {
-      return lock.run(session.sessionId, () => answerUserMessage(ws, session, orchestrator, message.content));
+    // Queued with no await before it, so a session's user_messages, a failed one too, are answered in arrival order.
+    if (isUserMessageFrame(rawMessage)) {
+      return lock.run(session.sessionId, () => answerInTurn(ws, session, orchestrator, validation));
     }
-    // An async action runs up to its first await at once, so the answer is sent now and a throw stays a rejection.
-    const answered = wsErrorHandler(ws, async () => answerAtOnce(ws, validation));
-    // Every user_message ends in one stream_end, a failed one too, queued so they keep the messages' arrival order.
-    if (isUserMessageFrame(rawMessage)) return lock.run(session.sessionId, async () => sendStreamEnd(ws));
-    return answered;
+    // An async action runs up to its first await at once, so a ping is answered now and a throw stays a rejection.
+    return wsErrorHandler(ws, async () => answerFrame(ws, validation));
   };
 }
 
-// The stream_end goes out inside the lock, so the session's next message starts only after this one ended.
-async function answerUserMessage(
+// The whole answer, an error and the stream_end included, goes out inside the lock: an error frame names no message.
+async function answerInTurn(
   ws: WebSocket,
   session: ChatSession,
   orchestrator: ChatOrchestrator,
-  content: string
+  validation: ValidationResult
 ): Promise<void> {
   try {
-    await wsErrorHandler(ws, () => handleUserMessage(ws, session, orchestrator, content));
+    await wsErrorHandler(ws, () => answerUserMessage(ws, session, orchestrator, validation));
   } finally {
     sendStreamEnd(ws);
   }
 }
 
-function answerAtOnce(ws: WebSocket, validation: ValidationResult): void {
+async function answerUserMessage(
+  ws: WebSocket,
+  session: ChatSession,
+  orchestrator: ChatOrchestrator,
+  validation: ValidationResult
+): Promise<void> {
+  const message = validation.valid ? validation.data : undefined;
+  if (message?.type === 'user_message') return handleUserMessage(ws, session, orchestrator, message.content);
+  answerFrame(ws, validation);
+}
+
+function answerFrame(ws: WebSocket, validation: ValidationResult): void {
   if (!validation.valid) {
     log.warn('message', 'validation failed', {error: validation.error});
     sendError(ws, ErrorCodes.INVALID_MESSAGE, validation.error);
