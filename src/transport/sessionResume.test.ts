@@ -27,6 +27,7 @@ interface Frame {
 
 const NEVER_ISSUED = '0f1e2d3c-4b5a-4968-8776-655443322110';
 const RESUME_ON: SessionResumeOptions = {enabled: true};
+const LATEST_ON: SessionResumeOptions = {enabled: true, latest: true};
 const HALF_ANSWER: SessionEntry = {
   role: 'assistant',
   content: 'half',
@@ -153,6 +154,25 @@ const deferredRelease = () => {
   });
   return {until, release: () => release()};
 };
+
+// Each stored conversation holds one user entry, sent at the given time and reading as its own id.
+const storeWith = (conversations: Array<[sessionId: string, userId: string, sentAt: string]>): InMemorySessionStore => {
+  const store = new InMemorySessionStore();
+  for (const [sessionId, userId, sentAt] of conversations) {
+    const {entries} = store.create(sessionId, userId);
+    entries.push({role: 'user', content: sessionId, timestamp: sentAt});
+  }
+  return store;
+};
+
+// A store with only the required members, so an optional one can be added, replaced or left out per test.
+const delegatingTo = (inner: InMemorySessionStore): SessionStore => ({
+  create: (sessionId, userId, options) => inner.create(sessionId, userId, options),
+  get: sessionId => inner.get(sessionId),
+  delete: sessionId => inner.delete(sessionId),
+  count: () => inner.count(),
+  clear: () => inner.clear(),
+});
 
 describe('resuming a conversation on reconnect', () => {
   it('with resume absent, answers a reconnect naming the first id with a new id and no replay', async () => {
@@ -398,5 +418,87 @@ describe('resuming a conversation on reconnect', () => {
     const legacy: ConnectedMessage = {type: 'connected', sessionId: 's1', message: 'hi', examplePrompts: []};
 
     expect(Object.keys(legacy)).toEqual(['type', 'sessionId', 'message', 'examplePrompts']);
+  });
+});
+
+describe('continuing the latest session', () => {
+  it('with latest on, rejoins the most recently active session of a user whose connect names none', async () => {
+    const store = storeWith([
+      ['older', 'u1', '2026-09-30T08:00:00.000Z'],
+      ['newer', 'u1', '2026-09-30T09:00:00.000Z'],
+      ['theirs', 'u2', '2026-09-30T10:00:00.000Z'],
+    ]);
+    const {base, connects} = await startEngine(store, LATEST_ON);
+
+    const frames = await connectAndSettle(base);
+
+    expect({connected: frames[0], replay: upserts(frames), connects}).toMatchObject({
+      connected: {sessionId: 'newer', resumed: true, entryCount: 1},
+      replay: [{index: 0, entry: {role: 'user', content: 'newer'}}],
+      connects: [{sessionId: 'newer', resumed: true}],
+    });
+  });
+
+  it('with latest on, starts a new session for a user with none, and on ?new=1 even when one exists', async () => {
+    const store = storeWith([['known', 'u1', '2026-09-30T08:00:00.000Z']]);
+    const {auth, base} = await startEngine(store, LATEST_ON);
+
+    const asked = await connectAndSettle(`${base}?new=1`);
+    auth.userId = 'u2';
+    const firstVisit = await connectAndSettle(base);
+
+    expect({
+      asked: {resumed: asked[0].resumed, minted: asked[0].sessionId !== 'known'},
+      firstVisit: {resumed: firstVisit[0].resumed, minted: firstVisit[0].sessionId !== 'known'},
+      held: store.count(),
+    }).toEqual({asked: {resumed: false, minted: true}, firstVisit: {resumed: false, minted: true}, held: 3});
+  });
+
+  it('with latest on, still rejoins the session a connect names rather than the latest one', async () => {
+    const store = storeWith([
+      ['older', 'u1', '2026-09-30T08:00:00.000Z'],
+      ['newer', 'u1', '2026-09-30T09:00:00.000Z'],
+    ]);
+    const {base} = await startEngine(store, LATEST_ON);
+
+    const frames = await connectAndSettle(`${base}?sessionId=older`);
+
+    expect(frames[0]).toMatchObject({sessionId: 'older', resumed: true});
+  });
+
+  it("starts a new session when the store's latestFor answers another user's session, throws, or is absent", async () => {
+    const inner = storeWith([['theirs', 'u2', '2026-09-30T08:00:00.000Z']]);
+    const stores: Record<string, SessionStore> = {
+      stranger: {...delegatingTo(inner), latestFor: () => inner.get('theirs')},
+      failing: {
+        ...delegatingTo(inner),
+        latestFor: () => {
+          throw new Error('database down');
+        },
+      },
+      absent: delegatingTo(inner),
+    };
+
+    const outcomes: Record<string, unknown> = {};
+    for (const [name, store] of Object.entries(stores)) {
+      const {base} = await startEngine(store, LATEST_ON);
+      const [connected] = await connectAndSettle(base);
+      outcomes[name] = {resumed: connected.resumed, minted: connected.sessionId !== 'theirs'};
+    }
+
+    const fresh = {resumed: false, minted: true};
+    expect(outcomes).toEqual({stranger: fresh, failing: fresh, absent: fresh});
+  });
+
+  it('with resume on but latest off, starts a new session for a connect that names none', async () => {
+    const store = storeWith([['known', 'u1', '2026-09-30T08:00:00.000Z']]);
+    const {base} = await startEngine(store, RESUME_ON);
+
+    const [connected] = await connectAndSettle(base);
+
+    expect({resumed: connected.resumed, minted: connected.sessionId !== 'known'}).toEqual({
+      resumed: false,
+      minted: true,
+    });
   });
 });

@@ -64,3 +64,19 @@ is not coherent across instances until a `save` — two processes serving the sa
 once is not something this store supports.
 
 `count()` reports documents, not cache entries, so `delete` does not change it.
+
+## Latest session
+
+With resume's `latest` option on, every connect that names no session id asks `latestFor(userId)`
+for the user's most recently active conversation. `MongoSessionStore` answers with the user's
+document that has the newest `updatedAt`, which each `save` moves forward, so create this index
+where the collection lives; the store creates none itself:
+
+<!-- doc-block: none -- a mongo shell command run against the deployment, not code the package ships -->
+```js
+db.hal_sessions.createIndex({userId: 1, updatedAt: -1});
+```
+
+`InMemorySessionStore` has no `save` to stamp, so it goes by a session's newest entry, or its
+creation for a session with none, and never returns one that has aged out. A store you write
+yourself can leave `latestFor` out, in which case such a connect simply starts a new session.

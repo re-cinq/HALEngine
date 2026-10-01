@@ -105,6 +105,13 @@ export class MongoSessionStore implements SessionStore {
     );
   }
 
+  /** The user's most recently saved conversation, by `updatedAt`, read through `get` so a live one is the object its running turn writes to. */
+  async latestFor(userId: string | number): Promise<ChatSession | undefined> {
+    const collection = await this.collection();
+    const latest = await collection.findOne({userId}, {sort: {updatedAt: -1}, projection: {_id: 1}});
+    return latest === null ? undefined : this.get(latest._id);
+  }
+
   /** Erases one conversation permanently and drops it from the cache. */
   async eraseConversation(sessionId: string): Promise<boolean> {
     this.cache.delete(sessionId);

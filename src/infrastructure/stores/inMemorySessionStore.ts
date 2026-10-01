@@ -62,6 +62,14 @@ export class InMemorySessionStore implements SessionStore {
     this.sessions.clear();
   }
 
+  /** The user's most recently active session that has not aged out: its newest entry decides, or its creation if it has none. */
+  latestFor(userId: string | number): ChatSession | undefined {
+    const owned = [...this.sessions.values()].filter(held => held.session.userId === userId && !this.hasExpired(held));
+    // Ascending and stable, so of two sessions last active at the same moment, the one created later wins.
+    const byActivity = owned.sort((first, second) => lastActivity(first) - lastActivity(second));
+    return byActivity.at(-1)?.session;
+  }
+
   // Insertion order approximates age order, so the first live entry ends the sweep and the rest cost nothing.
   private sweepExpired(): void {
     for (const [sessionId, held] of this.sessions) {
@@ -74,4 +82,11 @@ export class InMemorySessionStore implements SessionStore {
   private hasExpired(held: HeldSession): boolean {
     return Number.isFinite(held.createdAt) && Date.now() - held.createdAt > this.maxAgeMs;
   }
+}
+
+// The store has no save to stamp, so activity is read off the entries; an unusable clock reading counts as none.
+function lastActivity(held: HeldSession): number {
+  const {entries} = held.session;
+  const stamps = entries.map(entry => ('timestamp' in entry ? Date.parse(entry.timestamp) : Number.NaN));
+  return Math.max(0, ...[held.createdAt, ...stamps].filter(Number.isFinite));
 }

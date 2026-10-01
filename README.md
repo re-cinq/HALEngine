@@ -128,6 +128,7 @@ interface HalEngineConfig {
     corsOrigin?: string | string[];
     basePath?: string; // URL prefix (default: '/hal')
     heartbeatIntervalMs?: number; // WS heartbeat (default: 30000)
+    resume?: {enabled: boolean; latest?: boolean}; // opt-in: rejoin a conversation by ?sessionId=, or the user's latest
     additionalRoutes?: (router: Router) => void; // mounted under basePath, no auth gate
     rootRoutes?: (router: Router) => void; // mounted at /, after basePath router
     errorHandler?: express.ErrorRequestHandler; // replaces Express default HTML errors
@@ -140,7 +141,7 @@ interface HalEngineConfig {
     maxToolRounds?: number; // Max tool rounds executed (default: 5); at most maxToolRounds + 1 provider calls
     contextConfig?: Partial<ContextConfig>;
   };
-  onConnect?: (session, {resumed}) => void | Promise<void>; // Fire-and-forget; never awaited; resumed: rejoined via ?sessionId=
+  onConnect?: (session, {resumed}) => void | Promise<void>; // Fire-and-forget; never awaited; resumed: rejoined a stored conversation
   onDisconnect?: (sessionId) => void | Promise<void>; // Fire-and-forget; never awaited
 }
 ```
