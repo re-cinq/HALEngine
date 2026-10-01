@@ -1,5 +1,5 @@
 import type {ChatSession} from '../../types/session.js';
-import type {SessionStore, SessionCreateOptions} from '../../types/sessionStore.js';
+import type {SessionStore, SessionCreateOptions, SessionLookup} from '../../types/sessionStore.js';
 
 // Eight hours: a memory bound, not a retention decision (specs/hal-engine-session-lifetime/spec.md).
 const DEFAULT_MAX_AGE_MS = 8 * 60 * 60 * 1000;
@@ -43,6 +43,16 @@ export class InMemorySessionStore implements SessionStore {
 
     this.sessions.delete(sessionId);
     return undefined;
+  }
+
+  /** One shot: a session past `maxAgeMs` answers `expired` once and is evicted, never kept as a tombstone. */
+  lookup(sessionId: string): SessionLookup {
+    const held = this.sessions.get(sessionId);
+    if (held === undefined) return {status: 'missing'};
+    if (!this.hasExpired(held)) return {status: 'active', session: held.session};
+
+    this.sessions.delete(sessionId);
+    return {status: 'expired', userId: held.session.userId};
   }
 
   delete(sessionId: string): boolean {

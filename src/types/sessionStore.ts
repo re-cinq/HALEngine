@@ -8,6 +8,10 @@ export interface BaseSession {
   userId: string | number;
 }
 
+/** What a store knows of a session id. `expired` carries the owner's id, so ownership can be checked, and never the conversation. */
+export type SessionLookup<T extends BaseSession = ChatSession> =
+  {status: 'active'; session: T} | {status: 'expired'; userId: string | number} | {status: 'missing'};
+
 export interface SessionCreateOptions {
   authHeaders?: ChatSession['authHeaders'];
   workspaceId?: string | number;
@@ -25,4 +29,6 @@ export interface SessionStore<T extends BaseSession = ChatSession> {
   save?(session: T): Awaitable<void>;
   /** The user's most recently active session the store still holds, so a connect that names none can continue it (specs/hal-engine-session-resume/spec.md). */
   latestFor?(userId: string | number): Awaitable<T | undefined>;
+  /** Tells an expired session from a missing one; `missing` is always a permitted answer, and a store without it behaves as `get` (specs/hal-engine-session-resume/spec.md). */
+  lookup?(sessionId: string): Awaitable<SessionLookup<T>>;
 }

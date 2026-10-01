@@ -128,7 +128,8 @@ async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[]
   // Paused across the await so a frame arriving before the message listener exists is buffered, not dropped.
   ws.pause();
 
-  const resumed = await resumableSession(deps.sessionStore, ws, deps.resume);
+  const outcome = await resumableSession(deps.sessionStore, ws, deps.resume);
+  const resumed = outcome.session;
   if (resumed) sessionId = resumed.sessionId;
   const session = resumed ?? (await createSession(deps, sessionId, ws));
   state.settled = true;
@@ -162,7 +163,7 @@ async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[]
     sessionId,
     message: 'Connected to HAL Engine',
     examplePrompts,
-    ...resumeFields(deps.resume, resumed),
+    ...resumeFields(deps.resume, outcome),
   };
   // A socket that died between the check above and this frame must not leave the session it was created for behind.
   try {

@@ -276,6 +276,8 @@ An answer still streaming when the client reconnects, because its turn is runnin
 
 **Latest session.** A page refresh or a new tab has no id to send. With `resume: {enabled: true, latest: true}`, a connect that names no id continues the user's most recently active conversation instead of starting an empty one, and a client starts a new conversation on purpose by connecting with `?new=1`, for a "new conversation" button. The store decides what "latest" means through its optional `latestFor(userId)`: `InMemorySessionStore` goes by the newest entry, `MongoSessionStore` by `updatedAt` (create the index in [session stores](session-stores.md#latest-session)). Two tabs share the conversation but do not sync live: a reply streams to the tab that asked, and the other shows it on its next connect. "Latest" is keyed on the authenticated user's id, so it assumes one login per person.
 
+**Why a resume failed.** When a connect names an id and is not rejoined, the `connected` frame says why in `resumeFailure`: `expired` tells the session's own owner that it aged out, and `unknown` covers every other case, an id never issued or one that is not theirs, so the answer still reveals nothing about which ids exist. A store tells expiry apart through its optional `lookup` (see [session stores](session-stores.md#lookup)); without one, every failure reads `unknown`.
+
 **GDPR.** With resume on, a conversation outlives its socket, so you own the retention bound: set `maxAgeMs` on `InMemorySessionStore` (eight hours by default), use `MongoSessionStore`'s erasure methods, and see _Control what the engine keeps in server-side conversation history_ (re-cinq/HALEngine#41). An unbounded retained store is a retention breach, not a memory leak.
 
 ## Custom Session Store

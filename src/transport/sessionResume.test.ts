@@ -21,6 +21,7 @@ interface Frame {
   sessionId?: string;
   resumed?: boolean;
   entryCount?: number;
+  resumeFailure?: string;
   index?: number;
   entry?: SessionEntry;
 }
@@ -144,6 +145,7 @@ const upserts = (frames: Frame[]) =>
 const shapeOf = (frames: Frame[]) => ({
   keys: Object.keys(frames[0]).sort(),
   resumed: frames[0].resumed,
+  resumeFailure: frames[0].resumeFailure,
   types: frames.map(frame => frame.type),
 });
 
@@ -222,14 +224,15 @@ describe('resuming a conversation on reconnect', () => {
     });
   });
 
-  it('answers a never-issued id with resumed false and no replay or error', async () => {
+  it('answers a never-issued id with resumed false, resumeFailure unknown, and no replay or error', async () => {
     const {base} = await startEngine(new InMemorySessionStore(), RESUME_ON);
 
     const frames = await connectAndSettle(`${base}?sessionId=${NEVER_ISSUED}`);
 
     expect(shapeOf(frames)).toEqual({
-      keys: ['examplePrompts', 'message', 'resumed', 'sessionId', 'type'],
+      keys: ['examplePrompts', 'message', 'resumeFailure', 'resumed', 'sessionId', 'type'],
       resumed: false,
+      resumeFailure: 'unknown',
       types: ['connected', 'pong'],
     });
   });
@@ -499,6 +502,90 @@ describe('continuing the latest session', () => {
     expect({resumed: connected.resumed, minted: connected.sessionId !== 'known'}).toEqual({
       resumed: false,
       minted: true,
+    });
+  });
+});
+
+// A store whose only session, the one u1 had, outlived its one-millisecond lifetime before anyone asked for it.
+const agedOut = async (): Promise<InMemorySessionStore> => {
+  const store = new InMemorySessionStore({maxAgeMs: 1});
+  const {entries} = store.create('known', 'u1');
+  entries.push({role: 'user', content: 'my booking 4711', timestamp: '2026-09-30T08:00:00.000Z'});
+  await new Promise(resolve => setTimeout(resolve, 20));
+  return store;
+};
+
+describe('telling an expired session apart', () => {
+  it('tells the owner of a session that aged out that it expired, with a new id and no replay', async () => {
+    const {base} = await startEngine(await agedOut(), RESUME_ON);
+
+    const frames = await connectAndSettle(`${base}?sessionId=known`);
+
+    expect({
+      connected: frames[0],
+      minted: frames[0].sessionId !== 'known',
+      replayed: upserts(frames).length,
+    }).toMatchObject({
+      connected: {resumed: false, resumeFailure: 'expired'},
+      minted: true,
+      replayed: 0,
+    });
+  });
+
+  it('answers another user naming an expired id exactly as it answers an id never issued', async () => {
+    const {auth, base} = await startEngine(await agedOut(), RESUME_ON);
+    auth.userId = 'u2';
+
+    const expired = await connectAndSettle(`${base}?sessionId=known`);
+    const neverIssued = await connectAndSettle(`${base}?sessionId=${NEVER_ISSUED}`);
+
+    expect({expired: shapeOf(expired), failure: expired[0].resumeFailure}).toEqual({
+      expired: shapeOf(neverIssued),
+      failure: 'unknown',
+    });
+  });
+
+  it('sends no resumeFailure at all when the connect names no id, even with no latest session to rejoin', async () => {
+    const {base} = await startEngine(new InMemorySessionStore(), LATEST_ON);
+
+    const [connected] = await connectAndSettle(base);
+
+    expect({resumed: connected.resumed, failureKey: 'resumeFailure' in connected}).toEqual({
+      resumed: false,
+      failureKey: false,
+    });
+  });
+
+  it('reads a named id with one call per attempt: lookup when the store has it, get otherwise', async () => {
+    const inner = storeWith([['known', 'u1', '2026-09-30T08:00:00.000Z']]);
+    const calls: string[] = [];
+    const fiveMembers: SessionStore = {
+      ...delegatingTo(inner),
+      get: sessionId => {
+        calls.push('get');
+        return inner.get(sessionId);
+      },
+    };
+    const withLookup: SessionStore = {
+      ...fiveMembers,
+      lookup: sessionId => {
+        calls.push('lookup');
+        return inner.lookup(sessionId);
+      },
+    };
+
+    const outcomes: Record<string, unknown> = {};
+    for (const [name, store] of Object.entries({fiveMembers, withLookup})) {
+      const {base} = await startEngine(store, RESUME_ON);
+      const [live] = await connectAndSettle(`${base}?sessionId=known`);
+      const [dead] = await connectAndSettle(`${base}?sessionId=${NEVER_ISSUED}`);
+      outcomes[name] = {live: live.resumed, dead: dead.resumeFailure};
+    }
+
+    const answered = {live: true, dead: 'unknown'};
+    expect({outcomes, calls}).toEqual({
+      outcomes: {fiveMembers: answered, withLookup: answered},
+      calls: ['get', 'get', 'lookup', 'lookup'],
     });
   });
 });

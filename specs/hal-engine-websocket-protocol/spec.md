@@ -94,7 +94,7 @@ Upon successful connection, the server MUST send a `connected` message before an
 
 The `sessionId` is a UUID v4 assigned by the server. It uniquely identifies this session; with resume enabled it outlives the connection and a reconnect can name it. The `examplePrompts` array contains example queries derived from the registered tool definitions, displayed in the client as clickable suggestions.
 
-With resume enabled, the frame also carries `resumed`. On `resumed: true` it carries `entryCount`, and the server then replays the stored conversation before any other frame: one `entry_upsert` per entry at its own index, or an `entry_skip` for an entry a tool suppressed, so the client sees the conversation it saw live. With resume disabled neither field is present.
+With resume enabled, the frame also carries `resumed`. On `resumed: true` it carries `entryCount`, and the server then replays the stored conversation before any other frame: one `entry_upsert` per entry at its own index, or an `entry_skip` for an entry a tool suppressed, so the client sees the conversation it saw live. When the connection named an id and was not resumed, the frame also carries `resumeFailure`: `expired` when the caller's own session aged out, `unknown` for every other case. With resume disabled none of these fields is present.
 
 ## 3. Message Format
 
@@ -174,6 +174,7 @@ Sent exactly once after a successful handshake. See Section 2.3.
 | `examplePrompts` | string[] | Example queries derived from registered tool definitions |
 | `resumed`        | boolean  | Present only with resume enabled: whether the requested conversation was rejoined |
 | `entryCount`     | number   | Present only when `resumed` is `true`: how many stored entries the replay covers, skipped ones included |
+| `resumeFailure`  | string   | Present only when the connection named an id and `resumed` is `false`: `expired` when the caller's own session aged out, `unknown` otherwise. `unknown` deliberately covers both an id the server never issued and one that is not the caller's, so the answer reveals nothing about ids that exist |
 
 ### 5.2 entry_upsert
 
@@ -631,8 +632,8 @@ If the connection drops unexpectedly, the client SHOULD reconnect using exponent
 - Maximum retries: 5
 - On reconnection success, any queued `user_message` messages MUST be flushed immediately.
 - On reconnection, the client MUST clear its local entries array and SHOULD send `?sessionId=` with the id from its last `connected` frame. When the server has resume enabled and the conversation is the user's own, it answers `resumed: true` and replays the conversation; otherwise the client is starting a new session.
-- An entry still streaming when its conversation is resumed is replayed with `isStreaming: false` and `truncated: true`: the rest of its turn streams to the connection that started it, so this one would wait for a commit that never comes ([validated by: replays an entry whose turn is still running as finished and truncated, leaving the stored entry as it is](../../src/transport/sessionResume.test.ts#L361)).
-- With the server's `latest` option, a client that has lost the id, after a page refresh for instance, MAY connect without one and still rejoin its user's most recent conversation, and sends `?new=1` to start a new conversation instead ([validated by: with latest on, rejoins the most recently active session of a user whose connect names none](../../src/transport/sessionResume.test.ts#L425), [validated by: with latest on, starts a new session for a user with none, and on ?new=1 even when one exists](../../src/transport/sessionResume.test.ts#L442)).
+- An entry still streaming when its conversation is resumed is replayed with `isStreaming: false` and `truncated: true`: the rest of its turn streams to the connection that started it, so this one would wait for a commit that never comes ([validated by: replays an entry whose turn is still running as finished and truncated, leaving the stored entry as it is](../../src/transport/sessionResume.test.ts#L364)).
+- With the server's `latest` option, a client that has lost the id, after a page refresh for instance, MAY connect without one and still rejoin its user's most recent conversation, and sends `?new=1` to start a new conversation instead ([validated by: with latest on, rejoins the most recently active session of a user whose connect names none](../../src/transport/sessionResume.test.ts#L428), [validated by: with latest on, starts a new session for a user with none, and on ?new=1 even when one exists](../../src/transport/sessionResume.test.ts#L445)).
 
 After 5 failed attempts, the client MUST stop reconnecting and report a disconnected state.
 
