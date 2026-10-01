@@ -5,7 +5,7 @@ import {v4 as uuidv4} from 'uuid';
 import type {WsAuthenticator} from '../../types/auth.js';
 import type {SessionStore} from '../../types/sessionStore.js';
 import type {ConnectedMessage} from '../../types/messages.js';
-import type {ChatSession} from '../../types/session.js';
+import type {AuthenticatedUser, ChatSession} from '../../types/session.js';
 import {ErrorCodes} from '../../types/session.js';
 import {sendError} from './sender.js';
 import {isValidWsPath, rejectSocket, parseWsData} from './helpers.js';
@@ -37,13 +37,13 @@ export interface ConnectionHandlerDeps {
 }
 export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandlerDeps) {
   return function handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
-    if (!isValidWsPath(request.url || '', request.headers.host || '', deps.basePath)) {
+    // Nothing may throw out of this listener: the `upgrade` event has no catch above it, so a throw ends the process.
+    if (!request.headers.host || !isValidWsPath(request.url || '', deps.basePath)) {
       rejectSocket(socket, '400 Bad Request');
       return;
     }
 
-    deps
-      .wsAuth(request)
+    authenticate(deps.wsAuth, request)
       .then(user => {
         if (!user) {
           rejectSocket(socket, '401 Unauthorized');
@@ -63,10 +63,17 @@ export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandl
           wss.emit('connection', extWs, request);
         });
       })
-      .catch(() => {
+      .catch((error: unknown) => {
+        // The type alone: an authenticator's message can carry the credential it was checking.
+        log.error('ws', 'authenticator failed', {errorType: error instanceof Error ? error.name : typeof error});
         rejectSocket(socket, '500 Internal Server Error');
       });
   };
+}
+
+// Async, so a synchronous throw becomes a rejection (answered 500) and a user returned without a promise still resolves.
+async function authenticate(wsAuth: WsAuthenticator, request: IncomingMessage): Promise<AuthenticatedUser | null> {
+  return wsAuth(request);
 }
 
 function bearerFromWebSocketProtocol(req: IncomingMessage): string | undefined {
