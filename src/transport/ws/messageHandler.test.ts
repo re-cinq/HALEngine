@@ -1,12 +1,13 @@
 import {jest} from '@jest/globals';
-import type {WebSocket} from 'ws';
+import {WebSocket} from 'ws';
 import {createMessageHandler} from './messageHandler.js';
 import {TOOL_BUDGET_EXHAUSTED} from '../../orchestration/chatOrchestrator.js';
 import type {ChatOrchestrator} from '../../orchestration/chatOrchestrator.js';
 import type {MessageChunk} from '../../types/ai.js';
 import {AIError} from '../../types/ai.js';
-import type {ChatSession} from '../../types/session.js';
+import type {ChatSession, SessionEntry} from '../../types/session.js';
 import type {OutgoingMessage} from '../../types/messages.js';
+import {PerSessionLock} from '../../shared/perSessionLock.js';
 
 // The frames, in order, are the contract - above all for suppression, which retracts.
 
@@ -596,5 +597,152 @@ describe('the websocket message handler', () => {
         stored,
       }).toMatchObject({skipped: true, deltas: [], stored: {role: 'assistant', content: SENTENCE}});
     });
+  });
+});
+
+const userMessage = (content: string) => ({type: 'user_message', content});
+const afterPendingWork = () => new Promise(resolve => setImmediate(resolve));
+
+// Each run answers with its own number and then waits at its gate, so a test decides when it ends.
+const gated = (runs: number) => {
+  const sent: OutgoingMessage[] = [];
+  const socket = {
+    readyState: WebSocket.OPEN as number,
+    send: (raw: string) => sent.push(JSON.parse(raw) as OutgoingMessage),
+  };
+  const ws = socket as unknown as WebSocket;
+  const gates = Array.from({length: runs}, () => deferred());
+  const handed: SessionEntry[][] = [];
+  const processMessageStream = async function* (session: ChatSession): AsyncGenerator<MessageChunk> {
+    const run = handed.length;
+    handed.push(structuredClone(session.entries));
+    yield text(`answer ${run}`);
+    await gates[run].until;
+    yield STOP;
+  };
+  const session: ChatSession = {sessionId: 's1', userId: 'u1', entries: []};
+  const handle = createMessageHandler({processMessageStream} as unknown as ChatOrchestrator);
+
+  return {
+    session,
+    handed,
+    release: (run: number) => gates[run].release(),
+    close: () => {
+      socket.readyState = WebSocket.CLOSED;
+    },
+    frames: () => wire(sent),
+    send: (raw: unknown) => handle(ws, session, raw),
+  };
+};
+
+describe('one message at a time per session', () => {
+  it('answers a second user_message only after the first has sent its stream_end, in the order they arrived', async () => {
+    const h = gated(2);
+    const first = h.send(userMessage('A'));
+    const second = h.send(userMessage('B'));
+    await afterPendingWork();
+    h.release(0);
+    await first;
+    h.release(1);
+    await second;
+
+    const {entries} = h.session;
+    expect({
+      entries: entries.map(entry => `${entry.role} ${'content' in entry ? entry.content : ''}`),
+      frames: h.frames(),
+    }).toEqual({
+      entries: ['user A', 'assistant answer 0', 'user B', 'assistant answer 1'],
+      frames: [
+        'upsert 0 user "A"',
+        'upsert 1 assistant ""',
+        'delta 1 "answer 0"',
+        'commit 1',
+        'stream_end',
+        'upsert 2 user "B"',
+        'upsert 3 assistant ""',
+        'delta 3 "answer 1"',
+        'commit 3',
+        'stream_end',
+      ],
+    });
+  });
+
+  it('hands the second run a history whose first answer is finished, never one still streaming', async () => {
+    const h = gated(2);
+    const first = h.send(userMessage('A'));
+    await afterPendingWork();
+    const second = h.send(userMessage('B'));
+    await afterPendingWork();
+    h.release(0);
+    await first;
+    h.release(1);
+    await second;
+
+    expect(h.handed[1]).toEqual([
+      {role: 'user', content: 'A', timestamp: expect.any(String)},
+      {role: 'assistant', content: 'answer 0', timestamp: expect.any(String), isStreaming: false},
+      {role: 'user', content: 'B', timestamp: expect.any(String)},
+    ]);
+  });
+
+  it('answers a ping at once while a run is pending', async () => {
+    const h = gated(1);
+    const run = h.send(userMessage('A'));
+    await afterPendingWork();
+    void h.send({type: 'ping', timestamp: 7});
+    await afterPendingWork();
+    const beforeTheRunEnds = h.frames();
+    h.release(0);
+    await run;
+
+    expect(beforeTheRunEnds).toEqual(['upsert 0 user "A"', 'upsert 1 assistant ""', 'delta 1 "answer 0"', 'pong 7']);
+  });
+
+  it('answers an invalid ping at once but an invalid user_message in turn, after the run in progress', async () => {
+    const h = gated(1);
+    const sends = [h.send(userMessage('A'))];
+    await afterPendingWork();
+    sends.push(h.send({type: 'ping'}), h.send(userMessage('')));
+    await afterPendingWork();
+    const beforeTheRunEnds = h.frames();
+    h.release(0);
+    await Promise.all(sends);
+
+    expect({beforeTheRunEnds, after: h.frames().slice(beforeTheRunEnds.length)}).toEqual({
+      beforeTheRunEnds: ['upsert 0 user "A"', 'upsert 1 assistant ""', 'delta 1 "answer 0"', 'error INVALID_MESSAGE'],
+      after: ['commit 1', 'stream_end', 'error INVALID_MESSAGE', 'stream_end'],
+    });
+  });
+
+  it('queues three messages sent in one tick before the handler returns, and answers them in that order', async () => {
+    const queued = jest.spyOn(PerSessionLock.prototype, 'run');
+    const h = gated(3);
+    const sends = ['A', 'B', 'C'].map(content => h.send(userMessage(content)));
+    const {calls} = queued.mock;
+    const queuedBeforeAnyAwait = calls.length;
+    for (const run of [0, 1, 2]) h.release(run);
+    await Promise.all(sends);
+    queued.mockRestore();
+
+    const {entries} = h.session;
+    expect({
+      queuedBeforeAnyAwait,
+      asked: entries.filter(entry => entry.role === 'user').map(entry => ('content' in entry ? entry.content : '')),
+    }).toEqual({queuedBeforeAnyAwait: 3, asked: ['A', 'B', 'C']});
+  });
+
+  it('drops a queued message whose socket closed before its turn, without asking the model or recording it', async () => {
+    const h = gated(2);
+    const sends = [h.send(userMessage('A')), h.send(userMessage('B'))];
+    await afterPendingWork();
+    h.close();
+    h.release(0);
+    await Promise.all(sends);
+
+    const {entries} = h.session;
+    expect({
+      asked: h.handed.length,
+      entries: entries.map(entry => `${entry.role} ${'content' in entry ? entry.content : ''}`),
+    }).toEqual({asked: 1, entries: ['user A', 'assistant answer 0']});
   });
 });
