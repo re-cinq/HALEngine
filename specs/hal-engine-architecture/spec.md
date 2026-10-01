@@ -274,6 +274,15 @@ sequenceDiagram
     CC->>U: MessageDisplay renders entries
 ```
 
+### One message at a time
+
+The transport queues each `user_message` run on a `PerSessionLock` (`src/shared/perSessionLock.ts`) keyed by the session id, not the socket, since a resumed session can be open on more than one (re-cinq/HALEngine#47). What that means on the wire is in [the protocol spec, § 4.1](../hal-engine-websocket-protocol/spec.md#41-user_message).
+
+- The lock runs two callbacks on one key in call order: the second starts only once the first has settled ([validated by: runs two callbacks on one key in call order, the second only once the first has settled](../../src/shared/perSessionLock.test.ts#L16)).
+- Callbacks on different keys never wait for each other ([validated by: starts callbacks on different keys without either waiting for the other](../../src/shared/perSessionLock.test.ts#L34)).
+- A callback that throws hands its rejection to its own caller, and the next callback on that key still runs ([validated by: hands a rejection to its own caller and still runs the next callback on that key](../../src/shared/perSessionLock.test.ts#L53)).
+- The lock holds a key only while a callback on it is queued or running, and nothing but keys and promises, so an idle server keeps no session id and no message content ([validated by: holds no key once every queued callback has settled](../../src/shared/perSessionLock.test.ts#L68)).
+
 ## Entry Streaming Protocol
 
 Every piece of content in the conversation is a **SessionEntry**. The protocol has two halves that mirror each other: the server mutates its session array and sends a frame describing the change, and the client applies that frame to its own copy.

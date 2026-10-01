@@ -5,6 +5,8 @@ import {ErrorCodes} from '../../types/messages.js';
 import type {OutgoingMessage} from '../../types/messages.js';
 import {ThinkingTagParser, ParsedSegment} from '../../infrastructure/parsers/thinkingTagParser.js';
 import {validateMessage} from './validation.js';
+import type {ValidationResult} from './validation.js';
+import {PerSessionLock} from '../../shared/perSessionLock.js';
 import type {ChatOrchestrator} from '../../orchestration/chatOrchestrator.js';
 import {AIError} from '../../types/ai.js';
 import type {MessageChunk} from '../../types/ai.js';
@@ -28,24 +30,38 @@ interface StreamState {
 type StateIndexKey = 'thinkingIndex' | 'assistantIndex';
 type EntryFactory = typeof createThinkingEntry | typeof createAssistantEntry;
 export function createMessageHandler(orchestrator: ChatOrchestrator) {
-  return async function handleMessage(ws: WebSocket, session: ChatSession, rawMessage: unknown): Promise<void> {
-    try {
-      await dispatchMessage(ws, session, orchestrator, rawMessage);
-    } finally {
-      // Every user_message ends in exactly one stream_end, errored or not; a ping never gets one.
-      if (isUserMessageFrame(rawMessage)) sendStreamEnd(ws);
+  // Keyed by session, not socket: a resumed session can be open on more than one (specs/hal-engine-architecture/spec.md).
+  const lock = new PerSessionLock();
+  return function handleMessage(ws: WebSocket, session: ChatSession, rawMessage: unknown): Promise<void> {
+    const validation = validateMessage(rawMessage);
+    const message = validation.valid ? validation.data : undefined;
+    // Queued with no await before it, so frames keep their arrival order; a ping or an invalid frame never waits.
+    if (message?.type === 'user_message') {
+      return lock.run(session.sessionId, () => answerUserMessage(ws, session, orchestrator, message.content));
     }
+    // An async action runs up to its first await at once, so the answer is sent now and a throw stays a rejection.
+    const answered = wsErrorHandler(ws, async () => answerAtOnce(ws, validation));
+    // Every user_message ends in one stream_end, a failed one too, queued so they keep the messages' arrival order.
+    if (isUserMessageFrame(rawMessage)) return lock.run(session.sessionId, async () => sendStreamEnd(ws));
+    return answered;
   };
 }
 
-async function dispatchMessage(
+// The stream_end goes out inside the lock, so the session's next message starts only after this one ended.
+async function answerUserMessage(
   ws: WebSocket,
   session: ChatSession,
   orchestrator: ChatOrchestrator,
-  rawMessage: unknown
+  content: string
 ): Promise<void> {
-  const validation = validateMessage(rawMessage);
+  try {
+    await wsErrorHandler(ws, () => handleUserMessage(ws, session, orchestrator, content));
+  } finally {
+    sendStreamEnd(ws);
+  }
+}
 
+function answerAtOnce(ws: WebSocket, validation: ValidationResult): void {
   if (!validation.valid) {
     log.warn('message', 'validation failed', {error: validation.error});
     sendError(ws, ErrorCodes.INVALID_MESSAGE, validation.error);
@@ -53,16 +69,7 @@ async function dispatchMessage(
   }
 
   const message = validation.data;
-
-  await wsErrorHandler(ws, async () => {
-    if (message.type === 'user_message') {
-      await handleUserMessage(ws, session, orchestrator, message.content);
-    }
-
-    if (message.type === 'ping') {
-      handlePing(ws, message.timestamp);
-    }
-  });
+  if (message.type === 'ping') handlePing(ws, message.timestamp);
 }
 
 // Read from the raw frame, so a user_message that fails validation still gets its stream_end.
