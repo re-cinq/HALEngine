@@ -12,6 +12,12 @@ import {setLogger} from '../shared/logger.js';
 const admitEveryone: WsAuthenticator = async () => ({id: 'u1'});
 const REPLY_WAIT_MS = 2_000;
 
+type LoggedLine = {level: string; category: string; message: string; fields?: Record<string, unknown>};
+
+const logged: LoggedLine[] = [];
+const record = (level: string) => (category: string, message: string, fields?: Record<string, unknown>) =>
+  void logged.push({level, category, message, fields});
+
 const upgradeRequest = (target: string, hostLine: string): string =>
   `GET ${target} HTTP/1.1\r\n${hostLine}Connection: Upgrade\r\nUpgrade: websocket\r\n` +
   'Sec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n';
@@ -48,7 +54,11 @@ const statusLineFor = async (wsAuth: WsAuthenticator, request: string): Promise<
 
 describe('an upgrade request the server cannot read', () => {
   beforeAll(() => {
-    setLogger({debug: () => undefined, info: () => undefined, warn: () => undefined, error: () => undefined});
+    setLogger({debug: record('debug'), info: record('info'), warn: record('warn'), error: record('error')});
+  });
+
+  beforeEach(() => {
+    logged.length = 0;
   });
 
   afterAll(() => {
@@ -77,6 +87,32 @@ describe('an upgrade request the server cannot read', () => {
     const reply = await statusLineFor(throwsSynchronously, upgradeRequest('/hal/ws', 'Host: example.com\r\n'));
 
     expect(reply).toBe('HTTP/1.1 500 Internal Server Error');
+  });
+
+  it('logs a throwing or rejecting authenticator by its error type alone, never its message', async () => {
+    const request = upgradeRequest('/hal/ws', 'Host: example.com\r\n');
+    const throwsSecret: WsAuthenticator = () => {
+      throw new Error('bad token super-secret');
+    };
+    const rejectsSecret: WsAuthenticator = () => Promise.reject(new TypeError('bad token super-secret'));
+
+    const replies = {
+      throws: await statusLineFor(throwsSecret, request),
+      rejects: await statusLineFor(rejectsSecret, request),
+    };
+
+    expect({
+      replies,
+      failures: logged.filter(line => line.message === 'authenticator failed'),
+      leaked: JSON.stringify(logged).includes('super-secret'),
+    }).toEqual({
+      replies: {throws: 'HTTP/1.1 500 Internal Server Error', rejects: 'HTTP/1.1 500 Internal Server Error'},
+      failures: [
+        {level: 'error', category: 'ws', message: 'authenticator failed', fields: {errorType: 'Error'}},
+        {level: 'error', category: 'ws', message: 'authenticator failed', fields: {errorType: 'TypeError'}},
+      ],
+      leaked: false,
+    });
   });
 
   it('upgrades a request whose authenticator returns a user without a promise', async () => {

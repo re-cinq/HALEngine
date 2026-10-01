@@ -63,7 +63,9 @@ export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandl
           wss.emit('connection', extWs, request);
         });
       })
-      .catch(() => {
+      .catch((error: unknown) => {
+        // The type alone: an authenticator's message can carry the credential it was checking.
+        log.error('ws', 'authenticator failed', {errorType: error instanceof Error ? error.name : typeof error});
         rejectSocket(socket, '500 Internal Server Error');
       });
   };

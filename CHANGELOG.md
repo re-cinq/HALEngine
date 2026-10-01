@@ -15,6 +15,7 @@ package, not for somebody reading this repository's commit log.
 ### Changed
 
 - `credentialFromSubprotocol` returns `undefined` unless the offer includes `hal.v1`, so a bare-token offer no longer authenticates a connection its client is about to fail. A `WsAuthenticator` that already expects the marker needs no change.
+- A `WsAuthenticator` that throws or rejects is now logged at `error` as `authenticator failed`, with the error's type alone in `errorType`. Its message is never logged, since it can carry the credential being checked. Such a request was already answered `500`, but with no log line.
 
 ### Security
 
