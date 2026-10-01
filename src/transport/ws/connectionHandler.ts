@@ -65,11 +65,7 @@ export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandl
           };
           extWs.isAlive = true;
           if (deps.resume?.enabled) {
-            extWs.requestedSessionId = sessionIdFromUpgrade(
-              request.url || '',
-              request.headers.host || '',
-              deps.basePath
-            );
+            extWs.requestedSessionId = sessionIdFromUpgrade(request.url || '', deps.basePath);
           }
           wss.emit('connection', extWs, request);
         });

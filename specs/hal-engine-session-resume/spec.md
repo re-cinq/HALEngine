@@ -12,6 +12,7 @@ A reconnect used to resume nothing: the server minted a fresh id on every connec
 - The id is the `sessionId` query parameter of the upgrade request, never a path segment, and only 1–128 characters of `[A-Za-z0-9_-]` count: an empty value, a longer one and a path-traversal value read as no id at all ([validated by: reads abc-123 from the query and nothing from a bare path, a path segment, an empty, a 129-character or a traversal value](../../src/transport/ws/helpers.test.ts#L6)).
 - A 128-character id is the longest one read ([validated by: reads a 128-character id, the longest it accepts](../../src/transport/ws/helpers.test.ts#L24)).
 - An upgrade outside `{basePath}/ws` carries no id ([validated by: reads nothing from an upgrade outside the base path](../../src/transport/ws/helpers.test.ts#L30)).
+- Reading the id never throws: a target that is not a URL, such as `//`, or an empty one carries no id ([validated by: reads nothing, without throwing, from a target that is not a URL or is empty](../../src/transport/ws/helpers.test.ts#L34)).
 
 ## Opt-in
 

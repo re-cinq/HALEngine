@@ -1,6 +1,6 @@
 import {sessionIdFromUpgrade} from './helpers.js';
 
-const read = (url: string): string | undefined => sessionIdFromUpgrade(url, 'x', '/hal');
+const read = (url: string): string | undefined => sessionIdFromUpgrade(url, '/hal');
 
 describe('sessionIdFromUpgrade', () => {
   it('reads abc-123 from the query and nothing from a bare path, a path segment, an empty, a 129-character or a traversal value', () => {
@@ -29,5 +29,9 @@ describe('sessionIdFromUpgrade', () => {
 
   it('reads nothing from an upgrade outside the base path', () => {
     expect(read('/elsewhere/ws?sessionId=abc-123')).toBeUndefined();
+  });
+
+  it('reads nothing, without throwing, from a target that is not a URL or is empty', () => {
+    expect({doubleSlash: read('//'), empty: read('')}).toStrictEqual({doubleSlash: undefined, empty: undefined});
   });
 });
