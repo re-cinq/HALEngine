@@ -249,22 +249,17 @@ function processToolResultChunk(ws: WebSocket, clientMessages: OutgoingMessage[]
 
 // Retracts what the client saw: every assistant entry sent so far is re-sent blank.
 function processSuppressChunk(ws: WebSocket, session: ChatSession, state: StreamState): void {
+  // Closed as streamed so far: an open answer is then retracted like a sent one, and what follows opens new entries.
+  commitOpenEntries(ws, session, state);
   log.debug('stream', 'suppression activated', {blankingEntries: state.sentAssistantIndices});
 
   for (const idx of state.sentAssistantIndices) {
     sendUpsert(ws, idx, {...session.entries[idx], content: ''} as SessionEntry);
     markSuppressed(session, idx);
   }
-  markOpenSuppressed(session, state);
 
   state.sentAssistantIndices = [];
   state.suppressOutput = true;
-}
-
-// An open entry stops streaming here, so the client never sees the text it gathers next; a replay must not either.
-function markOpenSuppressed(session: ChatSession, state: StreamState): void {
-  if (state.thinkingIndex !== null) markSuppressed(session, state.thinkingIndex);
-  if (state.assistantIndex !== null) markSuppressed(session, state.assistantIndex);
 }
 
 function processStopChunk(ws: WebSocket, session: ChatSession, state: StreamState, parser: ThinkingTagParser): void {

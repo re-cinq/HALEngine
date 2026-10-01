@@ -291,16 +291,17 @@ describe('resuming a conversation on reconnect', () => {
     }).toEqual({types: ['connected', 'entry_upsert 0', 'entry_skip 1', 'pong'], leaked: false});
   });
 
-  it('replays an answer suppressed while it was still open as a skip, never the text it gathered after', async () => {
+  it('replays an answer suppressed while it was still open as skips, as blank as the live client was left', async () => {
     const {base} = await startEngine(new InMemorySessionStore(), RESUME_ON, suppressingMidAnswer);
     const first = await firstTurn(base);
 
     const frames = await connectAndSettle(`${base}?sessionId=${first}`);
 
+    const replayed = JSON.stringify(frames);
     expect({
       types: frames.map(({type, index}) => (index === undefined ? type : `${type} ${index}`)),
-      leaked: JSON.stringify(frames).includes('after'),
-    }).toEqual({types: ['connected', 'entry_upsert 0', 'entry_skip 1', 'pong'], leaked: false});
+      leaked: ['before', 'after'].filter(word => replayed.includes(word)),
+    }).toEqual({types: ['connected', 'entry_upsert 0', 'entry_skip 1', 'entry_skip 2', 'pong'], leaked: []});
   });
 
   it('replays an entry whose turn is still running as finished and truncated, leaving the stored entry as it is', async () => {

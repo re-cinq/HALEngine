@@ -267,18 +267,45 @@ describe('the websocket message handler', () => {
       });
     });
 
-    it('marks an answer or a thought still open when suppression begins as suppressed in the session', async () => {
-      const answering = harness([text('before'), SUPPRESS, text(' after'), STOP]);
-      const thinking = harness([text('<thinking>early'), SUPPRESS, text(' later</thinking>'), STOP]);
+    it('commits and retracts an answer still open when suppression begins, and skips what follows as a new entry', async () => {
+      const h = harness([text('before'), SUPPRESS, text(' after'), STOP]);
 
-      await answering.send();
-      await thinking.send();
+      await h.send();
 
-      const [, answer] = answering.session.entries;
-      const [, thought] = thinking.session.entries;
-      expect({answer, thought}).toMatchObject({
-        answer: {role: 'assistant', content: 'before after', suppressed: true},
-        thought: {role: 'thinking', content: 'early later', suppressed: true},
+      const [, answer, after] = h.session.entries;
+      expect({frames: h.frames(), answer, after}).toMatchObject({
+        frames: [
+          'upsert 0 user "hello"',
+          'upsert 1 assistant ""',
+          'delta 1 "before"',
+          'commit 1',
+          'upsert 1 assistant ""',
+          'skip 2',
+          'stream_end',
+        ],
+        answer: {role: 'assistant', content: 'before', isStreaming: false, suppressed: true},
+        after: {role: 'assistant', content: ' after', suppressed: true},
+      });
+    });
+
+    it('commits a thought still open when suppression begins as the client saw it, and skips what follows', async () => {
+      const h = harness([text('<thinking>early'), SUPPRESS, text(' later</thinking>'), STOP]);
+
+      await h.send();
+
+      const [, thought, after] = h.session.entries;
+      expect({frames: h.frames(), thought, marked: 'suppressed' in thought, after}).toMatchObject({
+        frames: [
+          'upsert 0 user "hello"',
+          'upsert 1 thinking ""',
+          'delta 1 "early"',
+          'commit 1',
+          'skip 2',
+          'stream_end',
+        ],
+        thought: {role: 'thinking', content: 'early', isStreaming: false},
+        marked: false,
+        after: {role: 'thinking', content: ' later', suppressed: true},
       });
     });
   });
