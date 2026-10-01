@@ -55,5 +55,10 @@ function replayEntry(ws: WebSocket, index: number, entry: SessionEntry): void {
     sendSkip(ws, index);
     return;
   }
+  // Its turn streams to the socket that started it, so this client is shown it cut off rather than waiting on it.
+  if ('isStreaming' in entry && entry.isStreaming) {
+    sendUpsert(ws, index, {...entry, isStreaming: false, truncated: true});
+    return;
+  }
   sendUpsert(ws, index, entry);
 }

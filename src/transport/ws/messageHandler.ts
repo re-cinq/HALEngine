@@ -255,9 +255,16 @@ function processSuppressChunk(ws: WebSocket, session: ChatSession, state: Stream
     sendUpsert(ws, idx, {...session.entries[idx], content: ''} as SessionEntry);
     markSuppressed(session, idx);
   }
+  markOpenSuppressed(session, state);
 
   state.sentAssistantIndices = [];
   state.suppressOutput = true;
+}
+
+// An open entry stops streaming here, so the client never sees the text it gathers next; a replay must not either.
+function markOpenSuppressed(session: ChatSession, state: StreamState): void {
+  if (state.thinkingIndex !== null) markSuppressed(session, state.thinkingIndex);
+  if (state.assistantIndex !== null) markSuppressed(session, state.assistantIndex);
 }
 
 function processStopChunk(ws: WebSocket, session: ChatSession, state: StreamState, parser: ThinkingTagParser): void {

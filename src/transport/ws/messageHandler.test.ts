@@ -266,6 +266,21 @@ describe('the websocket message handler', () => {
         answer: {role: 'assistant', content: 'said', suppressed: true},
       });
     });
+
+    it('marks an answer or a thought still open when suppression begins as suppressed in the session', async () => {
+      const answering = harness([text('before'), SUPPRESS, text(' after'), STOP]);
+      const thinking = harness([text('<thinking>early'), SUPPRESS, text(' later</thinking>'), STOP]);
+
+      await answering.send();
+      await thinking.send();
+
+      const [, answer] = answering.session.entries;
+      const [, thought] = thinking.session.entries;
+      expect({answer, thought}).toMatchObject({
+        answer: {role: 'assistant', content: 'before after', suppressed: true},
+        thought: {role: 'thinking', content: 'early later', suppressed: true},
+      });
+    });
   });
 
   describe('failures', () => {

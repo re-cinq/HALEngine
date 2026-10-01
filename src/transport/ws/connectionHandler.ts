@@ -97,11 +97,14 @@ export function createConnectionHandler(deps: ConnectionHandlerDeps, exampleProm
   };
 }
 
+// The socket whose upgrade a session's credentials came from: a resumed session outlives the socket that held it.
+const holders = new WeakMap<ChatSession, WebSocket>();
+
 async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[], ws: ExtWebSocket): Promise<void> {
   // A requested id is never adopted for a new session: that would be session fixation.
   let sessionId = uuidv4();
   const state = {closed: false, settled: false, notified: false, delivered: false};
-  const held: {session?: ChatSession} = {};
+  const held: {session?: ChatSession; socket: WebSocket} = {socket: ws};
 
   ws.on('error', (error: Error) => {
     log.error('ws', 'connection error', {sessionId, error: error.message});
@@ -121,11 +124,7 @@ async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[]
   ws.pause();
 
   const resumed = await resumableSession(deps.sessionStore, ws);
-  if (resumed) {
-    sessionId = resumed.sessionId;
-    // Re-captured from this upgrade, as a new session's would be: the close of the old socket cleared them.
-    resumed.authHeaders = ws.authHeaders;
-  }
+  if (resumed) sessionId = resumed.sessionId;
   const session = resumed ?? (await createSession(deps, sessionId, ws));
   state.settled = true;
 
@@ -136,6 +135,9 @@ async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[]
     return;
   }
 
+  // A new session is this socket's from the start; a resumed one only once this socket is known to be open.
+  if (!resumed) holders.set(session, ws);
+
   if (state.closed) {
     // Held first: a store that implements no evict still holds this session, and it carries the caller's credentials.
     held.session = session;
@@ -145,6 +147,7 @@ async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[]
     return;
   }
 
+  if (resumed) holdResumed(resumed, ws);
   held.session = session;
 
   log.info('ws', 'connected', {sessionId, userId: ws.userId});
@@ -189,6 +192,12 @@ async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[]
   ws.resume();
 }
 
+// Re-captured from this upgrade, as a new session's would be, and held by this socket from here on.
+function holdResumed(session: ChatSession, ws: ExtWebSocket): void {
+  session.authHeaders = ws.authHeaders;
+  holders.set(session, ws);
+}
+
 // `undefined` rather than a throw: one store failure closes one socket instead of ending the process.
 async function createSession(
   deps: ConnectionHandlerDeps,
@@ -212,13 +221,13 @@ function endSession(
   deps: ConnectionHandlerDeps,
   sessionId: string,
   state: {notified: boolean; delivered: boolean},
-  held: {session?: ChatSession}
+  held: {session?: ChatSession; socket: WebSocket}
 ): void {
   if (state.notified) return;
   state.notified = true;
 
-  // The credentials were issued for a request that is over; the entries are what the consumer keeps.
-  if (held.session) held.session.authHeaders = undefined;
+  // Cleared as their request is over, unless a socket that has since resumed the session holds it with its own.
+  if (held.session && holders.get(held.session) === held.socket) held.session.authHeaders = undefined;
 
   // Only for a session the consumer was actually handed: onDisconnect is the other half of onConnect, not of a socket.
   if (!state.delivered) return;

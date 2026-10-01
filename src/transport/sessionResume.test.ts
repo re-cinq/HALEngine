@@ -7,6 +7,8 @@ import {HAL_WS_SUBPROTOCOL} from './ws/subprotocol.js';
 import type {SessionResumeOptions} from './ws/sessionResume.js';
 import {answeringOrchestrator} from './wsTestSupport.js';
 import {InMemorySessionStore} from '../infrastructure/stores/inMemorySessionStore.js';
+import type {ChatOrchestrator} from '../orchestration/chatOrchestrator.js';
+import type {MessageChunk} from '../types/ai.js';
 import type {ConnectedMessage} from '../types/messages.js';
 import type {SessionEntry} from '../types/session.js';
 import type {SessionStore} from '../types/sessionStore.js';
@@ -25,10 +27,32 @@ interface Frame {
 
 const NEVER_ISSUED = '0f1e2d3c-4b5a-4968-8776-655443322110';
 const RESUME_ON: SessionResumeOptions = {enabled: true};
-const servers: Array<{stop: () => Promise<void>}> = [];
+const HALF_ANSWER: SessionEntry = {
+  role: 'assistant',
+  content: 'half',
+  timestamp: '2026-09-30T08:00:01.000Z',
+  isStreaming: true,
+};
+
+// A tool's suppression lands while the answer is still open, as when a provider ends a tool round with no stop.
+const suppressingMidAnswer: ChatOrchestrator = {
+  processMessage: async () => 'before after',
+  async *processMessageStream(): AsyncGenerator<MessageChunk> {
+    yield {type: 'text', text: 'before'};
+    yield {type: 'suppress_output'} as unknown as MessageChunk;
+    yield {type: 'text', text: ' after'};
+    yield {type: 'stop', stopReason: 'end_turn'};
+  },
+};
+
+const servers: Array<ReturnType<typeof createServer>> = [];
 const clients: WebSocket[] = [];
 
-// Silenced for the whole file: a terminated socket's close is logged by the server after its test has ended.
+const eventually = async (check: () => boolean): Promise<void> => {
+  for (let attempt = 0; attempt < 50 && !check(); attempt++) await new Promise(resolve => setTimeout(resolve, 10));
+};
+
+// Silenced for the whole file: the server logs every connection and close, and these tests read frames, not logs.
 beforeAll(() => {
   setLogger({debug: () => undefined, info: () => undefined, warn: () => undefined, error: () => undefined});
 });
@@ -37,20 +61,29 @@ afterAll(() => {
   setLogger();
 });
 
+// Each server sees its sockets close before it stops, so no close is logged after the logger above is restored.
 afterEach(async () => {
   for (const client of clients.splice(0)) client.terminate();
-  for (const hal of servers.splice(0)) await hal.stop();
+  for (const hal of servers.splice(0)) {
+    const {wss} = hal;
+    await eventually(() => wss.clients.size === 0);
+    await hal.stop();
+  }
 });
 
 // The authenticated user is read per upgrade, so one test can reconnect as someone else.
-const startEngine = async (store: SessionStore, resume?: SessionResumeOptions) => {
+const startEngine = async (
+  store: SessionStore,
+  resume?: SessionResumeOptions,
+  orchestrator: ChatOrchestrator = answeringOrchestrator
+) => {
   const auth = {userId: 'u1'};
   const disconnected: string[] = [];
   const hal = createServer({
     app: (() => undefined) as unknown as Express,
     wsAuth: async () => ({id: auth.userId}),
     sessionStore: store,
-    orchestrator: answeringOrchestrator,
+    orchestrator,
     resume,
     onDisconnect: sessionId => void disconnected.push(sessionId),
   });
@@ -64,8 +97,8 @@ const startEngine = async (store: SessionStore, resume?: SessionResumeOptions) =
   return {auth, disconnected, firstServerClose, base: `ws://127.0.0.1:${port}/hal/ws`};
 };
 
-const open = (url: string): WebSocket => {
-  const client = new WebSocket(url, [HAL_WS_SUBPROTOCOL, 't']);
+const open = (url: string, token = 't'): WebSocket => {
+  const client = new WebSocket(url, [HAL_WS_SUBPROTOCOL, token]);
   clients.push(client);
   return client;
 };
@@ -88,8 +121,8 @@ const firstTurn = async (base: string): Promise<string> => {
 };
 
 // A ping sent on connect is a barrier: its pong can only follow every frame the replay wrote.
-const connectAndSettle = async (url: string): Promise<Frame[]> => {
-  const client = open(url);
+const connectAndSettle = async (url: string, token?: string): Promise<Frame[]> => {
+  const client = open(url, token);
   const frames: Frame[] = [];
   await new Promise<void>(resolve => {
     client.on('message', raw => {
@@ -117,10 +150,6 @@ const deferredRelease = () => {
     release = resolve;
   });
   return {until, release: () => release()};
-};
-
-const eventually = async (check: () => boolean): Promise<void> => {
-  for (let attempt = 0; attempt < 50 && !check(); attempt++) await new Promise(resolve => setTimeout(resolve, 10));
 };
 
 describe('resuming a conversation on reconnect', () => {
@@ -205,7 +234,26 @@ describe('resuming a conversation on reconnect', () => {
     expect(disconnected).toEqual([first]);
   });
 
-  it('resumes the id its store knows and starts fresh for one it does not, with no age rule of its own', async () => {
+  it('keeps the credentials of the socket that resumed a session when the socket it replaced closes', async () => {
+    const store = new InMemorySessionStore();
+    const {base, disconnected, firstServerClose} = await startEngine(store, RESUME_ON);
+    const replaced = open(base, 'old');
+    const [greeting] = (await once(replaced, 'message')) as [Buffer];
+    const sessionId = (JSON.parse(String(greeting)) as Frame).sessionId ?? '';
+
+    const frames = await connectAndSettle(`${base}?sessionId=${sessionId}`, 'new');
+    replaced.close();
+    await firstServerClose;
+
+    const held = await store.get(sessionId);
+    expect({resumed: frames[0].resumed, disconnected, authorization: held?.authHeaders?.authorization}).toEqual({
+      resumed: true,
+      disconnected: [sessionId],
+      authorization: 'Bearer new',
+    });
+  });
+
+  it('resumes the id its store knows and starts fresh for one it does not', async () => {
     const store = new InMemorySessionStore();
     const known = await store.create('known', 'u1');
     known.entries.push({role: 'user', content: 'earlier', timestamp: '2026-09-30T08:00:00.000Z'});
@@ -241,6 +289,32 @@ describe('resuming a conversation on reconnect', () => {
       types: frames.map(({type, index}) => (index === undefined ? type : `${type} ${index}`)),
       leaked: JSON.stringify(frames).includes('hidden'),
     }).toEqual({types: ['connected', 'entry_upsert 0', 'entry_skip 1', 'pong'], leaked: false});
+  });
+
+  it('replays an answer suppressed while it was still open as a skip, never the text it gathered after', async () => {
+    const {base} = await startEngine(new InMemorySessionStore(), RESUME_ON, suppressingMidAnswer);
+    const first = await firstTurn(base);
+
+    const frames = await connectAndSettle(`${base}?sessionId=${first}`);
+
+    expect({
+      types: frames.map(({type, index}) => (index === undefined ? type : `${type} ${index}`)),
+      leaked: JSON.stringify(frames).includes('after'),
+    }).toEqual({types: ['connected', 'entry_upsert 0', 'entry_skip 1', 'pong'], leaked: false});
+  });
+
+  it('replays an entry whose turn is still running as finished and truncated, leaving the stored entry as it is', async () => {
+    const store = new InMemorySessionStore();
+    const known = await store.create('known', 'u1');
+    known.entries.push({role: 'user', content: 'hello', timestamp: '2026-09-30T08:00:00.000Z'}, {...HALF_ANSWER});
+    const {base} = await startEngine(store, RESUME_ON);
+
+    const frames = await connectAndSettle(`${base}?sessionId=known`);
+
+    expect({replayed: upserts(frames)[1], stored: known.entries[1]}).toEqual({
+      replayed: {index: 1, entry: {...HALF_ANSWER, isStreaming: false, truncated: true}},
+      stored: HALF_ANSWER,
+    });
   });
 
   it('keeps a resumed session whose socket closed before the replay, rather than evicting it', async () => {
