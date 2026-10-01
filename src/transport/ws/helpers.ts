@@ -1,16 +1,25 @@
 import {Duplex} from 'stream';
 
 export function isValidWsPath(url: string, basePath: string): boolean {
-  return pathnameOf(url)?.startsWith(`${basePath}/ws`) ?? false;
+  return targetOf(url)?.pathname.startsWith(`${basePath}/ws`) ?? false;
 }
 
-// Against a fixed base, since the host plays no part in the path; a target that is not a URL reads as no path at all.
-function pathnameOf(url: string): string | undefined {
+// Against a fixed base, since the host plays no part in the path or query; a target that is not a URL reads as none.
+function targetOf(url: string): URL | undefined {
   try {
-    return new URL(url || '', 'http://localhost').pathname;
+    return new URL(url || '', 'http://localhost');
   } catch {
     return undefined;
   }
+}
+
+const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+
+// The `sessionId` query parameter, never a path segment; anything outside the id charset reads as none.
+export function sessionIdFromUpgrade(url: string, basePath: string): string | undefined {
+  if (!isValidWsPath(url, basePath)) return undefined;
+  const requested = targetOf(url)?.searchParams.get('sessionId');
+  return typeof requested === 'string' && SESSION_ID_PATTERN.test(requested) ? requested : undefined;
 }
 
 export function rejectSocket(socket: Duplex, statusLine: string): void {

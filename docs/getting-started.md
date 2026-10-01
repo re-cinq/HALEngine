@@ -184,6 +184,7 @@ const engine = createHalEngine({
     // basePath defaults to '/hal' and the heartbeat to 30s.
     basePath: '/hal',
     heartbeatIntervalMs: 30_000,
+    resume: {enabled: true}, // a reconnect sending ?sessionId= rejoins its own conversation; off by default, see Session Resume
     additionalRoutes: router => router.get('/ping', (_req, res) => res.json({ok: true})),
     rootRoutes: router => router.get('/', (_req, res) => res.send('<h1>Hello</h1>')),
     errorHandler: (err, _req, res, _next) => res.status(500).json({error: String(err)}), // replaces Express's default HTML error page
@@ -225,7 +226,7 @@ beforeSession → beforeUserInput → afterUserInput → beforeModelResponse →
 
 The WebSocket protocol is documented in [websocket-protocol.md](../specs/hal-engine-websocket-protocol/spec.md). A minimal client connection:
 
-The demo chat routes are not part of this flow. A `POST /chats` id is not a WebSocket session id -- the socket mints its own and ignores whatever follows `/ws` in the path -- so there is no create-then-connect handshake to perform.
+The demo chat routes are not part of this flow. A `POST /chats` id is not a WebSocket session id -- the socket mints its own and ignores whatever follows `/ws` in the path -- so there is no create-then-connect handshake to perform. Rejoining a session after a reconnect is a query parameter, not a path segment; see [Session Resume](#session-resume).
 
 <!-- doc-block: none -- illustrates assembling the parts by hand, which no single declaration or example region carries -->
 ```typescript
@@ -264,6 +265,16 @@ ws.send(
   })
 );
 ```
+
+## Session Resume
+
+By default every connection gets a new, empty session. With `transport: {resume: {enabled: true}}`, a client that reconnects can get its conversation back: it opens `{basePath}/ws?sessionId=<id>` with the `sessionId` from its last `connected` frame. The server rejoins that conversation only if it belongs to the connection's authenticated user, answers `resumed: true` with an `entryCount`, and replays each stored entry as an `entry_upsert` at its index, or as an `entry_skip` for one a tool suppressed. Any other id, whether another user's, one never issued or one the store no longer holds, gets a fresh session and `resumed: false`, and the three are indistinguishable. The id is not a credential: it is checked against the user your `WsAuthenticator` returned.
+
+An answer still streaming when the client reconnects, because its turn is running on the connection that dropped, is replayed finished and flagged `truncated`. The rest of that turn still goes to the old connection (re-cinq/HALEngine#49).
+
+**Hooks.** `onConnect` and `onDisconnect` fire per connection, not per conversation: a resumed conversation gets its own `onConnect`, with `{resumed: true}` as its second argument, and the connection it replaced can report `onDisconnect` after that. The two come in exact pairs, both only for a connection that was handed its session, so to know when a conversation has no connection left, count them per session id. With resume on, do not erase a conversation in `onDisconnect`, as the `0.4.0` upgrade note suggests for consumers who relied on erase-on-close: the conversation erased may be the one a reconnect has just rejoined. Bound retention through the store instead.
+
+**GDPR.** With resume on, a conversation outlives its socket, so you own the retention bound: set `maxAgeMs` on `InMemorySessionStore` (eight hours by default), use `MongoSessionStore`'s erasure methods, and see _Control what the engine keeps in server-side conversation history_ (re-cinq/HALEngine#41). An unbounded retained store is a retention breach, not a memory leak.
 
 ## Custom Session Store
 

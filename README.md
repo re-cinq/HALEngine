@@ -140,7 +140,7 @@ interface HalEngineConfig {
     maxToolRounds?: number; // Max tool rounds executed (default: 5); at most maxToolRounds + 1 provider calls
     contextConfig?: Partial<ContextConfig>;
   };
-  onConnect?: (session) => void | Promise<void>; // Fire-and-forget; never awaited
+  onConnect?: (session, {resumed}) => void | Promise<void>; // Fire-and-forget; never awaited; resumed: rejoined via ?sessionId=
   onDisconnect?: (sessionId) => void | Promise<void>; // Fire-and-forget; never awaited
 }
 ```

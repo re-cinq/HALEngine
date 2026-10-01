@@ -8,6 +8,11 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+### Added
+
+- **Session resume**, opt-in via `transport: {resume: {enabled: true}}` and exported as `SessionResumeOptions`. A client that reconnects to `{basePath}/ws?sessionId=<id>`, with the id from its last `connected` frame, gets its conversation back: the frame carries `resumed: true` and `entryCount`, and each stored entry is replayed as an `entry_upsert` at its index. The id is not a credential. It is resumed only for the stored session's own user; any other id, whether another user's, one never issued or one the store no longer holds, gets a fresh session and `resumed: false`, and the three are indistinguishable, so the answer reveals nothing about which ids exist. A requested id is never adopted for a new session. An entry still streaming when its session is resumed, because its turn is running on the socket that started it, is replayed finished and flagged `truncated: true`, since the rest of that turn goes to the other socket. A session open on more than one socket carries the newest one's credentials and, when that socket closes, takes those of the newest one still open. `onConnect` receives `{resumed}` as a second argument, exported as `ConnectInfo`, so a consumer can tell a resumed connection from a new session. `onConnect` and `onDisconnect` stay per connection and come in pairs, so the socket a resume replaced can report `onDisconnect` after the resume: with resume on, do not erase a conversation in `onDisconnect`. With resume off, nothing changes: the `connected` frame carries neither new field. **GDPR**: with resume on, conversations outlive their sockets, so bound retention yourself, with `maxAgeMs` on `InMemorySessionStore` or `MongoSessionStore`'s erasure methods.
+- Stored assistant and thinking entries gain an optional `suppressed: true` when a tool suppressed the response and the client was shown the entry blank or not at all. A resumed session replays such an entry as `entry_skip`, so a reconnecting client never sees text a tool hid. The entry keeps its text for the model's history.
+
 ### Removed
 
 - **A bare-token subprotocol offer is no longer accepted.** `0.3.x` and `0.4.x` still echoed an offer without `hal.v1` for one MINOR, which put the access token in the 101 response headers and the socket's `protocol` property. Such an offer is now answered with no `Sec-WebSocket-Protocol` header, which `ws` and Chromium both fail, and the deprecation warning is gone. **Migration**: every client must offer `hal.v1` beside its token, `new WebSocket(url, ['hal.v1', token])`, the shape documented since `0.3.0`.
@@ -16,6 +21,10 @@ package, not for somebody reading this repository's commit log.
 
 - `credentialFromSubprotocol` returns `undefined` unless the offer includes `hal.v1`, so a bare-token offer no longer authenticates a connection its client is about to fail. A `WsAuthenticator` that already expects the marker needs no change.
 - A `WsAuthenticator` that throws or rejects is now logged at `error` as `authenticator failed`, with the error's type alone in `errorType`. Its message is never logged, since it can carry the credential being checked. Such a request was already answered `500`, but with no log line.
+
+### Fixed
+
+- An answer still streaming when a tool suppresses the response is now committed and retracted like an answer already sent, instead of staying on screen half-written and never committed. A thought still streaming is committed as the client saw it. Whatever the model writes after suppression opens a new entry the client is only sent as `entry_skip`.
 
 ### Security
 

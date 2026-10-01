@@ -9,6 +9,7 @@ import type {Logger} from './shared/logger.js';
 import {setLogger} from './shared/logger.js';
 import type {ChatSession} from './types/session.js';
 import type {HalServer} from './transport/createServer.js';
+import type {ConnectInfo} from './transport/ws/sessionResume.js';
 import {PromptBuilder} from './infrastructure/builders/promptBuilder.js';
 import {createChatOrchestrator} from './orchestration/chatOrchestrator.js';
 import type {OrchestratorHooks} from './orchestration/chatOrchestrator.js';
@@ -18,6 +19,7 @@ import {InMemorySessionStore} from './infrastructure/stores/inMemorySessionStore
 import {createApp} from './transport/createApp.js';
 import type {HalAppOptions} from './transport/createApp.js';
 import {createServer} from './transport/createServer.js';
+import type {SessionResumeOptions} from './transport/ws/sessionResume.js';
 
 export interface HalEngineConfig {
   provider: ProviderConfig;
@@ -33,6 +35,7 @@ export interface HalEngineConfig {
     additionalRoutes?: HalAppOptions['additionalRoutes'];
     rootRoutes?: HalAppOptions['rootRoutes'];
     errorHandler?: HalAppOptions['errorHandler'];
+    resume?: SessionResumeOptions;
   };
   auth: {
     ws: WsAuthenticator;
@@ -46,7 +49,7 @@ export interface HalEngineConfig {
   };
   // Replaces the package's logger process-wide, not per engine: there is one `log` per process.
   logger?: Logger;
-  onConnect?: (session: ChatSession) => void | Promise<void>;
+  onConnect?: (session: ChatSession, connection: ConnectInfo) => void | Promise<void>;
   onDisconnect?: (sessionId: string) => void | Promise<void>;
 }
 
@@ -96,6 +99,7 @@ export function createHalEngine(config: HalEngineConfig): HalEngine {
     heartbeatIntervalMs: config.transport?.heartbeatIntervalMs,
     onConnect: config.onConnect,
     onDisconnect: config.onDisconnect,
+    resume: config.transport?.resume,
   });
 
   return {

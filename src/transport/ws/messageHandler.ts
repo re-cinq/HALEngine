@@ -190,10 +190,21 @@ function streamSegment(
   content: string
 ): void {
   const isNew = initSegment(session, state, key, createEntry);
-  if (isNew && state.suppressOutput) sendSkip(ws, state[key]!);
+  if (isNew && state.suppressOutput) skipSuppressed(ws, session, state[key]!);
   if (isNew && !state.suppressOutput) sendUpsert(ws, state[key]!, session.entries[state[key]!]);
   appendDelta(session, state[key]!, content);
   if (!state.suppressOutput) sendDelta(ws, state[key]!, content);
+}
+
+// Stored as suppressed, so a replay on resume shows the client what it saw live and not the text a tool hid.
+function skipSuppressed(ws: WebSocket, session: ChatSession, index: number): void {
+  markSuppressed(session, index);
+  sendSkip(ws, index);
+}
+
+function markSuppressed(session: ChatSession, index: number): void {
+  const entry = session.entries[index];
+  if (entry.role === 'assistant' || entry.role === 'thinking') entry.suppressed = true;
 }
 
 function initSegment(session: ChatSession, state: StreamState, key: StateIndexKey, createEntry: EntryFactory): boolean {
@@ -238,10 +249,13 @@ function processToolResultChunk(ws: WebSocket, clientMessages: OutgoingMessage[]
 
 // Retracts what the client saw: every assistant entry sent so far is re-sent blank.
 function processSuppressChunk(ws: WebSocket, session: ChatSession, state: StreamState): void {
+  // Closed as streamed so far: an open answer is then retracted like a sent one, and what follows opens new entries.
+  commitOpenEntries(ws, session, state);
   log.debug('stream', 'suppression activated', {blankingEntries: state.sentAssistantIndices});
 
   for (const idx of state.sentAssistantIndices) {
     sendUpsert(ws, idx, {...session.entries[idx], content: ''} as SessionEntry);
+    markSuppressed(session, idx);
   }
 
   state.sentAssistantIndices = [];

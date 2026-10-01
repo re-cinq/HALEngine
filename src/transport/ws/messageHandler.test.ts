@@ -236,6 +236,78 @@ describe('the websocket message handler', () => {
 
       expect(h.frames().filter(frame => frame === 'upsert 1 assistant ""')).toHaveLength(2);
     });
+
+    it('marks a sent assistant entry it blanked as suppressed in the session, keeping its text', async () => {
+      const h = harness([text('leaked'), STOP, SUPPRESS]);
+
+      await h.send();
+
+      const [, answer] = h.session.entries;
+      expect(answer).toMatchObject({role: 'assistant', content: 'leaked', suppressed: true});
+    });
+
+    it('marks a segment opened after suppression as suppressed in the session', async () => {
+      const h = harness([SUPPRESS, text('hidden'), STOP]);
+
+      await h.send();
+
+      const [, answer] = h.session.entries;
+      expect(answer).toMatchObject({role: 'assistant', content: 'hidden', suppressed: true});
+    });
+
+    it('leaves a thinking entry the client kept seeing unmarked, and marks the blanked answer', async () => {
+      const h = harness([text('<thinking>private</thinking>said'), STOP, SUPPRESS]);
+
+      await h.send();
+
+      const [, thinking, answer] = h.session.entries;
+      expect({thinking: 'suppressed' in thinking, answer}).toMatchObject({
+        thinking: false,
+        answer: {role: 'assistant', content: 'said', suppressed: true},
+      });
+    });
+
+    it('commits and retracts an answer still open when suppression begins, and skips what follows as a new entry', async () => {
+      const h = harness([text('before'), SUPPRESS, text(' after'), STOP]);
+
+      await h.send();
+
+      const [, answer, after] = h.session.entries;
+      expect({frames: h.frames(), answer, after}).toMatchObject({
+        frames: [
+          'upsert 0 user "hello"',
+          'upsert 1 assistant ""',
+          'delta 1 "before"',
+          'commit 1',
+          'upsert 1 assistant ""',
+          'skip 2',
+          'stream_end',
+        ],
+        answer: {role: 'assistant', content: 'before', isStreaming: false, suppressed: true},
+        after: {role: 'assistant', content: ' after', suppressed: true},
+      });
+    });
+
+    it('commits a thought still open when suppression begins as the client saw it, and skips what follows', async () => {
+      const h = harness([text('<thinking>early'), SUPPRESS, text(' later</thinking>'), STOP]);
+
+      await h.send();
+
+      const [, thought, after] = h.session.entries;
+      expect({frames: h.frames(), thought, marked: 'suppressed' in thought, after}).toMatchObject({
+        frames: [
+          'upsert 0 user "hello"',
+          'upsert 1 thinking ""',
+          'delta 1 "early"',
+          'commit 1',
+          'skip 2',
+          'stream_end',
+        ],
+        thought: {role: 'thinking', content: 'early', isStreaming: false},
+        marked: false,
+        after: {role: 'thinking', content: ' later', suppressed: true},
+      });
+    });
   });
 
   describe('failures', () => {
