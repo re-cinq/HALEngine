@@ -229,8 +229,11 @@ function endSession(
   if (state.notified) return;
   state.notified = true;
 
-  // Cleared as their request is over, unless a socket that has since resumed the session holds it with its own.
-  if (held.session && holders.get(held.session) === held.socket) held.session.authHeaders = undefined;
+  // Only the socket still holding the session releases it: its credentials, and the reference that kept it alive.
+  if (held.session && holders.get(held.session) === held.socket) {
+    held.session.authHeaders = undefined;
+    holders.delete(held.session);
+  }
 
   // Only for a session the consumer was actually handed: onDisconnect is the other half of onConnect, not of a socket.
   if (!state.delivered) return;
