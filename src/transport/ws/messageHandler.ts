@@ -50,6 +50,11 @@ async function answerInTurn(
   orchestrator: ChatOrchestrator,
   validation: ValidationResult
 ): Promise<void> {
+  // Its socket closed while it waited: nobody is left to read the answer, and a session's last close took its credentials.
+  if (ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED) {
+    log.info('message', 'queued message dropped: its socket closed', {sessionId: session.sessionId});
+    return;
+  }
   try {
     await wsErrorHandler(ws, () => answerUserMessage(ws, session, orchestrator, validation));
   } finally {

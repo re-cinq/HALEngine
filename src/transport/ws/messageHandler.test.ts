@@ -1,5 +1,5 @@
 import {jest} from '@jest/globals';
-import type {WebSocket} from 'ws';
+import {WebSocket} from 'ws';
 import {createMessageHandler} from './messageHandler.js';
 import {TOOL_BUDGET_EXHAUSTED} from '../../orchestration/chatOrchestrator.js';
 import type {ChatOrchestrator} from '../../orchestration/chatOrchestrator.js';
@@ -606,7 +606,11 @@ const afterPendingWork = () => new Promise(resolve => setImmediate(resolve));
 // Each run answers with its own number and then waits at its gate, so a test decides when it ends.
 const gated = (runs: number) => {
   const sent: OutgoingMessage[] = [];
-  const ws = {send: (raw: string) => sent.push(JSON.parse(raw) as OutgoingMessage)} as unknown as WebSocket;
+  const socket = {
+    readyState: WebSocket.OPEN as number,
+    send: (raw: string) => sent.push(JSON.parse(raw) as OutgoingMessage),
+  };
+  const ws = socket as unknown as WebSocket;
   const gates = Array.from({length: runs}, () => deferred());
   const handed: SessionEntry[][] = [];
   const processMessageStream = async function* (session: ChatSession): AsyncGenerator<MessageChunk> {
@@ -623,6 +627,9 @@ const gated = (runs: number) => {
     session,
     handed,
     release: (run: number) => gates[run].release(),
+    close: () => {
+      socket.readyState = WebSocket.CLOSED;
+    },
     frames: () => wire(sent),
     send: (raw: unknown) => handle(ws, session, raw),
   };
@@ -722,5 +729,20 @@ describe('one message at a time per session', () => {
       queuedBeforeAnyAwait,
       asked: entries.filter(entry => entry.role === 'user').map(entry => ('content' in entry ? entry.content : '')),
     }).toEqual({queuedBeforeAnyAwait: 3, asked: ['A', 'B', 'C']});
+  });
+
+  it('drops a queued message whose socket closed before its turn, without asking the model or recording it', async () => {
+    const h = gated(2);
+    const sends = [h.send(userMessage('A')), h.send(userMessage('B'))];
+    await afterPendingWork();
+    h.close();
+    h.release(0);
+    await Promise.all(sends);
+
+    const {entries} = h.session;
+    expect({
+      asked: h.handed.length,
+      entries: entries.map(entry => `${entry.role} ${'content' in entry ? entry.content : ''}`),
+    }).toEqual({asked: 1, entries: ['user A', 'assistant answer 0']});
   });
 });
