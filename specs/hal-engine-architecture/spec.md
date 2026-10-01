@@ -91,6 +91,8 @@ interface SessionStore<T extends BaseSession = ChatSession> {
   save?(session: T): Awaitable<void>;
   /** The user's most recently active session the store still holds, so a connect that names none can continue it (specs/hal-engine-session-resume/spec.md). */
   latestFor?(userId: string | number): Awaitable<T | undefined>;
+  /** Tells an expired session from a missing one; `missing` is always a permitted answer, and a store without it behaves as `get` (specs/hal-engine-session-resume/spec.md). */
+  lookup?(sessionId: string): Awaitable<SessionLookup<T>>;
 }
 ```
 

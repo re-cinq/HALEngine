@@ -80,3 +80,16 @@ db.hal_sessions.createIndex({userId: 1, updatedAt: -1});
 `InMemorySessionStore` has no `save` to stamp, so it goes by a session's newest entry, or its
 creation for a session with none, and never returns one that has aged out. A store you write
 yourself can leave `latestFor` out, in which case such a connect simply starts a new session.
+
+## Lookup
+
+`lookup(sessionId)` is optional. It answers one of three things: `{status: 'active', session}`,
+`{status: 'expired', userId}`, which carries the owner's id so ownership can be checked and never
+the conversation, or `{status: 'missing'}`. `missing` is always a permitted answer, and leaving
+`lookup` out behaves exactly as before: resume reads `get`, and a failed resume reads `unknown`.
+
+`lookup` reports a lifetime decision rather than making one: `maxAgeMs` is a memory bound, not a
+retention period, and a tombstone index of ids a store no longer holds is rejected, so an expired
+session is reported once and then forgotten. `InMemorySessionStore` implements it that way.
+`MongoSessionStore` does not implement it: its documents do not expire, and one that
+`eraseOlderThan` removed reads `unknown`.

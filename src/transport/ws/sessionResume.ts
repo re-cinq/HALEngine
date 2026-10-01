@@ -1,6 +1,6 @@
 import type {WebSocket} from 'ws';
 import type {ChatSession, SessionEntry} from '../../types/session.js';
-import type {Awaitable, SessionStore} from '../../types/sessionStore.js';
+import type {SessionLookup, SessionStore} from '../../types/sessionStore.js';
 import type {ConnectedMessage} from '../../types/messages.js';
 import {sendSkip, sendUpsert} from './sender.js';
 import {log} from '../../shared/logger.js';
@@ -24,48 +24,81 @@ interface Requester {
   userId: string | number;
 }
 
+type ResumeFailure = NonNullable<ConnectedMessage['resumeFailure']>;
+
+/** The session rejoined, or, for a named id that was not, why. */
+export interface ResumeOutcome {
+  session?: ChatSession;
+  failure?: ResumeFailure;
+}
+
 // Only the requester's own session is rejoined; a miss, a store failure and a not-yours all read as no resume.
 export async function resumableSession(
   store: SessionStore,
   requester: Requester,
   options?: SessionResumeOptions
-): Promise<ChatSession | undefined> {
-  const stored = await storedSession(store, requester, options);
-  return stored !== undefined && String(stored.userId) === String(requester.userId) ? stored : undefined;
+): Promise<ResumeOutcome> {
+  const found = await storedSession(store, requester, options);
+  if (found === undefined) return {};
+  if (found.status === 'active' && isOwnedBy(found, requester)) return {session: found.session};
+  // The latest-session default names no id, so there is no failure to report.
+  if (requester.requestedSessionId === undefined) return {};
+  return {failure: failureOf(found, requester)};
 }
 
 async function storedSession(
   store: SessionStore,
   requester: Requester,
   options: SessionResumeOptions | undefined
-): Promise<ChatSession | undefined> {
+): Promise<SessionLookup | undefined> {
   try {
     return await lookUp(store, requester, options);
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     log.error('ws', 'session lookup failed', {userId: requester.userId, error: reason});
-    return undefined;
+    return {status: 'missing'};
   }
 }
 
 // A named id first; with none, the user's latest session, unless resume asks for none or the client asked for a new one.
-function lookUp(
+async function lookUp(
   store: SessionStore,
   {requestedSessionId, startNewSession, userId}: Requester,
   options: SessionResumeOptions | undefined
-): Awaitable<ChatSession | undefined> {
-  if (requestedSessionId !== undefined) return store.get(requestedSessionId);
+): Promise<SessionLookup | undefined> {
+  if (requestedSessionId !== undefined) return named(store, requestedSessionId);
   if (!options?.enabled || !options.latest || startNewSession) return undefined;
-  return store.latestFor?.(userId);
+  return asLookup(await store.latestFor?.(userId));
+}
+
+// One read per attempt: the store's lookup when it has one, else its get, which can only tell active from missing.
+async function named(store: SessionStore, sessionId: string): Promise<SessionLookup> {
+  if (store.lookup) return store.lookup(sessionId);
+  return asLookup(await store.get(sessionId));
+}
+
+function asLookup(session: ChatSession | undefined): SessionLookup {
+  return session === undefined ? {status: 'missing'} : {status: 'active', session};
+}
+
+// `expired` tells the owner their session aged out; told to anyone else, it would reveal that the id exists.
+function failureOf(found: SessionLookup, requester: Requester): ResumeFailure {
+  return found.status === 'expired' && isOwnedBy(found, requester) ? 'expired' : 'unknown';
+}
+
+function isOwnedBy(found: Exclude<SessionLookup, {status: 'missing'}>, {userId}: Requester): boolean {
+  const owner = found.status === 'active' ? found.session.userId : found.userId;
+  return String(owner) === String(userId);
 }
 
 // Absent when resume is off, so a connected frame is byte-for-byte what it was before resume existed.
 export function resumeFields(
   options: SessionResumeOptions | undefined,
-  resumed: ChatSession | undefined
-): Pick<ConnectedMessage, 'resumed' | 'entryCount'> {
+  {session, failure}: ResumeOutcome
+): Pick<ConnectedMessage, 'resumed' | 'entryCount' | 'resumeFailure'> {
   if (!options?.enabled) return {};
-  return resumed ? {resumed: true, entryCount: resumed.entries.length} : {resumed: false};
+  if (session) return {resumed: true, entryCount: session.entries.length};
+  return failure === undefined ? {resumed: false} : {resumed: false, resumeFailure: failure};
 }
 
 // A suppressed entry is replayed as a skip: the client sees the conversation it saw live, never the text a tool hid.

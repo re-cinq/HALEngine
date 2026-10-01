@@ -19,6 +19,8 @@ export interface ConnectedMessage {
   examplePrompts: string[];
   resumed?: boolean;
   entryCount?: number;
+  /** Why a named id was not rejoined: `expired` only for the session's own owner, `unknown` for every other case. */
+  resumeFailure?: 'expired' | 'unknown';
 }
 
 export interface EntryUpsertMessage {
