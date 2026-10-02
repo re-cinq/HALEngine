@@ -30,10 +30,12 @@ export interface ExtWebSocket extends WebSocket {
 export interface ConnectionHandlerDeps {
   wsAuth: WsAuthenticator;
   sessionStore: SessionStore;
+  /** `signal` is the connection's own, aborted when its socket closes (specs/hal-engine-abandon-on-close/spec.md). */
   handleMessage: (
     ws: WebSocket,
     session: import('../../types/session.js').ChatSession,
-    rawMessage: unknown
+    rawMessage: unknown,
+    signal?: AbortSignal
   ) => Promise<void>;
   basePath: string;
   onConnect?: (session: import('../../types/session.js').ChatSession, connection: ConnectInfo) => void | Promise<void>;
@@ -110,6 +112,8 @@ async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[]
   let sessionId = uuidv4();
   const state = {closed: false, settled: false, notified: false, delivered: false};
   const held: {session?: ChatSession; socket: ExtWebSocket} = {socket: ws};
+  // One per connection, not per message or session: a close abandons the turn in flight and every message queued behind it.
+  const connection = new AbortController();
 
   ws.on('error', (error: Error) => {
     log.error('ws', 'connection error', {sessionId, error: error.message});
@@ -120,6 +124,8 @@ async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[]
   });
 
   ws.on('close', () => {
+    // First, so the turn stops before the session is torn down and before onDisconnect.
+    connection.abort();
     state.closed = true;
     log.info('ws', 'disconnected', {sessionId});
     if (state.settled) endSession(deps, sessionId, state, held);
@@ -194,7 +200,7 @@ async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[]
       return;
     }
     log.info('ws', 'message received', {sessionId, type: (parsed as Record<string, unknown>).type as string});
-    deps.handleMessage(ws, session, parsed);
+    deps.handleMessage(ws, session, parsed, connection.signal);
   });
 
   ws.resume();

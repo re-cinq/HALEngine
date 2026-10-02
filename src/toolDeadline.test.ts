@@ -1,6 +1,8 @@
 import {jest} from '@jest/globals';
+import {getEventListeners} from 'node:events';
 import type {AddressInfo} from 'node:net';
 import {createChatOrchestrator} from './orchestration/chatOrchestrator.js';
+import {collectText} from './orchestration/orchestratorHelpers.js';
 import type {ChatOrchestratorOptions, OrchestratorHooks} from './orchestration/chatOrchestrator.js';
 import {ToolRegistry} from './orchestration/tools/registry.js';
 import type {ToolContext, ToolExecutor} from './orchestration/tools/registry.js';
@@ -62,11 +64,17 @@ function registryOf(tools: Record<string, ToolExecutor>): ToolRegistry {
 }
 
 // One turn whose single tool round asks for `calls`; `state.settled` flips once the turn has ended.
-function turn(calls: ToolCall[], tools: Record<string, ToolExecutor>, options: ChatOrchestratorOptions = {}) {
+function turn(
+  calls: ToolCall[],
+  tools: Record<string, ToolExecutor>,
+  options: ChatOrchestratorOptions = {},
+  signal?: AbortSignal
+) {
   const {provider, sent} = toolRound(calls);
   const session = sessionAsking();
   const promptBuilder = new PromptBuilder({identity: 'Deadline test.'});
-  const reply = createChatOrchestrator(provider, promptBuilder, registryOf(tools), options).processMessage(session);
+  const orchestrator = createChatOrchestrator(provider, promptBuilder, registryOf(tools), options);
+  const reply = collectText(orchestrator.processMessageStream(session, {signal}));
   const state = {settled: false};
   void reply.then(() => (state.settled = true));
   return {reply, state, session, sent};
@@ -325,6 +333,79 @@ describe('a deadline set through createHalEngine', () => {
     expect({last: seen.at(-1), errors: seen.filter(type => type === 'error')}).toEqual({
       last: 'stream_end',
       errors: [],
+    });
+  });
+});
+
+describe('a run abandoned during its tool round', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  // A turn whose one tool hangs, its run abandoned once the tool has been called; no fake time passes.
+  const abandonedWhileHanging = async (options: ChatOrchestratorOptions = {}) => {
+    const run = new AbortController();
+    const contexts: Array<ToolContext | undefined> = [];
+    const hangs: ToolExecutor = async (_input, context) => {
+      contexts.push(context);
+      return never();
+    };
+    const t = turn([call('c1', 'lookup')], {lookup: hangs}, options, run.signal);
+    await jest.advanceTimersByTimeAsync(0);
+    run.abort();
+    await jest.advanceTimersByTimeAsync(0);
+    return {...t, run, contexts};
+  };
+
+  it("aborts each call's context signal when its run is abandoned, the signal still the call's own", async () => {
+    const t = await abandonedWhileHanging();
+
+    const [context] = t.contexts;
+    expect({aborted: context?.signal?.aborted, own: context?.signal !== t.run.signal}).toEqual({
+      aborted: true,
+      own: true,
+    });
+  });
+
+  it('ends the round at once when its run is abandoned while a tool hangs, with a deadline or with none', async () => {
+    const bounded = await abandonedWhileHanging();
+    const unbounded = await abandonedWhileHanging({toolTimeoutMs: 0});
+
+    expect({
+      settled: [bounded.state.settled, unbounded.state.settled],
+      providerCalls: [bounded.sent.length, unbounded.sent.length],
+    }).toEqual({settled: [true, true], providerCalls: [1, 1]});
+  });
+
+  it('leaves no abort listener on the run signal once its calls have settled', async () => {
+    const run = new AbortController();
+    const fast = {first: async () => 'one', second: async () => 'two'};
+    const t = turn([call('c1', 'first'), call('c2', 'second')], fast, {}, run.signal);
+
+    await t.reply;
+
+    expect({listeners: getEventListeners(run.signal, 'abort').length}).toEqual({listeners: 0});
+  });
+
+  it('records nothing the round produced once its run is abandoned, and asks the provider nothing more', async () => {
+    const run = new AbortController();
+    const card = {role: 'assistant' as const, content: 'a card', timestamp: 't', isStreaming: false};
+    const shows: ToolExecutor = async () => ({
+      result: 'shown',
+      clientMessages: [{type: 'entry_upsert', index: 0, entry: card}],
+    });
+    const t = turn([call('c1', 'show'), call('c2', 'lookup')], {show: shows, lookup: never}, {}, run.signal);
+    await jest.advanceTimersByTimeAsync(0);
+    run.abort();
+    await t.reply;
+
+    expect({entries: t.session.entries, providerCalls: t.sent.length}).toEqual({
+      entries: sessionAsking().entries,
+      providerCalls: 1,
     });
   });
 });

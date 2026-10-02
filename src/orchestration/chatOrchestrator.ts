@@ -30,6 +30,8 @@ const DEFAULT_TOOL_TIMEOUT_MS = 30_000;
 // Node fires a timer at once when its delay exceeds this, so a longer deadline is held here instead.
 const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
 const TIMED_OUT = Symbol('timed out');
+const ABANDONED = Symbol('abandoned');
+type Stop = typeof TIMED_OUT | typeof ABANDONED;
 
 export interface OrchestratorHooks {
   beforeSession?: (session: ChatSession) => Promise<void>;
@@ -57,7 +59,8 @@ export const TOOL_BUDGET_EXHAUSTED = 'tool_budget_exhausted';
 
 export interface ChatOrchestrator {
   processMessage(session: ChatSession): Promise<string>;
-  processMessageStream(session: ChatSession): AsyncGenerator<MessageChunk>;
+  /** Aborting `signal` abandons the run: no further provider or tool call, no error and no `onError` (specs/hal-engine-abandon-on-close/spec.md). */
+  processMessageStream(session: ChatSession, options?: {signal?: AbortSignal}): AsyncGenerator<MessageChunk>;
 }
 
 export interface ChatOrchestratorOptions {
@@ -94,7 +97,7 @@ export function createChatOrchestrator(
       return collectText(this.processMessageStream(session));
     },
 
-    async *processMessageStream(session: ChatSession): AsyncGenerator<MessageChunk> {
+    async *processMessageStream(session: ChatSession, options?: {signal?: AbortSignal}): AsyncGenerator<MessageChunk> {
       try {
         if (hooks?.beforeSession) await hooks.beforeSession(session);
 
@@ -113,13 +116,16 @@ export function createChatOrchestrator(
         const messages: Message[] = toMessages(session.entries, contextConfig);
         let totalUsage: UsageMetadata | undefined;
         let responseText = '';
+        const signal = options?.signal;
 
         // Bounded by the budget gate below, not the header: maxToolRounds executed rounds, maxToolRounds + 1 provider calls.
         for (let round = 0; ; round++) {
           log.info('orchestrator', 'starting round', {round});
           const pendingToolCalls: ToolCall[] = [];
 
-          const outcome = yield* streamRound(provider, {messages, systemPrompt, tools}, pendingToolCalls);
+          const outcome = yield* streamRound(provider, {messages, systemPrompt, tools, signal}, pendingToolCalls);
+          // Abandoned mid-round: the provider stopped on the signal, and what it left half-done is not acted on.
+          if (signal?.aborted) return;
           responseText += outcome.text;
           totalUsage = accumulateUsage(totalUsage, outcome.usage);
 
@@ -135,8 +141,11 @@ export function createChatOrchestrator(
             pendingToolCalls,
             messages,
             session,
-            withDeadline(toolCallRunner(toolRegistry!, session, hooks?.beforeToolCall), toolTimeoutMs)
+            withDeadline(toolCallRunner(toolRegistry!, session, hooks?.beforeToolCall), toolTimeoutMs, signal),
+            signal
           );
+          // Abandoned while its tools ran: no provider call follows, so nothing they returned is read.
+          if (signal?.aborted) return;
           log.info('orchestrator', 'tool execution complete', {
             clientMessageCount: clientMessages.length,
             clientMessageTypes: clientMessages.map(m => m.type),
@@ -154,6 +163,8 @@ export function createChatOrchestrator(
 
         if (hooks?.afterModelResponse) await hooks.afterModelResponse(session, responseText, totalUsage);
       } catch (error) {
+        // Abandoned by its caller: what the abort caused is no failure, and nobody is left to tell.
+        if (options?.signal?.aborted) return;
         if (hooks?.onError) {
           await hooks.onError(
             session,
@@ -302,16 +313,23 @@ function contextFor(session: ChatSession, signal: AbortSignal): ToolContext {
 }
 
 // The race is the bound, not the signal: few executors read it, so only stopping the wait guarantees the round ends.
-function withDeadline(run: ToolCallRun, toolTimeoutMs: number): (tc: ToolCall) => Promise<ToolResponse> {
+function withDeadline(
+  run: ToolCallRun,
+  toolTimeoutMs: number,
+  runSignal: AbortSignal | undefined
+): (tc: ToolCall) => Promise<ToolResponse> {
   return async tc => {
     const control = new AbortController();
-    const call = run(tc, control.signal);
-    if (toolTimeoutMs === 0) return call;
+    // The run's signal reaches the tool composed with the call's own, never in place of its deadline.
+    const call = run(tc, runSignal ? AbortSignal.any([runSignal, control.signal]) : control.signal);
+    if (toolTimeoutMs === 0 && runSignal === undefined) return call;
 
     const startedAt = Date.now();
-    const deadline = deadlineAfter(toolTimeoutMs);
-    // Promise.race has subscribed to the call, so a rejection after the deadline is handled, and a late result goes nowhere.
-    const settled = await Promise.race([call, deadline.expired]).finally(deadline.clear);
+    const stop = stopWhen(toolTimeoutMs, runSignal);
+    // Promise.race has subscribed to the call, so a rejection after the stop is handled, and a late result goes nowhere.
+    const settled = await Promise.race([call, stop.stopped]).finally(stop.clear);
+    // Read by nobody: an abandoned run ends with this round, and no provider call follows it.
+    if (settled === ABANDONED) return {result: `The ${tc.name} call was abandoned with its turn.`};
     if (settled !== TIMED_OUT) return settled;
 
     control.abort();
@@ -322,12 +340,19 @@ function withDeadline(run: ToolCallRun, toolTimeoutMs: number): (tc: ToolCall) =
   };
 }
 
-function deadlineAfter(ms: number): {expired: Promise<typeof TIMED_OUT>; clear: () => void} {
+// Settles at the deadline, never at 0, or once the run is abandoned; clear() drops both, so neither outlives its call.
+function stopWhen(ms: number, runSignal: AbortSignal | undefined): {stopped: Promise<Stop>; clear: () => void} {
+  const listening = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const expired = new Promise<typeof TIMED_OUT>(resolve => {
-    timer = setTimeout(() => resolve(TIMED_OUT), ms);
+  const stopped = new Promise<Stop>(resolve => {
+    if (ms > 0) timer = setTimeout(() => resolve(TIMED_OUT), ms);
+    runSignal?.addEventListener('abort', () => resolve(ABANDONED), {once: true, signal: listening.signal});
   });
-  return {expired, clear: () => clearTimeout(timer)};
+  const clear = (): void => {
+    clearTimeout(timer);
+    listening.abort();
+  };
+  return {stopped, clear};
 }
 
 // A throwing policy declines its call rather than failing the turn: every tool_use must still be answered.
@@ -351,7 +376,8 @@ async function executeToolCalls(
   pendingToolCalls: ToolCall[],
   messages: Message[],
   session: ChatSession,
-  runToolCall: (tc: ToolCall) => Promise<ToolResponse>
+  runToolCall: (tc: ToolCall) => Promise<ToolResponse>,
+  signal: AbortSignal | undefined
 ): Promise<ToolExecutionResult> {
   messages.push(buildToolCallMessages(pendingToolCalls));
 
@@ -361,6 +387,8 @@ async function executeToolCalls(
       return {tc, response};
     })
   );
+  // Abandoned while they ran: the turn ends here, so nothing they produced is recorded in the session.
+  if (signal?.aborted) return {clientMessages: [], suppressOutput: false};
 
   const toolResults: ToolResultContent[] = responses.map(({tc, response}) => ({
     type: 'tool_result' as const,

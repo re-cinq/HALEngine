@@ -190,8 +190,8 @@ The AI provider streams chunks via `AsyncGenerator<MessageChunk>`. This is compo
 
 <!-- doc-block: none -- a method signature quoted out of its class to discuss its shape -->
 ```typescript
-async *processMessageStream(session: ChatSession): AsyncGenerator<MessageChunk> {
-  for await (const chunk of provider.sendMessage({messages, systemPrompt, tools})) {
+async *processMessageStream(session: ChatSession, options?: {signal?: AbortSignal}): AsyncGenerator<MessageChunk> {
+  for await (const chunk of provider.sendMessage({messages, systemPrompt, tools, signal: options?.signal})) {
     yield chunk;
   }
 }

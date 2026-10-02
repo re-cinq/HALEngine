@@ -267,11 +267,22 @@ ws.send(
 );
 ```
 
+## When a Socket Closes Mid-Answer
+
+Closing a socket abandons the turn it started, whether the user left, the socket missed a heartbeat or the server called `stop()`. The run stops pulling from the model, a message queued behind it is dropped, and no `stream_end` follows, since nobody is left to read it. `afterSession` still fires; `afterModelResponse` and `onError` do not, since there is no finished answer and an abort is not a failure. The session keeps the answer as it stood, committed and flagged `truncated`, so a client that resumes the session sees it cut off.
+
+What else stops depends on what the turn was doing:
+
+- **The model.** On Bedrock the vendor stops sending. On Vertex the request runs to completion at the vendor and only the engine stops reading, so the whole answer still crosses the transfer boundary (see [implementing a provider](implementing-a-provider.md#cancellation)).
+- **Tools.** A tool call is abandoned at once and its `context.signal` is aborted: pass the signal to `fetch` and its request stops too. A tool that ignores it keeps running unobserved.
+
+**Deploys.** `stop()` closes every socket, so stopping the server abandons every turn in flight. Drain connections first during a rolling restart if those turns matter.
+
 ## Session Resume
 
 By default every connection gets a new, empty session. With `transport: {resume: {enabled: true}}`, a client that reconnects can get its conversation back: it opens `{basePath}/ws?sessionId=<id>` with the `sessionId` from its last `connected` frame. The server rejoins that conversation only if it belongs to the connection's authenticated user, answers `resumed: true` with an `entryCount`, and replays each stored entry as an `entry_upsert` at its index, or as an `entry_skip` for one a tool suppressed. Any other id, whether another user's, one never issued or one the store no longer holds, gets a fresh session and `resumed: false`, and the three are indistinguishable. The id is not a credential: it is checked against the user your `WsAuthenticator` returned.
 
-An answer still streaming when the client reconnects, because its turn is running on the connection that dropped, is replayed finished and flagged `truncated`. The rest of that turn still goes to the old connection (re-cinq/HALEngine#49).
+An answer still streaming when the client reconnects, because its turn is running on the connection that dropped, is replayed finished and flagged `truncated`. The rest of that turn goes to the old connection until the server sees it close, which abandons the turn (see [When a Socket Closes Mid-Answer](#when-a-socket-closes-mid-answer)).
 
 **Hooks.** `onConnect` and `onDisconnect` fire per connection, not per conversation: a resumed conversation gets its own `onConnect`, with `{resumed: true}` as its second argument, and the connection it replaced can report `onDisconnect` after that. The two come in exact pairs, both only for a connection that was handed its session, so to know when a conversation has no connection left, count them per session id. With resume on, do not erase a conversation in `onDisconnect`, as the `0.4.0` upgrade note suggests for consumers who relied on erase-on-close: the conversation erased may be the one a reconnect has just rejoined. Bound retention through the store instead.
 

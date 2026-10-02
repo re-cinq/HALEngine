@@ -166,6 +166,47 @@ describe('the websocket connection handler', () => {
     });
   });
 
+  describe('the connection signal', () => {
+    it('hands every message on a connection the same signal, and each connection its own', async () => {
+      const first = harness();
+      const second = harness();
+      first.connect();
+      second.connect();
+      await settle();
+
+      first.receive(JSON.stringify({type: 'ping', timestamp: 1}));
+      first.receive(JSON.stringify({type: 'ping', timestamp: 2}));
+      second.receive(JSON.stringify({type: 'ping', timestamp: 3}));
+
+      const {calls: firstCalls} = first.handleMessage.mock;
+      const {calls: secondCalls} = second.handleMessage.mock;
+      const [one, two, other] = [...firstCalls, ...secondCalls].map(call => call[3]);
+      expect({isSignal: one instanceof AbortSignal, shared: one === two, own: one !== other}).toEqual({
+        isSignal: true,
+        shared: true,
+        own: true,
+      });
+    });
+
+    it('aborts the connection signal when its socket closes, before onDisconnect is called', async () => {
+      const abortedAtDisconnect: unknown[] = [];
+      const handed: {signal?: AbortSignal} = {};
+      const {connect, receive, close, handleMessage} = harness({
+        onDisconnect: () => void abortedAtDisconnect.push(handed.signal?.aborted),
+      });
+      connect();
+      await settle();
+      receive(JSON.stringify({type: 'ping', timestamp: 1}));
+      const {calls} = handleMessage.mock;
+      handed.signal = calls[0]?.[3] as AbortSignal | undefined;
+      const beforeClose = handed.signal?.aborted;
+
+      close();
+
+      expect({beforeClose, abortedAtDisconnect}).toEqual({beforeClose: false, abortedAtDisconnect: [true]});
+    });
+  });
+
   describe('inbound frames', () => {
     it('answers unparseable JSON with INVALID_FORMAT alone and never dispatches it', async () => {
       const {connect, sent, receive, handleMessage} = harness();
