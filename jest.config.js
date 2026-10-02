@@ -43,8 +43,8 @@ export default {
     'src/orchestration/': {statements: 88.3, branches: 80.85, functions: 92, lines: 87.91},
     'src/orchestration/tools/': {statements: 66.66, branches: 56.25, functions: 71.42, lines: 70.83},
     'src/infrastructure/stores/': {statements: 100, branches: 100, functions: 100, lines: 100},
-    'src/providers/vertex/': {statements: 87.95, branches: 74.64, functions: 93.33, lines: 91.78},
-    'src/providers/mock/': {statements: 100, branches: 78.57, functions: 100, lines: 100},
-    global: {statements: 71.48, branches: 64.82, functions: 68.57, lines: 71.9},
+    'src/providers/vertex/': {statements: 89.13, branches: 77.21, functions: 93.75, lines: 92.5},
+    'src/providers/mock/': {statements: 100, branches: 81.25, functions: 100, lines: 100},
+    global: {statements: 90.95, branches: 82.92, functions: 89.74, lines: 91.54},
   },
 };

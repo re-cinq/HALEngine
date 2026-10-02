@@ -1,6 +1,6 @@
 import {jest} from '@jest/globals';
-import type {ResponseSchema} from '../../types/ai.js';
-import {collectChunks, userMessage} from '../providerTestSupport.js';
+import type {MessageChunk, ResponseSchema} from '../../types/ai.js';
+import {collectAbortingAfter, collectChunks, userMessage} from '../providerTestSupport.js';
 
 // @jest/globals types a bare jest.fn() as taking no arguments; these name what the assertions read back.
 interface VertexRequest {
@@ -41,10 +41,25 @@ const defaultConfig: VertexConfig = {
   maxTokens: 1024,
 };
 
+// The SDK's own shape: the stream, plus the promise it drains a copy of that stream into.
+function streamResult(responses: Record<string, unknown>[], response: Promise<unknown> = Promise.resolve({})) {
+  return {stream: streamFrom(responses), response};
+}
+
 async function* streamFrom(responses: Record<string, unknown>[]): AsyncGenerator<Record<string, unknown>> {
   for (const r of responses) {
     yield r;
   }
+}
+
+const textChunk = (text: string): Record<string, unknown> => ({candidates: [{content: {parts: [{text}]}}]});
+
+// Serves `result` as the SDK's answer to a consumer that aborts as soon as the first chunk arrives.
+function abortAfterFirstChunk(result: Promise<unknown>): Promise<MessageChunk[]> {
+  mockGenerateContentStream.mockReturnValueOnce(result);
+  const controller = new AbortController();
+  const stream = createVertexProvider(defaultConfig).sendMessage({...userMessage('count'), signal: controller.signal});
+  return collectAbortingAfter(stream, controller, 1);
 }
 
 beforeEach(() => {
@@ -58,15 +73,15 @@ beforeEach(() => {
 describe('createVertexProvider', () => {
   describe('sendMessage', () => {
     it('streams text chunks from Vertex AI response', async () => {
-      mockGenerateContentStream.mockResolvedValue({
-        stream: streamFrom([
+      mockGenerateContentStream.mockResolvedValue(
+        streamResult([
           {candidates: [{content: {parts: [{text: 'Hello '}]}}]},
           {
             candidates: [{content: {parts: [{text: 'world'}]}, finishReason: 'STOP'}],
             usageMetadata: {promptTokenCount: 5, candidatesTokenCount: 2, totalTokenCount: 7},
           },
-        ]),
-      });
+        ])
+      );
 
       const provider = createVertexProvider(defaultConfig);
       const chunks = await collectChunks(provider.sendMessage(userMessage('hi')));
@@ -79,8 +94,8 @@ describe('createVertexProvider', () => {
     });
 
     it('yields tool_use chunks for function calls', async () => {
-      mockGenerateContentStream.mockResolvedValue({
-        stream: streamFrom([
+      mockGenerateContentStream.mockResolvedValue(
+        streamResult([
           {
             candidates: [
               {
@@ -92,8 +107,8 @@ describe('createVertexProvider', () => {
               },
             ],
           },
-        ]),
-      });
+        ])
+      );
 
       const provider = createVertexProvider(defaultConfig);
       const params = userMessage('weather in Berlin');
@@ -113,9 +128,9 @@ describe('createVertexProvider', () => {
     });
 
     it('maps MAX_TOKENS finish reason', async () => {
-      mockGenerateContentStream.mockResolvedValue({
-        stream: streamFrom([{candidates: [{content: {parts: [{text: 'truncated'}]}, finishReason: 'MAX_TOKENS'}]}]),
-      });
+      mockGenerateContentStream.mockResolvedValue(
+        streamResult([{candidates: [{content: {parts: [{text: 'truncated'}]}, finishReason: 'MAX_TOKENS'}]}])
+      );
 
       const provider = createVertexProvider(defaultConfig);
       const chunks = await collectChunks(provider.sendMessage(userMessage('long request')));
@@ -161,12 +176,9 @@ describe('createVertexProvider', () => {
     });
 
     it('skips chunks with no candidate parts', async () => {
-      mockGenerateContentStream.mockResolvedValue({
-        stream: streamFrom([
-          {candidates: [{}]},
-          {candidates: [{content: {parts: [{text: 'ok'}]}, finishReason: 'STOP'}]},
-        ]),
-      });
+      mockGenerateContentStream.mockResolvedValue(
+        streamResult([{candidates: [{}]}, {candidates: [{content: {parts: [{text: 'ok'}]}, finishReason: 'STOP'}]}])
+      );
 
       const provider = createVertexProvider(defaultConfig);
       const chunks = await collectChunks(provider.sendMessage(userMessage('test')));
@@ -178,9 +190,9 @@ describe('createVertexProvider', () => {
     });
 
     it('maps assistant role to model for Vertex API', async () => {
-      mockGenerateContentStream.mockResolvedValue({
-        stream: streamFrom([{candidates: [{content: {parts: [{text: 'reply'}]}, finishReason: 'STOP'}]}]),
-      });
+      mockGenerateContentStream.mockResolvedValue(
+        streamResult([{candidates: [{content: {parts: [{text: 'reply'}]}, finishReason: 'STOP'}]}])
+      );
 
       const provider = createVertexProvider(defaultConfig);
       await collectChunks(
@@ -197,6 +209,51 @@ describe('createVertexProvider', () => {
       const [[request]] = mockGenerateContentStream.mock.calls;
       const roles = request.contents.map((content: {role: string}) => content.role);
       expect(roles).toEqual(['user', 'model', 'user']);
+    });
+
+    it('stops yielding once its signal aborts between chunks, so an abort after the first of three leaves one', async () => {
+      const received = await abortAfterFirstChunk(
+        Promise.resolve(streamResult([textChunk('one '), textChunk('two '), textChunk('three')]))
+      );
+
+      expect(received).toEqual([{type: 'text', text: 'one '}]);
+    });
+
+    it('raises no AIError when the stream fails after its signal aborted', async () => {
+      async function* failsAfterFirst(): AsyncGenerator<Record<string, unknown>> {
+        yield textChunk('one ');
+        throw new Error('socket hang up');
+      }
+
+      const received = await abortAfterFirstChunk(
+        Promise.resolve({stream: failsAfterFirst(), response: Promise.resolve({})})
+      );
+
+      expect(received).toEqual([{type: 'text', text: 'one '}]);
+    });
+
+    it('sends nothing to Vertex when its signal is already aborted', async () => {
+      const provider = createVertexProvider(defaultConfig);
+      const chunks = await collectChunks(provider.sendMessage({...userMessage('hi'), signal: AbortSignal.abort()}));
+
+      const {calls} = mockGenerateContentStream.mock;
+      expect({chunks, requests: calls.length}).toEqual({chunks: [], requests: 0});
+    });
+
+    it('observes the SDK response promise, so its rejection never becomes an unhandled rejection', async () => {
+      const unhandled: unknown[] = [];
+      const record = (reason: unknown) => void unhandled.push(reason);
+      process.on('unhandledRejection', record);
+      mockGenerateContentStream.mockImplementationOnce(async () =>
+        streamResult([textChunk('partial')], Promise.reject(new Error('the drained copy failed')))
+      );
+
+      const provider = createVertexProvider(defaultConfig);
+      const chunks = await collectChunks(provider.sendMessage(userMessage('hi')));
+      await new Promise(resolve => setTimeout(resolve, 20));
+      process.off('unhandledRejection', record);
+
+      expect({chunks, unhandled: unhandled.length}).toEqual({chunks: [{type: 'text', text: 'partial'}], unhandled: 0});
     });
   });
 
