@@ -12,21 +12,85 @@ on:
       - 'specs/**'
       - 'teams/**'
       - '.specify/**'
+      # Tests are the other half of every spec citation: Lore resolves each
+      # ([validated by](path#Lnn)) against them. A test-only change must
+      # re-ingest, or a renamed test outlives itself in the index.
+      - '**/*.test.ts'
+      # Fixture suites are the gate tests' inputs - "does the first thing", a
+      # deliberately skipped case - and must never enter the index as coverage.
+      - '!scripts/fixtures/**'
+  # Manual backfill. The push trigger above only ever carries a diff, so
+  # context that predates this workflow - everything the repo already had at
+  # onboarding - is invisible to it. A dispatch sends the full tracked context
+  # instead.
+  workflow_dispatch:
+
+# Both jobs POST to Lore with their own token; from the repo they read only.
+permissions:
+  contents: read
 
 jobs:
   ingest:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
 
-      - name: Get changed files
+      - name: Collect context files
         id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          # --no-renames: a moved file must arrive as its old path (a delete)
-          # plus its new path, or the old path's chunks outlive the file.
-          FILES=$(git diff --name-only --no-renames HEAD~1 HEAD | jq -R -s -c 'split("\n") | map(select(. != ""))')
+          # A dispatch runs on whichever ref was picked, and the endpoint has no
+          # notion of a branch - backfilling from a feature branch would land
+          # that branch's content as the repo's canonical context.
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] && [ "${REF_NAME}" != "${DEFAULT_BRANCH}" ]; then
+            echo "::error::a backfill must run on ${DEFAULT_BRANCH}, not ${REF_NAME} - context was NOT ingested"
+            exit 1
+          fi
+          # Kept in step with the push paths filter above. Bare directory
+          # pathspecs match recursively, and one that matches nothing is not an
+          # error, so a repo without runbooks/ needs no guard here. An array,
+          # quoted at the point of use: the test glob and the exclude are single
+          # pathspecs for git to interpret, and word-splitting a flat string
+          # would hand the shell a glob to expand against the working tree first.
+          CONTEXT_PATHS=(
+            CLAUDE.md
+            AGENTS.md
+            adrs
+            runbooks
+            specs
+            teams
+            .specify
+            # Ingesting no tests is how every one of this repo's spec citations
+            # was reported as file-missing: Lore held the specs and nothing to
+            # resolve them against.
+            '*.test.ts'
+            ':(exclude)scripts/fixtures/**'
+          )
+          # A root commit has no HEAD~1, where the bare diff below exited 128
+          # and took the step down under `bash -e` - which is how the very first
+          # push, the one carrying the whole corpus, ingested nothing. Treat it
+          # like a dispatch and send everything.
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || ! git rev-parse --verify --quiet HEAD~1 >/dev/null; then
+            echo "Backfilling the full tracked context (event: ${EVENT_NAME})"
+            # Scoped to CONTEXT_PATHS deliberately: the diff arm below reports
+            # whatever the commit touched and lets Lore filter, but a backfill
+            # unscoped would ship the entire tree.
+            FILES=$(git ls-files -- "${CONTEXT_PATHS[@]}" | jq -R -s -c 'split("\n") | map(select(. != ""))')
+          else
+            # --no-renames: a moved file must arrive as its old path (a delete)
+            # plus its new path, or the old path's chunks outlive the file.
+            # ls-files cannot stand in for this arm: a backfill lists what
+            # exists, but an incremental push must also report what was deleted.
+            # Same exclusion as the backfill: this arm reports whatever the
+            # commit touched, so a commit carrying both a spec and a fixture
+            # would file the fixture's test names as coverage.
+            FILES=$(git diff --name-only --no-renames HEAD~1 HEAD -- ':(exclude)scripts/fixtures/**' | jq -R -s -c 'split("\n") | map(select(. != ""))')
+          fi
           echo "files=${FILES}" >> "$GITHUB_OUTPUT"
 
       - name: Notify Lore to ingest
@@ -36,10 +100,13 @@ jobs:
           LORE_INGEST_URL: ${{ secrets.LORE_INGEST_URL || vars.LORE_INGEST_URL || vars.LORE_API_URL }}
           FILES: ${{ steps.changes.outputs.files }}
         run: |
-          # Misconfiguration (unset URL) is a hard error - a missing var must
-          # never silently fall back and report success.
+          # Actions masks secrets automatically but not repository variables, and this
+          # value may arrive as either - mask it so the endpoint cannot reach the log.
+          if [ -n "${LORE_INGEST_URL}" ]; then echo "::add-mask::${LORE_INGEST_URL}"; fi
+          # Misconfiguration (unset URL) is a hard error - a missing secret or
+          # variable must never silently fall back and report success.
           if [ -z "${LORE_INGEST_URL}" ]; then
-            echo "::error::LORE_INGEST_URL repository variable or secret is not set - context was NOT ingested"
+            echo "::error::LORE_INGEST_URL is not set as a repository secret or variable - context was NOT ingested"
             exit 1
           fi
           # Same class of misconfiguration: an unset token means every POST is
@@ -83,7 +150,7 @@ jobs:
           # like the unset checks above. TLS failures (exit 35/51/60) stay in
           # the warn arm below: cert rotation windows are genuinely transient.
           if [ "${CURL_EXIT}" = "3" ] || [ "${CURL_EXIT}" = "6" ]; then
-            echo "::error::curl could not reach ${LORE_INGEST_URL} (exit ${CURL_EXIT}) - context was NOT ingested"
+            echo "::error::curl could not reach the configured Lore endpoint (exit ${CURL_EXIT}) - context was NOT ingested"
             exit 1
           fi
           case "${HTTP_STATUS}" in
@@ -109,7 +176,7 @@ jobs:
     steps:
       # Full history: the delta is a diff against the last commit Lore
       # ingested, which a shallow clone cannot reach.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -118,11 +185,25 @@ jobs:
         env:
           LORE_INGEST_TOKEN: ${{ secrets.LORE_INGEST_TOKEN }}
           LORE_INGEST_URL: ${{ secrets.LORE_INGEST_URL || vars.LORE_INGEST_URL || vars.LORE_API_URL }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          # Misconfiguration (unset URL) is a hard error - a missing var must
-          # never silently fall back and report success.
+          # Same rail as the ingest job: this posts the checked-out tree, so a
+          # dispatch from a feature branch would project that branch into the
+          # graph.
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] && [ "${REF_NAME}" != "${DEFAULT_BRANCH}" ]; then
+            echo "::error::a backfill must run on ${DEFAULT_BRANCH}, not ${REF_NAME} - specs and ADRs were NOT projected"
+            exit 1
+          fi
+          # Actions masks secrets automatically but not repository variables, and this
+          # value may arrive as either - mask it so the endpoint cannot reach the log.
+          # A mask holds for the rest of the job, so it covers the next step too.
+          if [ -n "${LORE_INGEST_URL}" ]; then echo "::add-mask::${LORE_INGEST_URL}"; fi
+          # Misconfiguration (unset URL) is a hard error - a missing secret or
+          # variable must never silently fall back and report success.
           if [ -z "${LORE_INGEST_URL}" ]; then
-            echo "::error::LORE_INGEST_URL repository variable or secret is not set - specs and ADRs were NOT projected"
+            echo "::error::LORE_INGEST_URL is not set as a repository secret or variable - specs and ADRs were NOT projected"
             exit 1
           fi
           # Same class of misconfiguration: an unset token means every POST is
@@ -135,8 +216,10 @@ jobs:
           # always matches the server's ingest contract. A fetch that fails is
           # plausibly transient - warn and rely on the next doc push, which
           # diffs from the last commit Lore ingested and so catches up.
+          # No -S: curl's own error names the bare host, which the mask on the
+          # full URL does not cover.
           for artifact in linux-amd64 checksums.txt; do
-            if ! curl -fsSL "${LORE_INGEST_URL}/dist/lore-code-trace/${artifact}" -o "${artifact}"; then
+            if ! curl -fsL "${LORE_INGEST_URL}/dist/lore-code-trace/${artifact}" -o "${artifact}"; then
               echo "::warning::lore-code-trace (${artifact}) could not be fetched from Lore - specs and ADRs were NOT projected (transient - next doc push retries)"
               rm -f linux-amd64 checksums.txt
               exit 0
@@ -155,6 +238,7 @@ jobs:
         env:
           LORE_INGEST_TOKEN: ${{ secrets.LORE_INGEST_TOKEN }}
           LORE_API_URL: ${{ secrets.LORE_INGEST_URL || vars.LORE_INGEST_URL || vars.LORE_API_URL }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           # A binary older than the docs subcommand ignores the argument and
           # runs the repository's tests instead. Printing the selection proves
@@ -163,4 +247,11 @@ jobs:
             echo "::error::the lore-code-trace Lore serves has no docs subcommand - specs and ADRs were NOT projected"
             exit 1
           fi
-          ./lore-code-trace docs --post
+          # A push sends the delta since the last commit Lore ingested. A
+          # dispatch is the manual backfill: --force sends every spec and ADR
+          # and has Lore re-project them even where the content is unchanged.
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            ./lore-code-trace docs --post --force
+          else
+            ./lore-code-trace docs --post
+          fi
