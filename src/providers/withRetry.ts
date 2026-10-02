@@ -28,7 +28,8 @@ export function withRetry(provider: AIProvider, policy: RetryPolicy = {}): AIPro
       for (let attempt = 1; attempt <= p.maxAttempts; attempt++) {
         if (attempt > 1) await applyBackoff(attempt, lastError, p);
 
-        const iter = provider.sendMessage(params);
+        const attemptControl = new AbortController();
+        const iter = provider.sendMessage({...params, signal: attemptSignal(attemptControl, params.signal)});
         let firstChunkHandedOff = false;
 
         try {
@@ -39,7 +40,6 @@ export function withRetry(provider: AIProvider, policy: RetryPolicy = {}): AIPro
             firstTimeout.cancel();
           } catch (err) {
             firstTimeout.cancel();
-            void iter.return(undefined);
             if (!(err instanceof AIError)) throw err;
             if (err.code === 'TIMEOUT') {
               // eslint-disable-next-line re-lint/no-flag-params -- AIError's retryable flag; see adrs/ADR-006-lint-suppressions.md
@@ -61,6 +61,9 @@ export function withRetry(provider: AIProvider, policy: RetryPolicy = {}): AIPro
           if (firstChunkHandedOff) throw err;
           if (!(err instanceof AIError) || !err.retryable) throw err;
           lastError = err;
+        } finally {
+          // However the attempt ended (failed, timed out, finished or dropped by a consumer that stopped reading), it is released before the next starts.
+          abandon(iter, attemptControl);
         }
       }
 
@@ -91,6 +94,17 @@ async function applyBackoff(attempt: number, lastError: AIError | undefined, p: 
   await sleep(wait);
 }
 
+// The caller's own signal still reaches the provider: it is composed with the attempt's, never replaced by it.
+function attemptSignal(attemptControl: AbortController, callerSignal: AbortSignal | undefined): AbortSignal {
+  return callerSignal ? AbortSignal.any([callerSignal, attemptControl.signal]) : attemptControl.signal;
+}
+
+// Aborting first stops the vendor request of a provider that honours the signal and fires any once-listener it left; return() then releases the generator.
+function abandon(iter: AsyncGenerator<MessageChunk>, attemptControl: AbortController): void {
+  attemptControl.abort();
+  void iter.return(undefined);
+}
+
 async function* streamWithIdleTimeout(
   iter: AsyncGenerator<MessageChunk>,
   idleChunkTimeoutMs: number
@@ -103,7 +117,6 @@ async function* streamWithIdleTimeout(
       idleTimeout.cancel();
     } catch (err) {
       idleTimeout.cancel();
-      void iter.return(undefined);
       throw err;
     }
     if (nextResult.done) return;

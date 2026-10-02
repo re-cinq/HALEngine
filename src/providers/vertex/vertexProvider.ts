@@ -46,6 +46,9 @@ export function createVertexProvider(config: VertexConfig): AIProvider {
 
   return {
     async *sendMessage(params: SendMessageParams): AsyncGenerator<MessageChunk> {
+      // The SDK cannot cancel a request once sent, so this check is the only one that keeps the conversation from the vendor.
+      if (params.signal?.aborted) return;
+
       log.info('vertex', 'sending message', {
         modelId: config.modelId,
         messageCount: params.messages.length,
@@ -59,8 +62,12 @@ export function createVertexProvider(config: VertexConfig): AIProvider {
         }
 
         const streamResult = await model.generateContentStream(request);
+        // The SDK drains a copy of the stream into this promise; left unobserved, its rejection would end the process.
+        streamResult.response.catch(ignoreRejection);
 
+        // @google-cloud/vertexai 1.10.4 has no per-call abort, so an abort stops this read loop while the vendor request runs on.
         for await (const chunk of streamResult.stream) {
+          if (params.signal?.aborted) return;
           const candidate = chunk.candidates?.[0];
           if (!candidate?.content?.parts) continue;
 
@@ -78,6 +85,11 @@ export function createVertexProvider(config: VertexConfig): AIProvider {
           }
         }
       } catch (error) {
+        // An abort is the engine's own decision, not a vendor failure, so it ends the stream instead of raising.
+        if (params.signal?.aborted) {
+          log.info('vertex', 'request aborted');
+          return;
+        }
         log.error('vertex', 'stream error', {error: error instanceof Error ? error.message : 'Unknown'});
         throw mapVertexError(error);
       }
@@ -117,6 +129,11 @@ export function createVertexProvider(config: VertexConfig): AIProvider {
       }
     },
   };
+}
+
+// The stream loop already reports the same failure, so the drained copy's rejection carries nothing new.
+function ignoreRejection(): undefined {
+  return undefined;
 }
 
 // A part can carry text and a function call at once, so it maps to 0, 1 or 2 chunks.

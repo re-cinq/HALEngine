@@ -10,6 +10,20 @@ export async function collectChunks(stream: AsyncGenerator<MessageChunk>): Promi
   return chunks;
 }
 
+/** Drains a stream like a consumer that walks away: `controller` is aborted once `count` chunks have arrived. */
+export async function collectAbortingAfter(
+  stream: AsyncGenerator<MessageChunk>,
+  controller: AbortController,
+  count: number
+): Promise<MessageChunk[]> {
+  const chunks: MessageChunk[] = [];
+  for await (const chunk of stream) {
+    chunks.push(chunk);
+    if (chunks.length === count) controller.abort();
+  }
+  return chunks;
+}
+
 /** One user turn with a fixed system prompt - the smallest valid request. */
 export function userMessage(content: string): SendMessageParams {
   return {
