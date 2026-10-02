@@ -40,8 +40,8 @@ export default {
   // because its denominator grew: vertex, mock and global rose, orchestration and its tools fell.
   // That is a finer instrument reading the same suite, which is why these two moved down.
   coverageThreshold: {
-    'src/orchestration/': {statements: 88.3, branches: 80.85, functions: 92, lines: 87.91},
-    'src/orchestration/tools/': {statements: 66.66, branches: 56.25, functions: 71.42, lines: 70.83},
+    'src/orchestration/': {statements: 96.46, branches: 91.08, functions: 97.4, lines: 96.69},
+    'src/orchestration/tools/': {statements: 88.88, branches: 85.71, functions: 88.88, lines: 91.66},
     'src/infrastructure/stores/': {statements: 100, branches: 100, functions: 100, lines: 100},
     'src/providers/vertex/': {statements: 89.13, branches: 77.21, functions: 93.75, lines: 92.5},
     'src/providers/mock/': {statements: 100, branches: 81.25, functions: 100, lines: 100},

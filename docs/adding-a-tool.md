@@ -130,7 +130,20 @@ A `ToolExecutor` is an async function that takes the tool input and returns eith
 type ToolExecutor = (input: Record<string, unknown>, context?: ToolContext) => Promise<string | ToolResponse>;
 ```
 
-The optional `context` provides `userId`, `sessionId`, `workspaceId`, and `authHeaders` for tools that need to make authenticated API calls.
+The optional `context` provides `userId`, `sessionId`, `workspaceId`, and `authHeaders` for tools that need to make authenticated API calls, and `signal`, which the orchestrator aborts when it abandons the call at its `toolTimeoutMs` deadline. Pass it to `fetch`, or to whatever client your tool uses, so the call's own request stops too:
+
+<!-- doc-block: none -- an executor a reader writes against their own API, which this package does not ship -->
+```typescript
+const getOrder: ToolExecutor = async (input, context) => {
+  const response = await fetch(`https://api.example.com/orders/${String(input.order_id)}`, {
+    headers: {authorization: context?.authHeaders?.authorization ?? ''},
+    signal: context?.signal,
+  });
+  return JSON.stringify(await response.json());
+};
+```
+
+A tool that ignores the signal is still bounded, since the orchestrator stops waiting at the deadline either way, but its request keeps running, and keeps sending whatever it carries, after the round has moved on.
 
 - Return `JSON.stringify(result)` for most tools -- the result gets added to the conversation as a tool result message
 - Cast input fields from `unknown` to their declared types — the registry has already validated that required fields are present, types match, and enum values are in range, so a cast is safe
@@ -165,7 +178,8 @@ Once a tool is registered, the following work without any additional code:
 - `chatOrchestrator.ts` calls `toolRegistry.getDefinitions()` to pass all tools to the AI provider
 - When the provider returns a `tool_use` chunk, the message handler creates a `ToolEntry` and sends it via `entry_upsert`
 - The orchestrator executes all pending tool calls in parallel with `Promise.all()`
-- Before each executor runs, a consumer's `beforeToolCall` hook may decline the call: its returned `ToolResponse` takes the executor's place, the model reads its `result` as that call's `tool_result`, and a hook that throws declines the call rather than failing the turn. This is the seam for a human-oversight control; the wording of a declined result is yours
+- Each call has `toolTimeoutMs` (default `30000`) to settle. A call still running then is abandoned: its `signal` is aborted, the model receives a `tool_result` saying the tool did not answer within the deadline, and the round's other calls keep their results. `toolTimeoutMs: 0` waits forever
+- Before each executor runs, a consumer's `beforeToolCall` hook may decline the call: its returned `ToolResponse` takes the executor's place, the model reads its `result` as that call's `tool_result`, and a hook that throws declines the call rather than failing the turn. This is the seam for a human-oversight control; the wording of a declined result is yours. The policy's time counts toward the call's `toolTimeoutMs`, so a policy that waits on a person needs a larger one, or 0, and a call abandoned while its policy is still deciding is never started
 - Tool results are added to the conversation, and the provider is re-queried: at most `maxToolRounds` tool rounds are executed, and the provider is called at most `maxToolRounds + 1` times. A round the model asks for once the budget is spent is not executed, and the turn ends
 
 **On the client:**

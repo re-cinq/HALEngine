@@ -139,6 +139,7 @@ interface HalEngineConfig {
   };
   orchestrator?: {
     maxToolRounds?: number; // Max tool rounds executed (default: 5); at most maxToolRounds + 1 provider calls
+    toolTimeoutMs?: number; // Abandon a tool call after this many ms, answering the model with a timeout result (default: 30000; 0 = no deadline)
     contextConfig?: Partial<ContextConfig>;
   };
   onConnect?: (session, {resumed}) => void | Promise<void>; // Fire-and-forget; never awaited; resumed: rejoined a stored conversation

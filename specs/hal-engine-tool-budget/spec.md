@@ -2,7 +2,7 @@
 
 | Field  | Value                |
 | ------ | -------------------- |
-| Issue  | re-cinq/HALEngine#56, re-cinq/HALEngine#57 |
+| Issue  | re-cinq/HALEngine#56, re-cinq/HALEngine#57, re-cinq/HALEngine#50 |
 | Status | Implemented          |
 
 The tool loop used to run `round <= maxToolRounds`, which is six iterations at the default of five, and the sixth executed tools whose results no provider call would ever read: the results were pushed onto `messages`, the loop ended, and the generator returned. Real data was fetched and paid for, and the model never saw it. `maxToolRounds` is now a gate immediately before tool execution rather than the loop's own condition, so every executed round is read by a following provider call.
@@ -44,6 +44,29 @@ The tool loop used to run `round <= maxToolRounds`, which is six iterations at t
 - If a tool earlier in the turn suppressed the assistant response, the sentence is written into the session but announced only with `entry_skip`, with no `entry_delta`; suppression stays sticky for the whole stream ([validated by: writes the sentence into the session but only skips it on the wire under suppression](../../src/transport/ws/messageHandler.test.ts#L587)).
 - The hook cannot buy another round; a consumer that wants more sets `maxToolRounds` higher ([validated by: fires once with the budget and the refused round's tools at maxToolRounds 2](../../src/orchestration/toolBudget.test.ts#L173)).
 
+## A deadline per call
+
+- `toolTimeoutMs`, on `ChatOrchestratorOptions` and `HalEngineConfig.orchestrator`, bounds each call and defaults to `30000`: a call that has not settled by then is abandoned and answered with a `tool_result` for its `toolUseId` that names the tool and the deadline, since both provider mappers require every `tool_use` to be answered, and its `ToolContext.signal` is aborted at that moment ([validated by: answers a call that never settles at toolTimeoutMs with a result naming the tool and the deadline, and aborts its signal](../../src/toolDeadline.test.ts#L92)).
+- The other calls in the round are unaffected: a fast call's result reaches the next provider call unchanged, and the round ends at the deadline ([validated by: returns a fast call beside a timed-out one unchanged, ending the round at the deadline](../../src/toolDeadline.test.ts#L109)).
+- The deadline covers a `beforeToolCall` policy and the executor together, so a policy that never answers cannot hold the round either ([validated by: bounds a beforeToolCall policy that never answers by the same deadline](../../src/toolDeadline.test.ts#L145)).
+- A call abandoned while its `beforeToolCall` policy is still deciding is never started afterwards, whatever the policy then answers: the model has already been told the call returned nothing, so starting it would act behind the model's back, and twice if the model calls it again ([validated by: never starts the executor of a call abandoned while its beforeToolCall policy was still deciding](../../src/toolDeadline.test.ts#L157)).
+- Each call gets its own `ToolContext` with its own `AbortSignal`, so a tool that changes a context field no longer affects the other calls in its round; `authHeaders` stays one shared object ([validated by: hands each call in a round its own context and signal, while authHeaders stays one shared object](../../src/toolDeadline.test.ts#L126)).
+- Nothing from the call's input reaches the timeout result or any log line: the one `warn`, `tool call timed out`, carries the tool name and the elapsed milliseconds only ([validated by: keeps the call input out of the timeout result and every log line, the timeout line naming only the tool and the elapsed time](../../src/toolDeadline.test.ts#L178)).
+- A call that rejects after the deadline does not become an unhandled rejection ([validated by: handles a call that rejects after the deadline, so it never becomes an unhandled rejection](../../src/toolDeadline.test.ts#L205)).
+- A call that resolves after the deadline is discarded with its client messages, so the session gains no entry from it ([validated by: discards a call that resolves after the deadline, its client messages included](../../src/toolDeadline.test.ts#L227)).
+- Every deadline timer is cleared when its call settles first ([validated by: clears every deadline timer when the calls settle first](../../src/toolDeadline.test.ts#L247)).
+- `toolTimeoutMs: 0` disables the deadline and restores the unbounded wait, for a tool that legitimately runs long ([validated by: waits without a deadline when toolTimeoutMs is 0](../../src/toolDeadline.test.ts#L255)).
+- A negative or non-finite value falls back to the default rather than dropping the backstop ([validated by: falls back to the 30000 ms default for a negative or non-finite toolTimeoutMs](../../src/toolDeadline.test.ts#L263)).
+- A value beyond `2^31 - 1` ms, the longest delay Node can schedule, is held at that ceiling, because Node would otherwise fire the timer at once ([validated by: holds a toolTimeoutMs beyond the longest delay Node can schedule at that ceiling instead of firing at once](../../src/toolDeadline.test.ts#L276)).
+- `HalEngineConfig.orchestrator.toolTimeoutMs` reaches the orchestrator ([validated by: forwards orchestrator.toolTimeoutMs, so a call that never settles is abandoned at the configured deadline](../../src/toolDeadline.test.ts#L307)).
+- **NIS-2 Article 21.** A tool that never answers still ends its turn with `stream_end`, never an `error` frame, instead of holding the socket open on a turn that will not end ([validated by: ends a turn whose tool never answers with stream_end over the WebSocket, never an error](../../src/toolDeadline.test.ts#L318)).
+
+### Rationale
+
+`maxToolRounds` counts rounds, and a call that never returns never reaches the next one, so the round bound says nothing about time; hence a second bound. The default matches `withRetry`'s `firstChunkTimeoutMs` and is three times the 10000 ms a tool's own HTTP client would typically allow a request, so a well-behaved tool fails first, with its own error; this backstop only fires for a tool that has no deadline of its own or ignores it. That is also why the bound is the race and not the signal: few executors read the signal, and one that does not would hold the round open regardless.
+
+**GDPR.** Abandoning a call reduces downstream transmission only for a tool that honours its signal, by passing it to `fetch` or its HTTP client. A tool that ignores it keeps running after the round has stopped listening, and keeps sending whatever identifiers its request carries; the engine can stop waiting for it, not stop it.
+
 ## Why this is not a header change to `<`
 
 - Changing the loop header from `<=` to `<` would remove the wasted execution but also the useful sixth provider call that reads round five's results, so the model would only ever see four rounds. Gating execution keeps six provider calls, which five rounds need, and drops only the sixth execution, the one nobody reads ([validated by: executes 5 tool rounds and makes 6 provider calls at the default budget](../../src/orchestration/toolBudget.test.ts#L95)).
@@ -51,7 +74,8 @@ The tool loop used to run `round <= maxToolRounds`, which is six iterations at t
 ## Compatibility
 
 - No exported type, signature or name changes, but the behaviour does: a consumer whose tool has a side effect in the final, unread round stops seeing that round execute. That is breaking by meaning rather than by type, so the bump is MINOR with the change stated in the release notes, and a consumer relying on the old count restores it by raising `maxToolRounds` by one ([validated by: executes 2 tool rounds and makes 3 provider calls at maxToolRounds 2](../../src/orchestration/toolBudget.test.ts#L89)).
+- The deadline is breaking by meaning in the same way: a tool call used to be awaited for as long as it took, and is now abandoned at 30000 ms. A consumer with a tool that legitimately runs longer raises `toolTimeoutMs` or sets it to 0, which restores the old wait at once, so no deprecation window is needed ([validated by: waits without a deadline when toolTimeoutMs is 0](../../src/toolDeadline.test.ts#L255)).
 
 ## Out of scope
 
-The user-facing sentence itself and routing an exhausted turn to a human, which belong to the consumer; failing over to a second provider; a `stopReason` taxonomy, since `tool_budget_exhausted` is the first engine-normalized value and provider strings otherwise pass through; summing usage across rounds, which touches the same loop; an unknown tool name and input the schema rejects, both about one call failing rather than a call not being made; and per-tool or per-turn cost budgets and a whole-turn deadline.
+The user-facing sentence itself and routing an exhausted turn to a human, which belong to the consumer; failing over to a second provider; a `stopReason` taxonomy, since `tool_budget_exhausted` is the first engine-normalized value and provider strings otherwise pass through; summing usage across rounds, which touches the same loop; an unknown tool name and input the schema rejects, both about one call failing rather than a call not being made; and per-tool or per-turn cost budgets and a whole-turn deadline. For the per-call deadline: a deadline per tool, since one number covers every tool and an executor can bound itself more tightly; retrying a timed-out call, which the model decides within the round budget; rolling back a downstream write an abandoned call started; and abandoning a run when its socket closes, re-cinq/HALEngine#49, which composes with this signal rather than replacing the deadline.

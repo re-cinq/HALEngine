@@ -38,7 +38,7 @@ A `ToolExecutor` can return either a plain `string` or a `ToolResponse`:
 type ToolExecutor = (input: Record<string, unknown>, context?: ToolContext) => Promise<string | ToolResponse>;
 ```
 
-`context` carries the session the call belongs to -- `userId`, `sessionId`, `workspaceId`, and the `authHeaders` forwarded from the WebSocket upgrade, so a tool can proxy the caller's credentials upstream.
+`context` carries the session the call belongs to -- `userId`, `sessionId`, `workspaceId`, and the `authHeaders` forwarded from the WebSocket upgrade, so a tool can proxy the caller's credentials upstream. It also carries a `signal` of its own, aborted when the orchestrator abandons the call at its `toolTimeoutMs` deadline.
 
 The registry normalizes both forms internally via `normalizeToolResponse()`, so downstream code always sees a `ToolResponse`.
 

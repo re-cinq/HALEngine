@@ -19,6 +19,8 @@ export interface ToolContext {
     authorization?: string;
     host?: string;
   };
+  /** Aborted when the orchestrator abandons this call at its `toolTimeoutMs` deadline; pass it to `fetch` so the call's own request stops too. */
+  signal?: AbortSignal;
 }
 
 export type ToolExecutor = (input: Record<string, unknown>, context?: ToolContext) => Promise<string | ToolResponse>;
