@@ -277,8 +277,17 @@ function toolCallRunner(
   return async (tc, signal) => {
     const declined =
       beforeToolCall && toolRegistry.has(tc.name) ? await consultPolicy(beforeToolCall, session, tc) : undefined;
-    return declined ?? toolRegistry.execute(tc.name, tc.input, contextFor(session, signal));
+    if (declined) return declined;
+    // A policy can answer after the deadline, when the model has already been told this call returned nothing.
+    if (signal.aborted) return skipAbandoned(tc);
+    return toolRegistry.execute(tc.name, tc.input, contextFor(session, signal));
   };
+}
+
+// Its result is read by nobody: the round already answered the model at the deadline, so this only keeps the executor from running.
+function skipAbandoned(tc: ToolCall): ToolResponse {
+  log.info('orchestrator', 'abandoned tool call not started', {tool: tc.name});
+  return {result: `The ${tc.name} call was abandoned before it started and was not performed.`};
 }
 
 // One per call, so each carries its own signal and a tool that edits a field cannot reach its siblings; authHeaders stays shared.

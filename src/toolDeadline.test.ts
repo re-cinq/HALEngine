@@ -154,6 +154,27 @@ describe('a deadline per tool call', () => {
     });
   });
 
+  it('never starts the executor of a call abandoned while its beforeToolCall policy was still deciding', async () => {
+    let executions = 0;
+    const counted: ToolExecutor = async () => {
+      executions++;
+      return 'found';
+    };
+    const approvesLate: OrchestratorHooks = {
+      beforeToolCall: () =>
+        new Promise<undefined>(resolve => setTimeout(() => resolve(undefined), DEFAULT_DEADLINE_MS + 50)),
+    };
+    const t = turn([call('c1', 'lookup')], {lookup: counted}, {hooks: approvesLate});
+
+    await jest.advanceTimersByTimeAsync(DEFAULT_DEADLINE_MS + 50);
+
+    expect({reply: await t.reply, executions, results: resultsSent(t.sent)}).toEqual({
+      reply: 'Done.',
+      executions: 0,
+      results: [{type: 'tool_result', toolUseId: 'c1', content: timeoutResult('lookup', DEFAULT_DEADLINE_MS)}],
+    });
+  });
+
   it('keeps the call input out of the timeout result and every log line, the timeout line naming only the tool and the elapsed time', async () => {
     const written: string[] = [];
     const keepLine = (_category: string, message: string, fields?: Record<string, unknown>) =>
