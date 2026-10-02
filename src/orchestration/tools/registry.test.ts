@@ -103,12 +103,6 @@ describe('ToolRegistry.execute — input validation', () => {
     }).toEqual({firstRejectsAlpha: true, secondRejectsBeta: true});
   });
 
-  it('throws for an unregistered tool name', async () => {
-    const registry = new ToolRegistry();
-
-    await expect(registry.execute('ghost', {})).rejects.toThrow('Unknown tool: ghost');
-  });
-
   it('does not include the rejected field value in the returned text or any log line', async () => {
     const capturedLines: string[] = [];
     const capture = (_: string, msg: string, fields?: Record<string, unknown>): void =>
@@ -133,3 +127,117 @@ describe('ToolRegistry.execute — input validation', () => {
     }).toEqual({rejectionNamesField: true, hasIdentifyingValue: false});
   });
 });
+
+describe('ToolRegistry.execute — a tool name the model invented', () => {
+  it('answers an unregistered name with a result naming it and every registered tool, instead of throwing', async () => {
+    const response = await registryWith('get_weather', 'list_locations').execute('nope', {});
+
+    const absent = ['nope', 'get_weather', 'list_locations'].filter(name => !response.result.includes(name));
+    expect({response, absent}).toEqual({response: {result: expect.any(String)}, absent: []});
+  });
+
+  it('says that no tools are registered when the registry is empty, ending in no empty list', async () => {
+    const {result} = await new ToolRegistry().execute('nope', {});
+
+    expect(result).toBe("There is no tool named 'nope', and no tools are registered.");
+  });
+
+  it('bounds an invented name to 64 characters in its answer and in its one warn line, under tool', async () => {
+    const lines = recordLog();
+
+    const {result} = await registryWith('get_weather').execute('x'.repeat(200), {});
+
+    const longestRun = Math.max(...(result.match(/x+/g) ?? ['']).map(run => run.length));
+    expect({longestRun, warns: lines.warn}).toEqual({
+      longestRun: 64,
+      warns: [{category: 'tool', message: 'tool not found', name: 'x'.repeat(64)}],
+    });
+  });
+});
+
+describe('ToolRegistry.execute — an executor that throws', () => {
+  it('answers an executor that rejects with a result naming the tool, never the thrown message', async () => {
+    const response = await throwing('get_weather', new Error('ECONNREFUSED 10.0.0.4:8080')).execute('get_weather', {});
+
+    const leaks = ['ECONNREFUSED', '10.0.0.4'].filter(text => response.result.includes(text));
+    expect({response, leaks}).toEqual({response: {result: expect.stringContaining('get_weather')}, leaks: []});
+  });
+
+  it('answers a throw of any shape alike: a string, undefined, a plain object, an object with no prototype', async () => {
+    const thrown: unknown[] = ['boom', undefined, {code: 500}, Object.create(null)];
+
+    const responses = await Promise.all(thrown.map(value => throwing('get_weather', value).execute('get_weather', {})));
+
+    expect(responses).toEqual(thrown.map(() => ({result: 'The get_weather tool failed and returned no result.'})));
+  });
+
+  it('logs a throw once, at error under tool, with the tool name and error type, its message cut to 500 characters', async () => {
+    const lines = recordLog();
+
+    await throwing('get_weather', new TypeError('y'.repeat(2000))).execute('get_weather', {});
+
+    expect(lines.error).toEqual([
+      {
+        category: 'tool',
+        message: 'tool executor threw',
+        name: 'get_weather',
+        errorType: 'TypeError',
+        error: 'y'.repeat(500),
+      },
+    ]);
+  });
+});
+
+describe('ToolRegistry.execute — what reaches the model and the log', () => {
+  it('keeps every value of the call input out of the answer and the log, for an invented name and a throwing executor', async () => {
+    const lines = recordLog();
+    const input = {location: 'Berlin', fullName: 'Ada Example'};
+
+    const invented = await registryWith('get_weather').execute('nope', input);
+    const crashed = await throwing('get_weather', new Error('failed')).execute('get_weather', input);
+
+    const everything = [invented.result, crashed.result, ...lines.all].join('\n');
+    expect({leaks: ['Berlin', 'Ada'].filter(value => everything.includes(value))}).toEqual({leaks: []});
+  });
+
+  it('still rejects a null input a caller slipped past a schema that accepts anything, a caller bug and not the model', async () => {
+    const registry = new ToolRegistry();
+    registry.register({name: 'anything', description: 'Accepts anything.', inputSchema: {}}, async () => 'ok');
+
+    await expect(registry.execute('anything', null as unknown as Record<string, unknown>)).rejects.toThrow(TypeError);
+  });
+});
+
+// One registered tool per name, each answering 'ok'.
+function registryWith(...names: string[]): ToolRegistry {
+  const registry = new ToolRegistry();
+  for (const name of names) {
+    registry.register({name, description: `The ${name} tool.`, inputSchema: {type: 'object'}}, async () => 'ok');
+  }
+  return registry;
+}
+
+// One registered tool whose executor throws `thrown`, whatever its shape.
+function throwing(name: string, thrown: unknown): ToolRegistry {
+  const registry = new ToolRegistry();
+  registry.register({name, description: `The ${name} tool.`, inputSchema: {type: 'object'}}, async () => {
+    throw thrown;
+  });
+  return registry;
+}
+
+// Every line the call logged, and the warn and error lines on their own.
+function recordLog(): {warn: Array<Record<string, unknown>>; error: Array<Record<string, unknown>>; all: string[]} {
+  const lines = {
+    warn: [] as Array<Record<string, unknown>>,
+    error: [] as Array<Record<string, unknown>>,
+    all: [] as string[],
+  };
+  const into = (level?: 'warn' | 'error') => (category: string, message: string, fields?: Record<string, unknown>) => {
+    const line = {category, message, ...fields};
+    lines.all.push(JSON.stringify(line));
+    if (level) lines[level].push(line);
+  };
+  setLogger({debug: into(), info: into(), warn: into('warn'), error: into('error')});
+  return lines;
+}
