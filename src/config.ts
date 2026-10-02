@@ -43,6 +43,8 @@ export interface HalEngineConfig {
   };
   orchestrator?: {
     maxToolRounds?: number;
+    /** How long one tool call may take before it is abandoned and answered with a timeout result; default 30000, and 0 waits forever. */
+    toolTimeoutMs?: number;
     contextConfig?: Partial<ContextConfig>;
     /** Lifecycle hooks: called before and after each phase of processing a user message. */
     hooks?: OrchestratorHooks;
@@ -72,6 +74,7 @@ export function createHalEngine(config: HalEngineConfig): HalEngine {
   const promptBuilder = new PromptBuilder(config.prompt);
   const orchestrator = createChatOrchestrator(provider, promptBuilder, toolRegistry, {
     maxToolRounds: config.orchestrator?.maxToolRounds,
+    toolTimeoutMs: config.orchestrator?.toolTimeoutMs,
     contextConfig: config.orchestrator?.contextConfig,
     hooks: config.orchestrator?.hooks,
     sessionStore,

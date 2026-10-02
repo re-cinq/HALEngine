@@ -198,6 +198,7 @@ const engine = createHalEngine({
       maxMessages: 50,
       maxContentLength: 4000,
     },
+    toolTimeoutMs: 30_000, // Abandon a tool call after this long, answering the model with a timeout result (default 30000; 0 = no deadline)
     hooks,
   },
 

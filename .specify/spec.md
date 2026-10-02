@@ -180,7 +180,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 ### 1. Tool Execution
 
 - Tools execute only when explicitly requested by the AI model
-- Maximum tool loop iterations enforce termination (prevents infinite loops)
+- `maxToolRounds` bounds how many tool rounds run and `toolTimeoutMs` bounds how long a single call may take; together they enforce termination, since a round count alone cannot end a call that never returns
 - Tools execute in response to explicit `ToolCall` objects from the model
 - Tool results are returned to the model for incorporation into response
 - Tool failures are communicated via `ToolResultMessage` with error content
@@ -299,7 +299,7 @@ Each layer depends only on layers below it, ensuring clean separation of concern
 - `session`: Custom session store (defaults to in-memory)
 - `transport`: Port, CORS, base path, heartbeat interval
 - `auth.http`: Express middleware for HTTP endpoints
-- `orchestrator`: Max tool rounds, context config, lifecycle hooks
+- `orchestrator`: Max tool rounds, per-call tool deadline (`toolTimeoutMs`), context config, lifecycle hooks
 - `onConnect`/`onDisconnect`: Lifecycle hooks, fire-and-forget
 - `logger`: Custom logger instance
 

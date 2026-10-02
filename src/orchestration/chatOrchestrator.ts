@@ -26,6 +26,10 @@ import {appendEntry, commitStreamingEntries} from './entryMutations.js';
 import {log} from '../shared/logger.js';
 
 const DEFAULT_MAX_TOOL_ROUNDS = 5;
+const DEFAULT_TOOL_TIMEOUT_MS = 30_000;
+// Node fires a timer at once when its delay exceeds this, so a longer deadline is held here instead.
+const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
+const TIMED_OUT = Symbol('timed out');
 
 export interface OrchestratorHooks {
   beforeSession?: (session: ChatSession) => Promise<void>;
@@ -58,6 +62,8 @@ export interface ChatOrchestrator {
 
 export interface ChatOrchestratorOptions {
   maxToolRounds?: number;
+  /** How long one tool call may take before it is abandoned and answered with a timeout result; default 30000, and 0 waits forever (specs/hal-engine-tool-budget/spec.md). */
+  toolTimeoutMs?: number;
   contextConfig?: Partial<ContextConfig>;
   promptBuilderOptions?: PromptBuilderOptions;
   hooks?: OrchestratorHooks;
@@ -75,6 +81,7 @@ export function createChatOrchestrator(
   options?: ChatOrchestratorOptions
 ): ChatOrchestrator {
   const maxToolRounds = normalizeToolRounds(options?.maxToolRounds);
+  const toolTimeoutMs = normalizeToolTimeout(options?.toolTimeoutMs);
   const contextConfig = createContextConfig(options?.contextConfig);
   const toolInstructions = toolRegistry?.getPromptInstructions();
   const baseSystemPrompt = promptBuilder.build({...options?.promptBuilderOptions, toolInstructions});
@@ -128,7 +135,7 @@ export function createChatOrchestrator(
             pendingToolCalls,
             messages,
             session,
-            toolCallRunner(toolRegistry!, session, hooks?.beforeToolCall)
+            withDeadline(toolCallRunner(toolRegistry!, session, hooks?.beforeToolCall), toolTimeoutMs)
           );
           log.info('orchestrator', 'tool execution complete', {
             clientMessageCount: clientMessages.length,
@@ -171,6 +178,12 @@ export function createChatOrchestrator(
 function normalizeToolRounds(value: number | undefined): number {
   if (value === undefined || !Number.isFinite(value)) return DEFAULT_MAX_TOOL_ROUNDS;
   return Math.max(0, Math.floor(value));
+}
+
+// Only 0 opts out of the deadline; a value that is not a usable delay keeps the default rather than silently dropping it.
+function normalizeToolTimeout(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value) || value < 0) return DEFAULT_TOOL_TIMEOUT_MS;
+  return Math.min(value, MAX_TIMER_DELAY_MS);
 }
 
 // Gates execution, not the provider call: a round nobody can read is never run, and the call that read the last one already has.
@@ -253,20 +266,59 @@ function updateLastUserContent(session: ChatSession, content: string): void {
   }
 }
 
+type ToolCallRun = (tc: ToolCall, signal: AbortSignal) => Promise<ToolResponse>;
+
 // One runner per round: the policy sees each known call before its executor, and an unknown name keeps the registry's own path.
-function toolCallRunner(toolRegistry: ToolRegistry, session: ChatSession, beforeToolCall?: BeforeToolCall) {
-  const context: ToolContext = {
+function toolCallRunner(
+  toolRegistry: ToolRegistry,
+  session: ChatSession,
+  beforeToolCall?: BeforeToolCall
+): ToolCallRun {
+  return async (tc, signal) => {
+    const declined =
+      beforeToolCall && toolRegistry.has(tc.name) ? await consultPolicy(beforeToolCall, session, tc) : undefined;
+    return declined ?? toolRegistry.execute(tc.name, tc.input, contextFor(session, signal));
+  };
+}
+
+// One per call, so each carries its own signal and a tool that edits a field cannot reach its siblings; authHeaders stays shared.
+function contextFor(session: ChatSession, signal: AbortSignal): ToolContext {
+  return {
     userId: session.userId,
     sessionId: session.sessionId,
     workspaceId: session.workspaceId,
     authHeaders: session.authHeaders,
+    signal,
   };
+}
 
-  return async (tc: ToolCall): Promise<ToolResponse> => {
-    const declined =
-      beforeToolCall && toolRegistry.has(tc.name) ? await consultPolicy(beforeToolCall, session, tc) : undefined;
-    return declined ?? toolRegistry.execute(tc.name, tc.input, context);
+// The race is the bound, not the signal: few executors read it, so only stopping the wait guarantees the round ends.
+function withDeadline(run: ToolCallRun, toolTimeoutMs: number): (tc: ToolCall) => Promise<ToolResponse> {
+  return async tc => {
+    const control = new AbortController();
+    const call = run(tc, control.signal);
+    if (toolTimeoutMs === 0) return call;
+
+    const startedAt = Date.now();
+    const deadline = deadlineAfter(toolTimeoutMs);
+    // Promise.race has subscribed to the call, so a rejection after the deadline is handled, and a late result goes nowhere.
+    const settled = await Promise.race([call, deadline.expired]).finally(deadline.clear);
+    if (settled !== TIMED_OUT) return settled;
+
+    control.abort();
+    log.warn('orchestrator', 'tool call timed out', {tool: tc.name, elapsedMs: Date.now() - startedAt});
+    return {
+      result: `Tool '${tc.name}' did not answer within ${toolTimeoutMs} ms, so the call was abandoned and returned no result.`,
+    };
   };
+}
+
+function deadlineAfter(ms: number): {expired: Promise<typeof TIMED_OUT>; clear: () => void} {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<typeof TIMED_OUT>(resolve => {
+    timer = setTimeout(() => resolve(TIMED_OUT), ms);
+  });
+  return {expired, clear: () => clearTimeout(timer)};
 }
 
 // A throwing policy declines its call rather than failing the turn: every tool_use must still be answered.
