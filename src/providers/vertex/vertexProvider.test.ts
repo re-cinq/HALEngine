@@ -53,6 +53,8 @@ async function* streamFrom(responses: Record<string, unknown>[]): AsyncGenerator
 }
 
 const textChunk = (text: string): Record<string, unknown> => ({candidates: [{content: {parts: [{text}]}}]});
+const CALL = {functionCall: {name: 'lookup', args: {query: 'status'}}};
+const USAGE = {promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 15};
 
 // Serves `result` as the SDK's answer to a consumer that aborts as soon as the first chunk arrives.
 function abortAfterFirstChunk(result: Promise<unknown>): Promise<MessageChunk[]> {
@@ -93,38 +95,17 @@ describe('createVertexProvider', () => {
       ]);
     });
 
-    it('yields tool_use chunks for function calls', async () => {
+    it('yields a tool_use chunk for a function call and ends the turn tool_use, with its usage', async () => {
       mockGenerateContentStream.mockResolvedValue(
-        streamResult([
-          {
-            candidates: [
-              {
-                content: {
-                  parts: [{functionCall: {name: 'get_weather', args: {city: 'Berlin'}}}],
-                },
-                finishReason: 'STOP',
-                usageMetadata: {promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 15},
-              },
-            ],
-          },
-        ])
+        streamResult([{candidates: [{content: {parts: [CALL]}, finishReason: 'STOP'}], usageMetadata: USAGE}])
       );
 
-      const provider = createVertexProvider(defaultConfig);
-      const params = userMessage('weather in Berlin');
-      params.tools = [
-        {
-          name: 'get_weather',
-          description: 'Get weather',
-          inputSchema: {type: 'object', properties: {city: {type: 'string'}}},
-        },
-      ];
-      const chunks = await collectChunks(provider.sendMessage(params));
+      const chunks = await collectChunks(createVertexProvider(defaultConfig).sendMessage(userMessage('look it up')));
 
-      expect(chunks[0]).toEqual({
-        type: 'tool_use',
-        toolCall: {id: 'get_weather', name: 'get_weather', input: {city: 'Berlin'}},
-      });
+      expect(chunks).toEqual([
+        {type: 'tool_use', toolCall: {id: 'lookup', name: 'lookup', input: {query: 'status'}}},
+        {type: 'stop', stopReason: 'tool_use', usage: {inputTokens: 10, outputTokens: 5, totalTokens: 15}},
+      ]);
     });
 
     it('maps MAX_TOKENS finish reason', async () => {
@@ -253,7 +234,62 @@ describe('createVertexProvider', () => {
       await new Promise(resolve => setTimeout(resolve, 20));
       process.off('unhandledRejection', record);
 
-      expect({chunks, unhandled: unhandled.length}).toEqual({chunks: [{type: 'text', text: 'partial'}], unhandled: 0});
+      expect({chunks, unhandled: unhandled.length}).toEqual({
+        chunks: [
+          {type: 'text', text: 'partial'},
+          {type: 'stop', stopReason: 'end_turn', usage: undefined},
+        ],
+        unhandled: 0,
+      });
+    });
+
+    it('ends a truncated function-call turn max_tokens, so the loop never runs its call', async () => {
+      mockGenerateContentStream.mockResolvedValue(
+        streamResult([{candidates: [{content: {parts: [CALL]}, finishReason: 'MAX_TOKENS'}]}])
+      );
+
+      const chunks = await collectChunks(createVertexProvider(defaultConfig).sendMessage(userMessage('look it up')));
+
+      expect(chunks.at(-1)).toEqual({type: 'stop', stopReason: 'max_tokens', usage: undefined});
+    });
+
+    it('ends a stream that names no finish reason with one stop chunk: tool_use after a call, end_turn after text', async () => {
+      mockGenerateContentStream
+        .mockResolvedValueOnce(
+          streamResult([{candidates: [{content: {parts: [CALL]}}], usageMetadata: USAGE}, {candidates: [{}]}])
+        )
+        .mockResolvedValueOnce(streamResult([textChunk('Done.')]));
+      const provider = createVertexProvider(defaultConfig);
+
+      const afterCall = await collectChunks(provider.sendMessage(userMessage('look it up')));
+      const afterText = await collectChunks(provider.sendMessage(userMessage('say it')));
+
+      expect({afterCall: afterCall.slice(1), afterText: afterText.slice(1)}).toEqual({
+        afterCall: [{type: 'stop', stopReason: 'tool_use', usage: {inputTokens: 10, outputTokens: 5, totalTokens: 15}}],
+        afterText: [{type: 'stop', stopReason: 'end_turn', usage: undefined}],
+      });
+    });
+
+    it('ends the turn at the first finish reason, so a second one adds no stop chunk', async () => {
+      mockGenerateContentStream.mockResolvedValue(
+        streamResult([
+          {candidates: [{content: {parts: [{text: 'one'}]}, finishReason: 'STOP'}]},
+          {candidates: [{content: {parts: [{text: 'two'}]}, finishReason: 'STOP'}]},
+        ])
+      );
+
+      const chunks = await collectChunks(createVertexProvider(defaultConfig).sendMessage(userMessage('say it')));
+
+      expect(chunks).toEqual([
+        {type: 'text', text: 'one'},
+        {type: 'stop', stopReason: 'end_turn', usage: undefined},
+      ]);
+    });
+
+    it('adds no stop chunk to a stream whose signal aborted as it ended', async () => {
+      const received = await abortAfterFirstChunk(Promise.resolve(streamResult([textChunk('only')])));
+
+      expect(received).toEqual([{type: 'text', text: 'only'}]);
     });
   });
 

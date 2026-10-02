@@ -65,25 +65,7 @@ export function createVertexProvider(config: VertexConfig): AIProvider {
         // The SDK drains a copy of the stream into this promise; left unobserved, its rejection would end the process.
         streamResult.response.catch(ignoreRejection);
 
-        // @google-cloud/vertexai 1.10.4 has no per-call abort, so an abort stops this read loop while the vendor request runs on.
-        for await (const chunk of streamResult.stream) {
-          if (params.signal?.aborted) return;
-          const candidate = chunk.candidates?.[0];
-          if (!candidate?.content?.parts) continue;
-
-          yield* partChunks(candidate.content.parts);
-
-          const finishReason = candidate.finishReason;
-          if (finishReason) {
-            const stopReason =
-              finishReason === 'STOP'
-                ? 'end_turn'
-                : finishReason === 'MAX_TOKENS'
-                  ? 'max_tokens'
-                  : finishReason.toLowerCase();
-            yield {type: 'stop', stopReason, usage: extractUsage(chunk)};
-          }
-        }
+        yield* turnChunks(streamResult.stream, params.signal);
       } catch (error) {
         // An abort is the engine's own decision, not a vendor failure, so it ends the stream instead of raising.
         if (params.signal?.aborted) {
@@ -129,6 +111,37 @@ export function createVertexProvider(config: VertexConfig): AIProvider {
       }
     },
   };
+}
+
+// Exactly one stop chunk, last: at the first finish reason, or derived once the stream ends without one.
+async function* turnChunks(
+  stream: AsyncIterable<GenerateContentResponse>,
+  signal: AbortSignal | undefined
+): AsyncGenerator<MessageChunk> {
+  let endOfTurn = 'end_turn';
+  let usage: UsageMetadata | undefined;
+  // @google-cloud/vertexai 1.10.4 has no per-call abort, so an abort stops this read loop while the vendor request runs on.
+  for await (const chunk of stream) {
+    if (signal?.aborted) return;
+    usage = extractUsage(chunk) ?? usage;
+    const candidate = chunk.candidates?.[0];
+    const chunks = [...partChunks(candidate?.content?.parts ?? [])];
+    if (chunks.some(part => part.type === 'tool_use')) endOfTurn = 'tool_use';
+    yield* chunks;
+    if (candidate?.finishReason) {
+      yield {type: 'stop', stopReason: stopReasonOf(candidate.finishReason, endOfTurn), usage};
+      return;
+    }
+  }
+  if (signal?.aborted) return;
+  yield {type: 'stop', stopReason: endOfTurn, usage};
+}
+
+// The API marks a tool call with functionCall parts and finishes the turn STOP like any other, so STOP ends it as its parts did.
+function stopReasonOf(finishReason: string, endOfTurn: string): string {
+  if (finishReason === 'STOP') return endOfTurn;
+  if (finishReason === 'MAX_TOKENS') return 'max_tokens';
+  return finishReason.toLowerCase();
 }
 
 // The stream loop already reports the same failure, so the drained copy's rejection carries nothing new.

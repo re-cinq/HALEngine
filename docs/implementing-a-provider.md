@@ -28,6 +28,12 @@ reference implementation for streaming, and
 
 ## Both
 
+A turn that asks for a tool must end with `stopReason: 'tool_use'`: it is the only
+value the tool loop reads, so any other value ends the turn without running the
+tool. A vendor that marks tool calls structurally rather than through its finish
+reason, as Vertex does, needs the value derived from the `tool_use` chunks the
+provider yielded.
+
 `generateStructured` is required, not optional — returning `null` or `undefined`
 silently breaks orchestration. Until it is implemented it must keep throwing
 `AIError` with a descriptive message.
