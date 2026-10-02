@@ -40,7 +40,6 @@ export function withRetry(provider: AIProvider, policy: RetryPolicy = {}): AIPro
             firstTimeout.cancel();
           } catch (err) {
             firstTimeout.cancel();
-            abandon(iter, attemptControl);
             if (!(err instanceof AIError)) throw err;
             if (err.code === 'TIMEOUT') {
               // eslint-disable-next-line re-lint/no-flag-params -- AIError's retryable flag; see adrs/ADR-006-lint-suppressions.md
@@ -56,12 +55,15 @@ export function withRetry(provider: AIProvider, policy: RetryPolicy = {}): AIPro
 
           firstChunkHandedOff = true;
           yield firstResult.value;
-          yield* streamWithIdleTimeout(iter, p.idleChunkTimeoutMs, attemptControl);
+          yield* streamWithIdleTimeout(iter, p.idleChunkTimeoutMs);
           return;
         } catch (err) {
           if (firstChunkHandedOff) throw err;
           if (!(err instanceof AIError) || !err.retryable) throw err;
           lastError = err;
+        } finally {
+          // However the attempt ended (failed, timed out, finished or dropped by a consumer that stopped reading), it is released before the next starts.
+          abandon(iter, attemptControl);
         }
       }
 
@@ -97,7 +99,7 @@ function attemptSignal(attemptControl: AbortController, callerSignal: AbortSigna
   return callerSignal ? AbortSignal.any([callerSignal, attemptControl.signal]) : attemptControl.signal;
 }
 
-// Aborting first lets a provider that honours the signal stop the vendor request; return() then releases the generator.
+// Aborting first stops the vendor request of a provider that honours the signal and fires any once-listener it left; return() then releases the generator.
 function abandon(iter: AsyncGenerator<MessageChunk>, attemptControl: AbortController): void {
   attemptControl.abort();
   void iter.return(undefined);
@@ -105,8 +107,7 @@ function abandon(iter: AsyncGenerator<MessageChunk>, attemptControl: AbortContro
 
 async function* streamWithIdleTimeout(
   iter: AsyncGenerator<MessageChunk>,
-  idleChunkTimeoutMs: number,
-  attemptControl: AbortController
+  idleChunkTimeoutMs: number
 ): AsyncGenerator<MessageChunk> {
   while (true) {
     const idleTimeout = makeTimeout(idleChunkTimeoutMs);
@@ -116,7 +117,6 @@ async function* streamWithIdleTimeout(
       idleTimeout.cancel();
     } catch (err) {
       idleTimeout.cancel();
-      abandon(iter, attemptControl);
       throw err;
     }
     if (nextResult.done) return;

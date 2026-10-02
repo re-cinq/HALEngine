@@ -27,10 +27,12 @@ const noopGenerateStructured = async <T>(_params: StructuredOutputParams<T>): Pr
 };
 
 describe('withRetry', () => {
-  it('retries a retryable failure, aborting each failed attempt, and streams the success of the third call', async () => {
+  it('retries a retryable failure, aborting each attempt once it is over, and streams the success of the third call', async () => {
     const signals: (AbortSignal | undefined)[] = [];
+    const previousAbortedAtStart: (boolean | undefined)[] = [];
     const provider: AIProvider = {
       async *sendMessage(params: SendMessageParams): AsyncGenerator<MessageChunk> {
+        previousAbortedAtStart.push(signals.at(-1)?.aborted);
         signals.push(params.signal);
         // eslint-disable-next-line re-lint/no-flag-params -- AIError's retryable flag; see adrs/ADR-006-lint-suppressions.md
         if (signals.length < 3) throw new AIError('rate limited', 'RATE_LIMIT', true);
@@ -42,14 +44,37 @@ describe('withRetry', () => {
     const wrapped = withRetry(provider, {baseDelayMs: 0, maxDelayMs: 0});
     const chunks = await collectChunks(wrapped.sendMessage(userMessage('hi')));
 
-    expect({text: textOf(chunks), aborted: signals.map(signal => signal?.aborted)}).toEqual({
+    expect({
+      text: textOf(chunks),
+      previousAbortedAtStart,
+      abortedOnceOver: signals.map(signal => signal?.aborted),
+    }).toEqual({
       text: 'recovered',
-      aborted: [true, true, false],
+      previousAbortedAtStart: [undefined, true, true],
+      abortedOnceOver: [true, true, true],
     });
   });
 
-  it('composes a caller signal with each attempt signal, so a caller abort still reaches the provider', async () => {
+  it('composes a caller signal with each attempt signal, so a caller abort reaches the provider while its stream is live', async () => {
     const caller = new AbortController();
+    const provider: AIProvider = {
+      async *sendMessage(params: SendMessageParams): AsyncGenerator<MessageChunk> {
+        yield {type: 'text', text: 'first'};
+        yield {type: 'text', text: params.signal?.aborted ? 'aborted' : 'live'};
+      },
+      generateStructured: noopGenerateStructured,
+    };
+
+    const received: string[] = [];
+    for await (const chunk of withRetry(provider).sendMessage({...userMessage('hi'), signal: caller.signal})) {
+      received.push(chunk.type === 'text' ? chunk.text : chunk.type);
+      caller.abort();
+    }
+
+    expect(received).toEqual(['first', 'aborted']);
+  });
+
+  it('aborts the attempt when its consumer stops reading mid-stream', async () => {
     let received: AbortSignal | undefined;
     const provider: AIProvider = {
       async *sendMessage(params: SendMessageParams): AsyncGenerator<MessageChunk> {
@@ -59,14 +84,11 @@ describe('withRetry', () => {
       generateStructured: noopGenerateStructured,
     };
 
-    await collectChunks(withRetry(provider).sendMessage({...userMessage('hi'), signal: caller.signal}));
-    const beforeCallerAbort = received?.aborted;
-    caller.abort();
+    const stream = withRetry(provider).sendMessage(userMessage('hi'));
+    await stream.next();
+    await stream.return(undefined);
 
-    expect({beforeCallerAbort, afterCallerAbort: received?.aborted}).toEqual({
-      beforeCallerAbort: false,
-      afterCallerAbort: true,
-    });
+    expect({aborted: received?.aborted}).toEqual({aborted: true});
   });
 
   it('does not retry a non-retryable failure and propagates the same error unchanged', async () => {
