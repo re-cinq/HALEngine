@@ -107,8 +107,11 @@ export class ToolRegistry {
     return this.tools.has(name);
   }
 
-  /** Resolves for every call the model authored, a throwing executor's too; only a caller's malformed input rejects (specs/hal-engine-tool-executor-throw/spec.md). */
+  /** Resolves for every call the model authored, a throwing executor's too; only an input that is not an object rejects (specs/hal-engine-tool-executor-throw/spec.md). */
   async execute(name: string, input: Record<string, unknown>, context?: ToolContext): Promise<ToolResponse> {
+    const kind = kindOf(input);
+    if (kind !== 'an object') throw malformedInput(name, kind);
+
     const tool = this.tools.get(name);
     if (!tool) return missingTool(name, [...this.tools.keys()]);
 
@@ -131,6 +134,18 @@ export class ToolRegistry {
       return crashed(name, error);
     }
   }
+}
+
+// A caller's bug whatever the schema says: no provider hands the model's arguments over as anything but an object.
+function malformedInput(name: string, kind: string): TypeError {
+  return new TypeError(`Tool '${name.slice(0, MAX_NAME_IN_ANSWER)}' needs an object as input, and got ${kind}`);
+}
+
+// What an input was, for the caller's error, never its value.
+function kindOf(value: unknown): string {
+  if (value === null || value === undefined) return String(value);
+  if (Array.isArray(value)) return 'an array';
+  return typeof value === 'object' ? 'an object' : typeof value;
 }
 
 // Names each failing path and its constraint but never the value, so the model can correct the call.

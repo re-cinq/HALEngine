@@ -200,11 +200,25 @@ describe('ToolRegistry.execute — what reaches the model and the log', () => {
     expect({leaks: ['Berlin', 'Ada'].filter(value => everything.includes(value))}).toEqual({leaks: []});
   });
 
-  it('still rejects a null input a caller slipped past a schema that accepts anything, a caller bug and not the model', async () => {
-    const registry = new ToolRegistry();
-    registry.register({name: 'anything', description: 'Accepts anything.', inputSchema: {}}, async () => 'ok');
+  it('rejects an input that is not an object whatever the schema, a caller bug, naming its kind and never its value', async () => {
+    const permissive = new ToolRegistry();
+    permissive.register({name: 'lookup', description: 'Accepts anything.', inputSchema: {}}, async () => 'ok');
+    const malformed: unknown[] = [null, undefined, ['a'], 'secret-text'];
 
-    await expect(registry.execute('anything', null as unknown as Record<string, unknown>)).rejects.toThrow(TypeError);
+    const outcomes = await Promise.all(
+      [registryWith('lookup'), permissive].flatMap(registry =>
+        malformed.map(input =>
+          registry.execute('lookup', input as Record<string, unknown>).then(
+            () => 'resolved',
+            (error: Error) => `${error.name}: ${error.message}`
+          )
+        )
+      )
+    );
+
+    const kinds = ['null', 'undefined', 'an array', 'string'];
+    const rejected = kinds.map(kind => `TypeError: Tool 'lookup' needs an object as input, and got ${kind}`);
+    expect(outcomes).toEqual([...rejected, ...rejected]);
   });
 });
 
