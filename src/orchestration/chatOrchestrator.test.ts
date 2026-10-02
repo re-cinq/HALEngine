@@ -1,6 +1,14 @@
 import {createChatOrchestrator} from './chatOrchestrator.js';
 import type {OrchestratorHooks} from './chatOrchestrator.js';
-import type {AIProvider, MessageChunk, SendMessageParams, UsageMetadata} from '../types/ai.js';
+import type {
+  AIProvider,
+  Message,
+  MessageChunk,
+  SendMessageParams,
+  ToolCallContent,
+  ToolResultContent,
+  UsageMetadata,
+} from '../types/ai.js';
 import {AIError} from '../types/ai.js';
 import type {ChatSession} from '../types/session.js';
 import {PromptBuilder} from '../infrastructure/builders/promptBuilder.js';
@@ -726,6 +734,95 @@ describe('a run signal', () => {
     expect(await abortedMidStream(fails)).toEqual({outcome: 'resolved without throwing', callOrder: ['afterSession']});
   });
 });
+
+const ANSWER: MessageChunk[] = [{type: 'text', text: 'all done'}, STOP_DONE];
+
+describe('a tool call that fails', () => {
+  it('answers a call to a tool name the model invented, and the turn goes on to its answer', async () => {
+    const invented: MessageChunk = {type: 'tool_use', toolCall: {id: 'tu-1', name: 'get_wether', input: {}}};
+
+    const {reply, requests} = await turnOn([[invented, STOP_FOR_TOOL], ANSWER], registryReturning({result: 'r'}));
+
+    expect({reply, results: toolResultsIn(requests[1])}).toEqual({
+      reply: 'all done',
+      results: [{type: 'tool_result', toolUseId: 'tu-1', content: expect.stringContaining('get_wether')}],
+    });
+  });
+
+  it('answers a call whose executor threw, and the turn goes on to its answer with afterModelResponse and no onError', async () => {
+    const callOrder: string[] = [];
+    const hooks = recordingHooks(callOrder, ['onError', 'afterModelResponse']);
+
+    const {reply, requests} = await turnOn([[TOOL_CALL, STOP_FOR_TOOL], ANSWER], failingRegistry(), hooks);
+
+    expect({reply, results: toolResultsIn(requests[1]), callOrder}).toEqual({
+      reply: 'all done',
+      results: [{type: 'tool_result', toolUseId: 'call-1', content: expect.stringContaining('lookup')}],
+      callOrder: ['afterModelResponse'],
+    });
+  });
+
+  it('returns every result of a round in which calls fail, the working tool run once and its result unchanged', async () => {
+    let runs = 0;
+    const registry = failingRegistry('broken');
+    registry.register({name: 'lookup', description: 'looks things up', inputSchema: {type: 'object'}}, async () => {
+      runs++;
+      return 'found it';
+    });
+    const round: MessageChunk[] = [
+      {type: 'tool_use', toolCall: {id: 'a', name: 'get_wether', input: {}}},
+      {type: 'tool_use', toolCall: {id: 'b', name: 'broken', input: {}}},
+      {type: 'tool_use', toolCall: {id: 'c', name: 'lookup', input: {}}},
+      STOP_FOR_TOOL,
+    ];
+
+    const {requests} = await turnOn([round, ANSWER], registry);
+
+    const results = toolResultsIn(requests[1]);
+    expect({runs, ids: results.map(result => result.toolUseId), working: results.at(-1)?.content}).toEqual({
+      runs: 1,
+      ids: ['a', 'b', 'c'],
+      working: 'found it',
+    });
+  });
+});
+
+// One registered tool, `lookup` unless named otherwise, whose executor throws.
+function failingRegistry(name = 'lookup'): ToolRegistry {
+  const registry = new ToolRegistry();
+  registry.register({name, description: 'fails every call', inputSchema: {type: 'object'}}, async () => {
+    throw new Error('upstream down');
+  });
+  return registry;
+}
+
+// One turn on scripted rounds, keeping a copy of every request the provider received.
+async function turnOn(
+  rounds: MessageChunk[][],
+  registry: ToolRegistry,
+  hooks?: OrchestratorHooks
+): Promise<{reply: string; requests: Message[][]}> {
+  const requests: Message[][] = [];
+  const provider: AIProvider = {
+    async *sendMessage(params: SendMessageParams): AsyncGenerator<MessageChunk> {
+      requests.push(structuredClone(params.messages));
+      yield* rounds[requests.length - 1] ?? [];
+    },
+    async generateStructured<T>(): Promise<T> {
+      return {} as T;
+    },
+  };
+  const orchestrator = createChatOrchestrator(provider, promptBuilder, registry, {hooks});
+
+  return {reply: await orchestrator.processMessage(createSession('ask')), requests};
+}
+
+// The tool results a request handed the model, in the order the calls were made.
+function toolResultsIn(messages: Message[] = []): ToolResultContent[] {
+  const structured = messages.filter(message => typeof message.content !== 'string');
+  const blocks = structured.flatMap(message => message.content as Array<ToolCallContent | ToolResultContent>);
+  return blocks.filter((block): block is ToolResultContent => block.type === 'tool_result');
+}
 
 // Streams one word, then aborts the run as a closing socket would; `end` is what the provider does after that.
 async function abortedMidStream(end: () => void): Promise<{outcome: string; callOrder: string[]}> {

@@ -166,9 +166,15 @@ describe('the beforeToolCall hook', () => {
     await e.ask();
 
     const {calls} = policy.mock;
-    expect({consulted: calls.length, ending: kinds(e.frames).slice(-2)}).toEqual({
+    const frames = kinds(e.frames);
+    expect({
+      consulted: calls.length,
+      errors: frames.filter(frame => frame.startsWith('error')),
+      last: frames.at(-1),
+    }).toEqual({
       consulted: 0,
-      ending: ['error SERVER_ERROR', 'stream_end'],
+      errors: [],
+      last: 'stream_end',
     });
   });
 

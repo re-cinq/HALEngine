@@ -148,6 +148,8 @@ A tool that ignores the signal is still bounded, since the orchestrator stops wa
 - Return `JSON.stringify(result)` for most tools -- the result gets added to the conversation as a tool result message
 - Cast input fields from `unknown` to their declared types — the registry has already validated that required fields are present, types match, and enum values are in range, so a cast is safe
 - Unknown keys may still be present in `input`; ignore them or use them as needed, but do not assume they have been stripped
+- A tool name the model invents is answered to the model, naming the tools that do exist, rather than raised
+- An executor that throws is caught: the model is told the call failed, and the turn goes on. The thrown message is logged at `error`, cut to 500 characters, and never redacted, so keep credentials and personal data out of your error strings, and return a `ToolResponse` yourself when the model should hear more than that the call failed
 - A schema-invalid call never reaches the executor: the registry returns a descriptive rejection to the model, which can retry within the tool-round budget (`DEFAULT_MAX_TOOL_ROUNDS = 5`)
 
 For tools that need to send messages directly to the client or suppress the AI's echo, return a `ToolResponse` object instead of a plain string. See [tool-responses.md](../specs/hal-engine-tool-responses/spec.md) for a full walkthrough.

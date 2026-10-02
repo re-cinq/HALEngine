@@ -183,7 +183,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 - `maxToolRounds` bounds how many tool rounds run and `toolTimeoutMs` bounds how long a single call may take; together they enforce termination, since a round count alone cannot end a call that never returns
 - Tools execute in response to explicit `ToolCall` objects from the model
 - Tool results are returned to the model for incorporation into response
-- Tool failures are communicated via `ToolResultMessage` with error content
+- `ToolRegistry.execute` resolves for anything the model authored: an invented tool name and schema-invalid input are answered to the model, and a throwing executor is caught and answered as a failed call, which is what keeps every tool call answered by a `tool_result` when an executor crashes; only a caller's malformed input still throws
 
 ### 2. Message Ordering
 
@@ -246,7 +246,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 
 ### Integration Metrics
 
-1. **Tool Success Rate**: Percentage of tool calls that execute without error
+1. **Tool Success Rate**: Percentage of tool calls that execute without error, read from the `tool executor threw` error log line, its only source
 2. **Tool Loop Efficiency**: Average iterations before response completion
 3. **Streaming Efficiency**: Chunk size and delta frequency
 
