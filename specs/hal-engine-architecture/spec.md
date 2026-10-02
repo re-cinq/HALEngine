@@ -254,7 +254,7 @@ sequenceDiagram
     S->>S: createUserEntry(), appendEntry()
     S->>WS: {type: "entry_upsert", index: 0, entry: UserEntry}
 
-    S->>CO: processMessageStream(session)
+    S->>CO: processMessageStream(session, {signal})
     CO->>AI: sendMessage(messages, systemPrompt, tools)
 
     loop Streaming response

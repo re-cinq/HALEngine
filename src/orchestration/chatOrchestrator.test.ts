@@ -691,3 +691,59 @@ describe('ChatOrchestrator tool loop', () => {
     }).toEqual({resolved: 'all done', hasRejectionText: true});
   });
 });
+
+describe('a run signal', () => {
+  it('reaches the provider as params.signal, the very object the caller passed', async () => {
+    let received: AbortSignal | undefined;
+    const provider: AIProvider = {
+      async *sendMessage(params: SendMessageParams): AsyncGenerator<MessageChunk> {
+        received = params.signal;
+        yield STOP_DONE;
+      },
+      async generateStructured<T>(): Promise<T> {
+        return {} as T;
+      },
+    };
+    const run = new AbortController();
+
+    const orchestrator = createChatOrchestrator(provider, promptBuilder);
+    await chunksFrom(orchestrator.processMessageStream(createSession('hi'), {signal: run.signal}));
+
+    expect(received).toBe(run.signal);
+  });
+
+  it('skips afterModelResponse when its provider stops on the abort, firing afterSession once', async () => {
+    const stops = () => undefined;
+
+    expect(await abortedMidStream(stops)).toEqual({outcome: 'resolved without throwing', callOrder: ['afterSession']});
+  });
+
+  it('ends quietly when the provider fails after the signal aborted: no onError, afterModelResponse or rethrow, afterSession once', async () => {
+    const fails = () => {
+      throw new Error('socket hang up');
+    };
+
+    expect(await abortedMidStream(fails)).toEqual({outcome: 'resolved without throwing', callOrder: ['afterSession']});
+  });
+});
+
+// Streams one word, then aborts the run as a closing socket would; `end` is what the provider does after that.
+async function abortedMidStream(end: () => void): Promise<{outcome: string; callOrder: string[]}> {
+  const run = new AbortController();
+  const provider: AIProvider = {
+    async *sendMessage(): AsyncGenerator<MessageChunk> {
+      yield {type: 'text', text: 'Hal'};
+      run.abort();
+      end();
+    },
+    async generateStructured<T>(): Promise<T> {
+      return {} as T;
+    },
+  };
+  const callOrder: string[] = [];
+  const hooks = recordingHooks(callOrder, ['onError', 'afterModelResponse', 'afterSession']);
+  const orchestrator = createChatOrchestrator(provider, promptBuilder, undefined, {hooks});
+  const stream = orchestrator.processMessageStream(createSession('hi'), {signal: run.signal});
+
+  return {outcome: await outcomeOf(chunksFrom(stream)), callOrder};
+}

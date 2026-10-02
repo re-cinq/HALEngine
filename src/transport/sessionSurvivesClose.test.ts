@@ -1,6 +1,5 @@
 import {once} from 'node:events';
-import type {WebSocket} from 'ws';
-import {askOnOpen, connectClient, framesUntil, startEngine, stopEngines} from './wsTestSupport.js';
+import {announcedId, askOnOpen, connectClient, framesUntil, startEngine, stopEngines} from './wsTestSupport.js';
 import {InMemorySessionStore} from '../infrastructure/stores/inMemorySessionStore.js';
 import type {ChatSession} from '../types/session.js';
 
@@ -8,16 +7,6 @@ import type {ChatSession} from '../types/session.js';
 
 const FAIL_FAST_MS = 5_000;
 const settle = (ms = 50) => new Promise<void>(resolve => setTimeout(resolve, ms));
-
-// The id is only ever announced in the connected frame, and both tests below need it after the fact.
-const announcedId = (client: WebSocket): (() => string) => {
-  let sessionId = '';
-  client.on('message', raw => {
-    const frame = JSON.parse(String(raw)) as {type: string; sessionId?: string};
-    if (frame.type === 'connected') sessionId = frame.sessionId ?? '';
-  });
-  return () => sessionId;
-};
 
 const turnThenClose = async (store: InMemorySessionStore, onDisconnect?: (sessionId: string) => void) => {
   const url = await startEngine(store, onDisconnect);

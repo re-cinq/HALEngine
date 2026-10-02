@@ -32,11 +32,16 @@ type EntryFactory = typeof createThinkingEntry | typeof createAssistantEntry;
 export function createMessageHandler(orchestrator: ChatOrchestrator) {
   // Keyed by session, not socket: a resumed session can be open on more than one (specs/hal-engine-architecture/spec.md).
   const lock = new PerSessionLock();
-  return function handleMessage(ws: WebSocket, session: ChatSession, rawMessage: unknown): Promise<void> {
+  return function handleMessage(
+    ws: WebSocket,
+    session: ChatSession,
+    rawMessage: unknown,
+    signal?: AbortSignal
+  ): Promise<void> {
     const validation = validateMessage(rawMessage);
     // Queued with no await before it, so a session's user_messages, a failed one too, are answered in arrival order.
     if (isUserMessageFrame(rawMessage)) {
-      return lock.run(session.sessionId, () => answerInTurn(ws, session, orchestrator, validation));
+      return lock.run(session.sessionId, () => answerInTurn(ws, session, orchestrator, validation, signal));
     }
     // An async action runs up to its first await at once, so a ping is answered now and a throw stays a rejection.
     return wsErrorHandler(ws, async () => answerFrame(ws, validation));
@@ -48,28 +53,43 @@ async function answerInTurn(
   ws: WebSocket,
   session: ChatSession,
   orchestrator: ChatOrchestrator,
-  validation: ValidationResult
+  validation: ValidationResult,
+  signal: AbortSignal | undefined
 ): Promise<void> {
   // Its socket closed while it waited: nobody is left to read the answer, and a session's last close took its credentials.
-  if (ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED) {
+  if (signal?.aborted || ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED) {
     log.info('message', 'queued message dropped: its socket closed', {sessionId: session.sessionId});
     return;
   }
+  const startedAt = Date.now();
   try {
-    await wsErrorHandler(ws, () => answerUserMessage(ws, session, orchestrator, validation));
+    await wsErrorHandler(ws, () => answerUserMessage(ws, session, orchestrator, validation, signal));
   } finally {
-    sendStreamEnd(ws);
+    endTurn(ws, session, signal, startedAt);
   }
+}
+
+// A turn whose socket closed is abandoned rather than ended: nobody is left to read a terminal frame.
+function endTurn(ws: WebSocket, session: ChatSession, signal: AbortSignal | undefined, startedAt: number): void {
+  if (signal?.aborted) {
+    log.info('message', 'turn abandoned: its socket closed', {
+      sessionId: session.sessionId,
+      elapsedMs: Date.now() - startedAt,
+    });
+    return;
+  }
+  sendStreamEnd(ws);
 }
 
 async function answerUserMessage(
   ws: WebSocket,
   session: ChatSession,
   orchestrator: ChatOrchestrator,
-  validation: ValidationResult
+  validation: ValidationResult,
+  signal: AbortSignal | undefined
 ): Promise<void> {
   const message = validation.valid ? validation.data : undefined;
-  if (message?.type === 'user_message') return handleUserMessage(ws, session, orchestrator, message.content);
+  if (message?.type === 'user_message') return handleUserMessage(ws, session, orchestrator, message.content, signal);
   answerFrame(ws, validation);
 }
 
@@ -108,7 +128,8 @@ async function handleUserMessage(
   ws: WebSocket,
   session: ChatSession,
   orchestrator: ChatOrchestrator,
-  content: string
+  content: string,
+  signal: AbortSignal | undefined
 ): Promise<void> {
   log.info('message', 'user message received', {sessionId: session.sessionId, contentLength: content.length});
 
@@ -127,7 +148,9 @@ async function handleUserMessage(
   let textChunkCount = 0;
 
   try {
-    for await (const chunk of orchestrator.processMessageStream(session)) {
+    for await (const chunk of orchestrator.processMessageStream(session, {signal})) {
+      // Its socket closed: breaking returns the run's generator, so the run stops and its own teardown still runs.
+      if (signal?.aborted) break;
       textChunkCount = logChunk(chunk, textChunkCount);
       processChunk(ws, session, state, parser, chunk);
     }

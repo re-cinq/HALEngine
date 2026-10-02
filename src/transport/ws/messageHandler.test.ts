@@ -8,6 +8,7 @@ import {AIError} from '../../types/ai.js';
 import type {ChatSession, SessionEntry} from '../../types/session.js';
 import type {OutgoingMessage} from '../../types/messages.js';
 import {PerSessionLock} from '../../shared/perSessionLock.js';
+import {deferred} from '../wsTestSupport.js';
 
 // The frames, in order, are the contract - above all for suppression, which retracts.
 
@@ -35,14 +36,6 @@ interface StreamScript {
   pauseAfter?: {chunks: number; until: Promise<void>};
 }
 
-const deferred = () => {
-  let release = (): void => undefined;
-  const until = new Promise<void>(resolve => {
-    release = resolve;
-  });
-  return {until, release};
-};
-
 const harness = (chunks: MessageChunk[], {failWith, pauseAfter}: StreamScript = {}) => {
   const sent: OutgoingMessage[] = [];
   const ws = {send: (raw: string) => sent.push(JSON.parse(raw) as OutgoingMessage)} as unknown as WebSocket;
@@ -66,7 +59,8 @@ const harness = (chunks: MessageChunk[], {failWith, pauseAfter}: StreamScript = 
     processMessageStream,
     sent,
     frames: () => wire(sent),
-    send: (raw: unknown = {type: 'user_message', content: 'hello'}) => handle(ws, session, raw),
+    send: (raw: unknown = {type: 'user_message', content: 'hello'}, signal?: AbortSignal) =>
+      handle(ws, session, raw, signal),
   };
 };
 
@@ -744,5 +738,66 @@ describe('one message at a time per session', () => {
       asked: h.handed.length,
       entries: entries.map(entry => `${entry.role} ${'content' in entry ? entry.content : ''}`),
     }).toEqual({asked: 1, entries: ['user A', 'assistant answer 0']});
+  });
+});
+
+describe('a turn whose socket closes', () => {
+  it('abandons the turn mid-stream with no error and no stream_end, committing the cut-off answer as it stood', async () => {
+    const gate = deferred();
+    const h = harness([text('Hal'), text('lo there'), STOP], {pauseAfter: {chunks: 1, until: gate.until}});
+    const connection = new AbortController();
+    const turn = h.send(undefined, connection.signal);
+    await afterPendingWork();
+    const beforeClose = h.frames().length;
+    connection.abort();
+    gate.release();
+    await turn;
+
+    const [, answer] = h.session.entries;
+    expect({afterClose: h.frames().slice(beforeClose), answer}).toEqual({
+      afterClose: ['upsert 1 assistant "Hal"', 'commit 1'],
+      answer: {role: 'assistant', content: 'Hal', timestamp: expect.any(String), isStreaming: false, truncated: true},
+    });
+  });
+
+  it('drops a turn whose connection signal is already aborted: records nothing, asks nothing, sends nothing', async () => {
+    const h = harness([text('hi'), STOP]);
+
+    await h.send(undefined, AbortSignal.abort());
+
+    const {calls} = h.processMessageStream.mock;
+    expect({entries: h.session.entries, asked: calls.length, frames: h.frames()}).toEqual({
+      entries: [],
+      asked: 0,
+      frames: [],
+    });
+  });
+
+  it('hands the run its connection signal', async () => {
+    const handed: Array<AbortSignal | undefined> = [];
+    const orchestrator = {
+      async *processMessageStream(
+        _session: ChatSession,
+        options?: {signal?: AbortSignal}
+      ): AsyncGenerator<MessageChunk> {
+        handed.push(options?.signal);
+        yield STOP;
+      },
+    } as unknown as ChatOrchestrator;
+    const ws = {send: () => undefined} as unknown as WebSocket;
+    const session: ChatSession = {sessionId: 's1', userId: 'u1', entries: []};
+    const connection = new AbortController();
+
+    await createMessageHandler(orchestrator)(ws, session, {type: 'user_message', content: 'hello'}, connection.signal);
+
+    expect({runs: handed.length, same: handed[0] === connection.signal}).toEqual({runs: 1, same: true});
+  });
+
+  it('answers a ping whose connection signal is aborted', async () => {
+    const h = harness([]);
+
+    await h.send({type: 'ping', timestamp: 9}, AbortSignal.abort());
+
+    expect(h.frames()).toEqual(['pong 9']);
   });
 });
