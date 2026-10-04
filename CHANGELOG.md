@@ -8,6 +8,21 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-04
+
+**Upgrading from 0.4.x.** One thing is removed, and several things an existing consumer observes change. Check these before you bump:
+
+- Every client must offer `hal.v1` beside its token, `new WebSocket(url, ['hal.v1', token])`. A bare-token offer, accepted with a deprecation warning since 0.3.0, now fails to connect, and `credentialFromSubprotocol` returns `undefined` for it.
+- Closing a socket abandons its turn: the run stops reading from the model and abandons its tool calls, no `stream_end` follows the close, and `afterModelResponse` and `onError` do not fire for it, while `afterSession` still does. A missed heartbeat and `stop()` close sockets too, so drain connections before a deploy.
+- Every tool call now has 30 seconds to settle, a `beforeToolCall` policy included. A tool that legitimately runs longer needs a larger `toolTimeoutMs`, or `0` for the old unbounded wait.
+- `ToolRegistry.execute` no longer throws for a tool name the model invented, or rejects when an executor throws: the model is answered instead. It throws a `TypeError` for an input that is not an object, whatever the tool's schema.
+- Messages in one session are answered one at a time, so a message sent while another is streaming starts after that one's `stream_end`.
+- Tools now run on Vertex, where a function-calling turn ends `tool_use` instead of `end_turn`. If you read `stopReason` yourself, expect the new value.
+- Two new `error` log lines: `authenticator failed` for a `WsAuthenticator` that throws or rejects, and `tool executor threw` for a tool executor that does. Alerting that counts error lines will see both.
+- Resume is opt-in and changes nothing until you enable it. With it on, do not erase a conversation in `onDisconnect`: the socket a resume replaced can report `onDisconnect` after the resume.
+
+Upgrade even if you use none of the new features: on every release up to and including 0.4.0, one malformed upgrade request with no credentials ends the process (see Security), and so does a Vertex stream that fails mid-way (see Fixed). Coming from 0.3.x, read the 0.4.0 notes below as well.
+
 ### Added
 
 - **Session resume**, opt-in via `transport: {resume: {enabled: true}}` and exported as `SessionResumeOptions`. A client that reconnects to `{basePath}/ws?sessionId=<id>`, with the id from its last `connected` frame, gets its conversation back: the frame carries `resumed: true` and `entryCount`, and each stored entry is replayed as an `entry_upsert` at its index. The id is not a credential. It is resumed only for the stored session's own user; any other id, whether another user's, one never issued or one the store no longer holds, gets a fresh session and `resumed: false`, and the three are indistinguishable, so the answer reveals nothing about which ids exist. A requested id is never adopted for a new session. An entry still streaming when its session is resumed, because its turn is running on the socket that started it, is replayed finished and flagged `truncated: true`, since the rest of that turn goes to the other socket. A session open on more than one socket carries the newest one's credentials and, when that socket closes, takes those of the newest one still open. `onConnect` receives `{resumed}` as a second argument, exported as `ConnectInfo`, so a consumer can tell a resumed connection from a new session. `onConnect` and `onDisconnect` stay per connection and come in pairs, so the socket a resume replaced can report `onDisconnect` after the resume: with resume on, do not erase a conversation in `onDisconnect`. With resume off, nothing changes: the `connected` frame carries neither new field. **GDPR**: with resume on, conversations outlive their sockets, so bound retention yourself, with `maxAgeMs` on `InMemorySessionStore` or `MongoSessionStore`'s erasure methods.
@@ -291,7 +306,8 @@ path from `0.1.0` on the registry — only from the git specifier.
 - Resolved a high-severity advisory in `ws`, a direct runtime dependency. The full dependency audit went
   from 18 advisories (1 critical, 6 high) to 3 (2 moderate, 1 low), none at high or above.
 
-[Unreleased]: https://github.com/re-cinq/HALEngine/compare/v0.4.0...main
+[Unreleased]: https://github.com/re-cinq/HALEngine/compare/v0.5.0...main
+[0.5.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.5.0
 [0.4.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.4.0
 [0.3.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.3.0
 [0.2.1]: https://github.com/re-cinq/HALEngine/releases/tag/v0.2.1
