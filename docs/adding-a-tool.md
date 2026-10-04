@@ -130,7 +130,7 @@ A `ToolExecutor` is an async function that takes the tool input and returns eith
 type ToolExecutor = (input: Record<string, unknown>, context?: ToolContext) => Promise<string | ToolResponse>;
 ```
 
-The optional `context` provides `userId`, `sessionId`, `workspaceId`, and `authHeaders` for tools that need to make authenticated API calls, and `signal`, which the orchestrator aborts when it abandons the call at its `toolTimeoutMs` deadline. Pass it to `fetch`, or to whatever client your tool uses, so the call's own request stops too:
+The optional `context` provides `userId`, `sessionId`, `workspaceId`, and `authHeaders` for tools that need to make authenticated API calls, and `signal`, which the orchestrator aborts when it abandons the call: at its `toolTimeoutMs` deadline, with a `TimeoutError` as the reason, or when the turn is abandoned because its socket closed. Pass it to `fetch`, or to whatever client your tool uses, so the call's own request stops too:
 
 <!-- doc-block: none -- an executor a reader writes against their own API, which this package does not ship -->
 ```typescript
@@ -150,6 +150,7 @@ A tool that ignores the signal is still bounded, since the orchestrator stops wa
 - Unknown keys may still be present in `input`; ignore them or use them as needed, but do not assume they have been stripped
 - A tool name the model invents is answered to the model, naming the tools that do exist, rather than raised
 - An executor that throws is caught: the model is told the call failed, and the turn goes on. The thrown message is logged at `error`, cut to 500 characters, and never redacted, so keep credentials and personal data out of your error strings, and return a `ToolResponse` yourself when the model should hear more than that the call failed
+- A throw once the turn was abandoned, such as `fetch` rejecting on the aborted `signal` after the socket closed, is logged at `info` as `tool call abandoned` instead, since a user leaving is not a tool failing; a throw after the deadline is still logged at `error`
 - A schema-invalid call never reaches the executor: the registry returns a descriptive rejection to the model, which can retry within the tool-round budget (`DEFAULT_MAX_TOOL_ROUNDS = 5`)
 
 For tools that need to send messages directly to the client or suppress the AI's echo, return a `ToolResponse` object instead of a plain string. See [tool-responses.md](../specs/hal-engine-tool-responses/spec.md) for a full walkthrough.

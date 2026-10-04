@@ -107,9 +107,15 @@ describe('a deadline per tool call', () => {
 
     await jest.advanceTimersByTimeAsync(DEFAULT_DEADLINE_MS);
 
-    expect({reply: await t.reply, aborted: context?.signal?.aborted, results: resultsSent(t.sent)}).toEqual({
+    const signal = context?.signal;
+    const reason: unknown = signal?.reason;
+    expect({reply: await t.reply, aborted: signal?.aborted, reason, results: resultsSent(t.sent)}).toEqual({
       reply: 'Done.',
       aborted: true,
+      reason: expect.objectContaining({
+        name: 'TimeoutError',
+        message: `Tool 'lookup' did not answer within ${DEFAULT_DEADLINE_MS} ms`,
+      }),
       results: [{type: 'tool_result', toolUseId: 'c1', content: timeoutResult('lookup', DEFAULT_DEADLINE_MS)}],
     });
   });

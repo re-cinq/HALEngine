@@ -186,6 +186,45 @@ describe('ToolRegistry.execute — an executor that throws', () => {
       },
     ]);
   });
+
+  it('logs a throw after its signal was aborted, not timed out, at info as tool call abandoned, and no error line', async () => {
+    const lines = recordLog();
+
+    await failWith(AbortSignal.abort());
+
+    expect({info: lines.info, error: lines.error}).toEqual({
+      info: [
+        {category: 'tool', message: 'executing', name: 'get_weather', inputKeys: []},
+        {category: 'tool', message: 'tool call abandoned', name: 'get_weather', errorType: 'TypeError'},
+      ],
+      error: [],
+    });
+  });
+
+  it('logs a throw as abandoned after a signal aborted with a reason that is no error, a string or null', async () => {
+    const lines = recordLog();
+
+    await failWith(AbortSignal.abort('socket closed'));
+    await failWith(AbortSignal.abort(null));
+
+    const abandoned = lines.info.filter(line => line.message === 'tool call abandoned');
+    expect({abandoned: abandoned.length, error: lines.error}).toEqual({abandoned: 2, error: []});
+  });
+
+  it('keeps a throw at error as tool executor threw while its signal is live and after it timed out', async () => {
+    const lines = recordLog();
+
+    await failWith(new AbortController().signal);
+    await failWith(
+      AbortSignal.abort(new DOMException("Tool 'get_weather' did not answer within 30000 ms", 'TimeoutError'))
+    );
+
+    const threw = {category: 'tool', message: 'tool executor threw', name: 'get_weather', errorType: 'TypeError'};
+    expect(lines.error).toEqual([
+      {...threw, error: 'fetch failed'},
+      {...threw, error: 'fetch failed'},
+    ]);
+  });
 });
 
 describe('ToolRegistry.execute — what reaches the model and the log', () => {
@@ -240,18 +279,21 @@ function throwing(name: string, thrown: unknown): ToolRegistry {
   return registry;
 }
 
-// Every line the call logged, and the warn and error lines on their own.
-function recordLog(): {warn: Array<Record<string, unknown>>; error: Array<Record<string, unknown>>; all: string[]} {
-  const lines = {
-    warn: [] as Array<Record<string, unknown>>,
-    error: [] as Array<Record<string, unknown>>,
-    all: [] as string[],
-  };
-  const into = (level?: 'warn' | 'error') => (category: string, message: string, fields?: Record<string, unknown>) => {
+// A get_weather call whose request fails the same way whatever `signal` its context carries, so only the signal decides the log line.
+async function failWith(signal: AbortSignal): Promise<void> {
+  await throwing('get_weather', new TypeError('fetch failed')).execute('get_weather', {}, {userId: 'u', signal});
+}
+
+type LoggedLine = Record<string, unknown>;
+
+// Every line the call logged, and the info, warn and error lines on their own.
+function recordLog(): {info: LoggedLine[]; warn: LoggedLine[]; error: LoggedLine[]; all: string[]} {
+  const lines = {info: [] as LoggedLine[], warn: [] as LoggedLine[], error: [] as LoggedLine[], all: [] as string[]};
+  const into = (level?: 'info' | 'warn' | 'error') => (category: string, message: string, fields?: LoggedLine) => {
     const line = {category, message, ...fields};
     lines.all.push(JSON.stringify(line));
     if (level) lines[level].push(line);
   };
-  setLogger({debug: into(), info: into(), warn: into('warn'), error: into('error')});
+  setLogger({debug: into(), info: into('info'), warn: into('warn'), error: into('error')});
   return lines;
 }

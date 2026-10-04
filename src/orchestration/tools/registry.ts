@@ -22,7 +22,7 @@ export interface ToolContext {
     authorization?: string;
     host?: string;
   };
-  /** Aborted when the orchestrator abandons this call at its `toolTimeoutMs` deadline; pass it to `fetch` so the call's own request stops too. */
+  /** Aborted when the orchestrator abandons this call, at its `toolTimeoutMs` deadline with a `TimeoutError` or with its turn; pass it to `fetch` so the call's own request stops too. */
   signal?: AbortSignal;
 }
 
@@ -131,7 +131,7 @@ export class ToolRegistry {
       });
       return response;
     } catch (error) {
-      return crashed(name, error);
+      return crashed(name, error, context?.signal);
     }
   }
 }
@@ -164,13 +164,24 @@ function missingTool(name: string, registered: string[]): ToolResponse {
 }
 
 // The model learns only that the call failed: a thrown message can carry a host name or another user's identifier.
-function crashed(name: string, error: unknown): ToolResponse {
-  log.error('tool', 'tool executor threw', {
-    name,
-    errorType: error instanceof Error ? error.name : typeof error,
-    error: describeThrow(error).slice(0, MAX_LOGGED_ERROR),
-  });
+function crashed(name: string, error: unknown, signal: AbortSignal | undefined): ToolResponse {
+  logThrow(name, error, signal);
   return {result: `The ${name} tool failed and returned no result.`};
+}
+
+// A user leaving is no tool failing, so a throw once the turn was abandoned stays out of the error lines; a deadline's does not.
+function logThrow(name: string, error: unknown, signal: AbortSignal | undefined): void {
+  const errorType = error instanceof Error ? error.name : typeof error;
+  if (signal?.aborted && !isTimeout(signal.reason)) {
+    log.info('tool', 'tool call abandoned', {name, errorType});
+    return;
+  }
+  log.error('tool', 'tool executor threw', {name, errorType, error: describeThrow(error).slice(0, MAX_LOGGED_ERROR)});
+}
+
+// The orchestrator's deadline reason, as AbortSignal.timeout's; matched by name, since a DOMException from another realm is no instanceof Error.
+function isTimeout(reason: unknown): boolean {
+  return typeof reason === 'object' && reason !== null && 'name' in reason && reason.name === 'TimeoutError';
 }
 
 // A probe, not a fallback path: an object with no prototype has no string form, and the log must not throw for it.

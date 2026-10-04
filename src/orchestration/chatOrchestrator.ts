@@ -332,7 +332,8 @@ function withDeadline(
     if (settled === ABANDONED) return {result: `The ${tc.name} call was abandoned with its turn.`};
     if (settled !== TIMED_OUT) return settled;
 
-    control.abort();
+    // A TimeoutError, as AbortSignal.timeout gives, so the registry logs a throw it causes as a failure, unlike an abandoned turn's.
+    control.abort(new DOMException(`Tool '${tc.name}' did not answer within ${toolTimeoutMs} ms`, 'TimeoutError'));
     log.warn('orchestrator', 'tool call timed out', {tool: tc.name, elapsedMs: Date.now() - startedAt});
     return {
       result: `Tool '${tc.name}' did not answer within ${toolTimeoutMs} ms, so the call was abandoned and returned no result.`,

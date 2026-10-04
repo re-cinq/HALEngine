@@ -246,7 +246,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 
 ### Integration Metrics
 
-1. **Tool Success Rate**: Percentage of tool calls that execute without error, read from the `tool executor threw` error log line, its only source
+1. **Tool Success Rate**: Percentage of tool calls that execute without error, read from the `tool executor threw` error log line, its only source; a throw from a call abandoned with its turn is logged at info as `tool call abandoned` instead, so a user leaving does not count as a tool failing
 2. **Tool Loop Efficiency**: Average iterations before response completion
 3. **Streaming Efficiency**: Chunk size and delta frequency
 
