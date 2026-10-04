@@ -1,8 +1,11 @@
 import {Ajv} from 'ajv';
-import type {ValidateFunction} from 'ajv';
+import type {ErrorObject, ValidateFunction} from 'ajv';
 import type {ToolDefinition} from '../../types/ai.js';
 import type {OutgoingMessage} from '../../types/messages.js';
 import {log} from '../../shared/logger.js';
+
+const MAX_NAME_IN_ANSWER = 64;
+const MAX_LOGGED_ERROR = 500;
 
 export interface ToolResponse {
   result: string;
@@ -19,7 +22,7 @@ export interface ToolContext {
     authorization?: string;
     host?: string;
   };
-  /** Aborted when the orchestrator abandons this call at its `toolTimeoutMs` deadline; pass it to `fetch` so the call's own request stops too. */
+  /** Aborted when the orchestrator abandons this call, at its `toolTimeoutMs` deadline with a `TimeoutError` or with its turn; pass it to `fetch` so the call's own request stops too. */
   signal?: AbortSignal;
 }
 
@@ -104,34 +107,89 @@ export class ToolRegistry {
     return this.tools.has(name);
   }
 
-  /** Validates input against the tool's inputSchema before execution; see specs/hal-engine-tool-input-validation/spec.md. */
+  /** Resolves for every call the model authored, a throwing executor's too; only an input that is not an object rejects (specs/hal-engine-tool-executor-throw/spec.md). */
   async execute(name: string, input: Record<string, unknown>, context?: ToolContext): Promise<ToolResponse> {
+    const kind = kindOf(input);
+    if (kind !== 'an object') throw malformedInput(name, kind);
+
     const tool = this.tools.get(name);
-    if (!tool) {
-      log.warn('tool', 'tool not found', {name});
-      throw new Error(`Unknown tool: ${name}`);
-    }
+    if (!tool) return missingTool(name, [...this.tools.keys()]);
 
     const validate = this.getValidator(name, tool);
-
-    const valid = validate(input);
-    if (!valid) {
-      const errors = validate.errors ?? [];
-      const message = errors.map(e => `${e.instancePath || '(root)'} ${e.message}`).join('; ');
-      log.warn('tool', 'input validation failed', {name, paths: errors.map(e => e.instancePath)});
-      return {result: `Tool '${name}' input invalid: ${message}`};
-    }
+    if (!validate(input)) return invalidInput(name, validate.errors ?? []);
 
     log.info('tool', 'executing', {name, inputKeys: Object.keys(input)});
-    const rawResult = await tool.execute(input, context);
-    const response = normalizeToolResponse(rawResult);
-    log.info('tool', 'execution complete', {
-      name,
-      rawType: typeof rawResult,
-      clientMessageCount: response.clientMessages?.length ?? 0,
-      clientMessageTypes: response.clientMessages?.map(m => m.type) ?? [],
-      suppressAssistantResponse: response.suppressAssistantResponse ?? false,
-    });
-    return response;
+    try {
+      const rawResult = await tool.execute(input, context);
+      const response = normalizeToolResponse(rawResult);
+      log.info('tool', 'execution complete', {
+        name,
+        rawType: typeof rawResult,
+        clientMessageCount: response.clientMessages?.length ?? 0,
+        clientMessageTypes: response.clientMessages?.map(m => m.type) ?? [],
+        suppressAssistantResponse: response.suppressAssistantResponse ?? false,
+      });
+      return response;
+    } catch (error) {
+      return crashed(name, error, context?.signal);
+    }
+  }
+}
+
+// A caller's bug whatever the schema says: no provider hands the model's arguments over as anything but an object.
+function malformedInput(name: string, kind: string): TypeError {
+  return new TypeError(`Tool '${name.slice(0, MAX_NAME_IN_ANSWER)}' needs an object as input, and got ${kind}`);
+}
+
+// What an input was, for the caller's error, never its value.
+function kindOf(value: unknown): string {
+  if (value === null || value === undefined) return String(value);
+  if (Array.isArray(value)) return 'an array';
+  return typeof value === 'object' ? 'an object' : typeof value;
+}
+
+// Names each failing path and its constraint but never the value, so the model can correct the call.
+function invalidInput(name: string, errors: ErrorObject[]): ToolResponse {
+  const message = errors.map(e => `${e.instancePath || '(root)'} ${e.message}`).join('; ');
+  log.warn('tool', 'input validation failed', {name, paths: errors.map(e => e.instancePath)});
+  return {result: `Tool '${name}' input invalid: ${message}`};
+}
+
+// A name the model invented is its mistake to correct, so it is answered, bounded, with nothing from the call's input.
+function missingTool(name: string, registered: string[]): ToolResponse {
+  const attempted = name.slice(0, MAX_NAME_IN_ANSWER);
+  log.warn('tool', 'tool not found', {name: attempted});
+  if (registered.length === 0) return {result: `There is no tool named '${attempted}', and no tools are registered.`};
+  return {result: `There is no tool named '${attempted}'. The available tools are: ${registered.join(', ')}.`};
+}
+
+// The model learns only that the call failed: a thrown message can carry a host name or another user's identifier.
+function crashed(name: string, error: unknown, signal: AbortSignal | undefined): ToolResponse {
+  logThrow(name, error, signal);
+  return {result: `The ${name} tool failed and returned no result.`};
+}
+
+// A user leaving is no tool failing, so a throw once the turn was abandoned stays out of the error lines; a deadline's does not.
+function logThrow(name: string, error: unknown, signal: AbortSignal | undefined): void {
+  const errorType = error instanceof Error ? error.name : typeof error;
+  if (signal?.aborted && !isTimeout(signal.reason)) {
+    log.info('tool', 'tool call abandoned', {name, errorType});
+    return;
+  }
+  log.error('tool', 'tool executor threw', {name, errorType, error: describeThrow(error).slice(0, MAX_LOGGED_ERROR)});
+}
+
+// The orchestrator's deadline reason, as AbortSignal.timeout's; matched by name, since a DOMException from another realm is no instanceof Error.
+function isTimeout(reason: unknown): boolean {
+  return typeof reason === 'object' && reason !== null && 'name' in reason && reason.name === 'TimeoutError';
+}
+
+// A probe, not a fallback path: an object with no prototype has no string form, and the log must not throw for it.
+function describeThrow(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  try {
+    return String(error);
+  } catch {
+    return typeof error;
   }
 }

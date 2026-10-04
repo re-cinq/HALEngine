@@ -40,6 +40,8 @@ type ToolExecutor = (input: Record<string, unknown>, context?: ToolContext) => P
 
 `context` carries the session the call belongs to -- `userId`, `sessionId`, `workspaceId`, and the `authHeaders` forwarded from the WebSocket upgrade, so a tool can proxy the caller's credentials upstream. It also carries a `signal` of its own, aborted when the orchestrator abandons the call at its `toolTimeoutMs` deadline.
 
+An executor that throws is caught: the model is told the call failed, and the thrown message reaches only the log, as [tool-executor-throw](../hal-engine-tool-executor-throw/spec.md) specifies.
+
 The registry normalizes both forms internally via `normalizeToolResponse()`, so downstream code always sees a `ToolResponse`.
 
 ## When to Use This

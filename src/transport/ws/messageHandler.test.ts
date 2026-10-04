@@ -1,9 +1,11 @@
 import {jest} from '@jest/globals';
 import {WebSocket} from 'ws';
 import {createMessageHandler} from './messageHandler.js';
-import {TOOL_BUDGET_EXHAUSTED} from '../../orchestration/chatOrchestrator.js';
+import {createChatOrchestrator, TOOL_BUDGET_EXHAUSTED} from '../../orchestration/chatOrchestrator.js';
 import type {ChatOrchestrator} from '../../orchestration/chatOrchestrator.js';
-import type {MessageChunk} from '../../types/ai.js';
+import {ToolRegistry} from '../../orchestration/tools/registry.js';
+import {PromptBuilder} from '../../infrastructure/builders/promptBuilder.js';
+import type {AIProvider, MessageChunk, ToolCall} from '../../types/ai.js';
 import {AIError} from '../../types/ai.js';
 import type {ChatSession, SessionEntry} from '../../types/session.js';
 import type {OutgoingMessage} from '../../types/messages.js';
@@ -801,3 +803,56 @@ describe('a turn whose socket closes', () => {
     expect(h.frames()).toEqual(['pong 9']);
   });
 });
+
+describe('a tool call that fails', () => {
+  it('completes a turn whose tool name the model invented: its answer streams, then stream_end, with no error frame', async () => {
+    const frames = await turnOver({id: 'a', name: 'get_wether', input: {}}, new ToolRegistry());
+
+    expect(outcomeOf(frames)).toEqual({answered: true, last: 'stream_end', errors: []});
+  });
+
+  it('completes a turn whose tool executor threw: its answer streams, then stream_end, with no error frame', async () => {
+    const registry = new ToolRegistry();
+    registry.register({name: 'lookup', description: 'Looks it up.', inputSchema: {type: 'object'}}, async () => {
+      throw new Error('upstream down');
+    });
+
+    const frames = await turnOver({id: 'b', name: 'lookup', input: {}}, registry);
+
+    expect(outcomeOf(frames)).toEqual({answered: true, last: 'stream_end', errors: []});
+  });
+});
+
+// One real turn through the handler: the model asks for `call` and, handed its result, answers.
+async function turnOver(call: ToolCall, registry: ToolRegistry): Promise<string[]> {
+  let requests = 0;
+  const provider: AIProvider = {
+    async *sendMessage(): AsyncGenerator<MessageChunk> {
+      requests++;
+      const asks: MessageChunk[] = [
+        {type: 'tool_use', toolCall: call},
+        {type: 'stop', stopReason: 'tool_use'},
+      ];
+      yield* requests === 1 ? asks : [text('all done'), STOP];
+    },
+    async generateStructured<T>(): Promise<T> {
+      return {} as T;
+    },
+  };
+  const sent: OutgoingMessage[] = [];
+  const ws = {send: (raw: string) => sent.push(JSON.parse(raw) as OutgoingMessage)} as unknown as WebSocket;
+  const orchestrator = createChatOrchestrator(provider, new PromptBuilder({identity: 'Failure test.'}), registry);
+  const session: ChatSession = {sessionId: 's1', userId: 'u1', entries: []};
+
+  await createMessageHandler(orchestrator)(ws, session, userMessage('hello'));
+  return wire(sent);
+}
+
+// What the client saw of the turn: whether the answer streamed, the last frame, and any error frames.
+function outcomeOf(frames: string[]): {answered: boolean; last: string | undefined; errors: string[]} {
+  return {
+    answered: frames.some(frame => frame.startsWith('delta') && frame.endsWith(JSON.stringify('all done'))),
+    last: frames.at(-1),
+    errors: frames.filter(frame => frame.startsWith('error')),
+  };
+}
