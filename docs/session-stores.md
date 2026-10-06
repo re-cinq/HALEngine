@@ -120,9 +120,12 @@ the entries away, so a page of summaries never carries a conversation out of the
 **Create the three-key index from § Latest session.** `{userId: 1, updatedAt: -1}` cannot satisfy a
 two-key sort, so Mongo answers with a blocking sort over *every* conversation the user has and
 applies the limit after it: measured on 300 conversations, a 50-row page examined all 300 documents,
-where the three-key index made the same page a covered query examining none. Two consequences, not
-just a slow query — paging a long history that way is quadratic, and a blocking sort is bounded by
-Mongo's 100 MB sort limit, so a large enough history makes `listFor` fail rather than merely crawl.
+where the three-key index made the same page an indexed sort examining exactly the 50 it returns. The
+index does not *cover* the query — `createdAt` and `entryCount` are not in it, so Mongo still fetches
+each row it answers with — and that is the point: with it, the work is the page; without it, the work
+is the history. Two consequences, not just a slow query — paging a long history that way is
+quadratic, and a blocking sort is bounded by Mongo's 100 MB sort limit, so a large enough history
+makes `listFor` fail rather than merely crawl.
 
 It answers a `limit` of `0` without querying at all, because MongoDB reads `limit: 0` as *no* limit
 and would otherwise hand back everything the filter matches. It counts a conversation from an

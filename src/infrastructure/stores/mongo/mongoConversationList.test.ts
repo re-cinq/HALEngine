@@ -201,18 +201,25 @@ describe('the MongoDB store conversation list', () => {
         updatedAt: new Date(START + index * 1000),
       }))
     );
-    const listSort = {sort: {updatedAt: -1 as const, _id: -1 as const}, limit: 5};
+    // The query the store issues, projection included: a narrower one would be covered and measure nothing real.
+    const listQuery = {
+      sort: {updatedAt: -1 as const, _id: -1 as const},
+      limit: 5,
+      projection: {_id: 1 as const, createdAt: 1 as const, updatedAt: 1 as const, entryCount: 1 as const},
+    };
 
     await collection.createIndex({userId: 1, updatedAt: -1});
-    const twoKey = await collection.find({userId: 'u1'}, listSort).explain('queryPlanner');
+    const twoKey = await collection.find({userId: 'u1'}, listQuery).explain('executionStats');
     await collection.dropIndexes();
     await collection.createIndex({userId: 1, updatedAt: -1, _id: -1});
-    const threeKey = await collection.find({userId: 'u1'}, listSort).explain('queryPlanner');
+    const threeKey = await collection.find({userId: 'u1'}, listQuery).explain('executionStats');
 
     expect({
       twoKeySorts: JSON.stringify(twoKey.queryPlanner.winningPlan).includes('"SORT"'),
+      twoKeyExamined: twoKey.executionStats.totalDocsExamined,
       threeKeySorts: JSON.stringify(threeKey.queryPlanner.winningPlan).includes('"SORT"'),
-    }).toEqual({twoKeySorts: true, threeKeySorts: false});
+      threeKeyExamined: threeKey.executionStats.totalDocsExamined,
+    }).toEqual({twoKeySorts: true, twoKeyExamined: 50, threeKeySorts: false, threeKeyExamined: 5});
   });
 
   it('rejects rather than answering a partial list when the collection fails', async () => {
