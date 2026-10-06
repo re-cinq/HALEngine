@@ -1,7 +1,10 @@
+import {jest} from '@jest/globals';
+import {Ajv} from 'ajv';
 import {ToolRegistry} from './registry.js';
 import {setLogger} from '../../shared/logger.js';
 
 afterEach(() => setLogger(undefined));
+afterEach(() => jest.restoreAllMocks());
 
 describe('ToolRegistry.execute — input validation', () => {
   it('returns a ToolResponse naming the missing required field and does not invoke the executor', async () => {
@@ -28,7 +31,7 @@ describe('ToolRegistry.execute — input validation', () => {
   });
 
   it('passes valid input with an extra property through to the executor unchanged', async () => {
-    let receivedInput: Record<string, unknown> = {};
+    const received: Record<string, unknown>[] = [];
     const registry = new ToolRegistry();
     registry.register(
       {
@@ -37,14 +40,14 @@ describe('ToolRegistry.execute — input validation', () => {
         inputSchema: {type: 'object', required: ['city'], properties: {city: {type: 'string'}}},
       },
       async input => {
-        receivedInput = input;
+        received.push(input);
         return 'ok';
       }
     );
 
     await registry.execute('echo', {city: 'NYC', extra: 'noise'});
 
-    expect(receivedInput).toEqual({city: 'NYC', extra: 'noise'});
+    expect(received).toEqual([{city: 'NYC', extra: 'noise'}]);
   });
 
   it('rejects a call whose field type is wrong, naming the field path and expected type but not the value', async () => {
@@ -76,6 +79,19 @@ describe('ToolRegistry.execute — input validation', () => {
         async () => 'x'
       )
     ).toThrow(/broken/);
+  });
+
+  it('compiles a static schema once, at register, however many calls follow', async () => {
+    const registry = new ToolRegistry();
+    const compile = jest.spyOn(Ajv.prototype, 'compile');
+    registry.register(
+      {name: 'count', description: 'counts calls', inputSchema: {type: 'object', properties: {n: {type: 'number'}}}},
+      async () => 'counted'
+    );
+
+    await Promise.all(Array.from({length: 10}, (_, n) => registry.execute('count', {n})));
+
+    expect(compile).toHaveBeenCalledTimes(1);
   });
 
   it('validates each call against the schema the definition function returns at that call', async () => {

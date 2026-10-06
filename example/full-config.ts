@@ -28,6 +28,7 @@ const hooks: OrchestratorHooks = {
   beforeUserInput: async (_session, userMessage) => userMessage.trim(),
   afterUserInput: async (_session, userMessage) => log.info('app', 'received', {length: userMessage.length}),
   beforeModelResponse: async (_session, systemPrompt) => systemPrompt,
+  // usage is the turn's total over every tool round; inputTokens re-counts the conversation each round, as billed.
   afterModelResponse: async (_session, _responseText, usage) => log.info('app', 'answered', {usage}),
   afterSession: async session => log.info('app', 'session closed', {sessionId: session.sessionId}),
   onError: async (_session, error) => log.error('app', 'orchestration failed', {error: error.message}),

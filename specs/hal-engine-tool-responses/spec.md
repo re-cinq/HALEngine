@@ -152,28 +152,32 @@ This means the entry also becomes part of the session's `entries` array, maintai
 
 ### Orchestrator
 
-After executing tool calls, `chatOrchestrator.ts` checks each `ToolResponse` for client messages and suppression flags:
+After executing tool calls, `chatOrchestrator.ts` checks each `ToolResponse` for client messages and suppression flags. `executeToolCalls` runs every call through `runToolCall`, which applies a `beforeToolCall` policy and the call's deadline, and returns what the round asked of the client; the tool loop then yields it to the message handler:
 
-<!-- doc-block: none -- the orchestrator fragment that normalises responses, quoted out of its function -->
+<!-- doc-block: none -- two orchestrator fragments, quoted out of their functions -->
 ```typescript
+// executeToolCalls
 const responses = await Promise.all(
-  pendingToolCalls.map(async (tc) => {
-    const response = await toolRegistry.execute(tc.name, tc.input);
+  pendingToolCalls.map(async tc => {
+    const response = await runToolCall(tc);
     return {tc, response};
   })
 );
+// … each response's result becomes its call's tool_result for the next provider call …
+const rawClientMessages = responses.flatMap(({response}) => response.clientMessages ?? []);
 
-// Collect client messages from all tools
-const clientMessages = responses.flatMap(({response}) => response.clientMessages ?? []);
+return {
+  clientMessages: assignEntryIndices(rawClientMessages, session),
+  suppressOutput: responses.some(({response}) => response.suppressAssistantResponse === true),
+};
 
-// Yield them as a chunk for the message handler
+// the tool loop
 if (clientMessages.length > 0) {
-  yield {type: 'tool_result', clientMessages};
+  yield {type: 'tool_result' as const, clientMessages};
 }
 
-// Signal suppression if any tool requested it
-if (responses.some(({response}) => response.suppressAssistantResponse)) {
-  yield {type: 'suppress_output'};
+if (suppressOutput) {
+  yield {type: 'suppress_output' as const};
 }
 ```
 
