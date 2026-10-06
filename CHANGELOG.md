@@ -8,6 +8,14 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+### Added
+
+- `SessionStore.listFor(userId, options?)`, an optional store member that answers the summaries of a user's conversations — `sessionId`, `createdAt`, `updatedAt` and `entryCount` — most recent activity first, so a client can offer a conversation list instead of only rejoining one. `InMemorySessionStore` and `MongoSessionStore` both implement it; a store of your own may leave it out. Page with `limit` (50 by default, 200 at most) and `before`. A summary never carries a conversation's entries or its credentials. See `docs/session-stores.md` § Listing a user's conversations.
+
+### Changed
+
+- `MongoSessionStore` now writes an `entryCount` field beside the entries on every save, so a conversation list can count a conversation without reading one. A document saved by an earlier version lists as a conversation of no entries until you backfill it; `docs/session-stores.md` carries the one-line command.
+
 ## [0.5.0] - 2026-10-04
 
 **Upgrading from 0.4.x.** One thing is removed, and several things an existing consumer observes change. Check these before you bump:

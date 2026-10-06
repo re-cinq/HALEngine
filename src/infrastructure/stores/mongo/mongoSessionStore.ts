@@ -1,10 +1,18 @@
 import type {ChatSession} from '../../../types/session.js';
-import type {SessionCreateOptions, SessionStore} from '../../../types/sessionStore.js';
+import type {
+  SessionCreateOptions,
+  SessionListOptions,
+  SessionStore,
+  SessionSummary,
+} from '../../../types/sessionStore.js';
 import type {CollectionLike, MongoClientLike} from './mongoDriverTypes.js';
 import type {MongoSessionDocument} from './mongoSessionDocument.js';
-import {persistedFields, toChatSession} from './mongoSessionDocument.js';
+import {persistedFields, toChatSession, toSessionSummary} from './mongoSessionDocument.js';
+import {cappedLimit} from '../sessionListWindow.js';
 
 const DEFAULT_COLLECTION_NAME = 'hal_sessions';
+// Entries are left out so a page of summaries never carries a conversation out of the database.
+const SUMMARY_FIELDS = {_id: 1, createdAt: 1, updatedAt: 1, entryCount: 1} as const;
 // Eight hours, matching InMemorySessionStore: a bound on the cache in front of the collection, not a retention period.
 const DEFAULT_MAX_AGE_MS = 8 * 60 * 60 * 1000;
 
@@ -103,6 +111,20 @@ export class MongoSessionStore implements SessionStore {
       {$set: {...persistedFields(session), updatedAt: this.now()}, $setOnInsert: {createdAt: this.now()}},
       {upsert: true}
     );
+  }
+
+  /** One query, filtered on the user in the database and sorted on the index `latestFor` already needs. */
+  async listFor(userId: string | number, options?: SessionListOptions): Promise<SessionSummary[]> {
+    const collection = await this.collection();
+    const before = options?.before;
+    const documents = await collection
+      .find(before === undefined ? {userId} : {userId, updatedAt: {$lt: before}}, {
+        sort: {updatedAt: -1},
+        limit: cappedLimit(options?.limit),
+        projection: SUMMARY_FIELDS,
+      })
+      .toArray();
+    return documents.map(toSessionSummary);
   }
 
   /** The user's most recently saved conversation, by `updatedAt`, read through `get` so a live one is the object its running turn writes to. */

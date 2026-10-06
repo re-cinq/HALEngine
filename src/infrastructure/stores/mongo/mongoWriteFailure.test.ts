@@ -7,6 +7,7 @@ import type {MongoSessionDocument} from './mongoSessionDocument.js';
 const refusingCollection = (): CollectionLike<MongoSessionDocument> =>
   ({
     findOne: () => Promise.resolve(null),
+    find: () => ({toArray: () => Promise.resolve([])}),
     updateOne: () => Promise.reject(new Error('database unreachable')),
     deleteOne: () => Promise.resolve({deletedCount: 0}),
     deleteMany: () => Promise.resolve({deletedCount: 0}),

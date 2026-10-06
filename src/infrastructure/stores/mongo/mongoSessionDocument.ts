@@ -1,4 +1,5 @@
 import type {ChatSession, SessionEntry} from '../../../types/session.js';
+import type {SessionSummary} from '../../../types/sessionStore.js';
 
 /** Keys never written to the database, matched case-insensitively at any depth. */
 export const REDACTED_KEYS: readonly string[] = ['authheaders', 'authorization', 'cookie', 'host'];
@@ -7,6 +8,8 @@ export interface MongoSessionDocument {
   _id: string;
   userId: string | number;
   entries: SessionEntry[];
+  /** Written beside the entries so a list can count a conversation without reading one; absent on a pre-0.6 document. */
+  entryCount?: number;
   workspaceId?: string | number;
   createdAt: Date;
   updatedAt: Date;
@@ -30,6 +33,7 @@ export function persistedFields(session: ChatSession): Omit<MongoSessionDocument
   return stripCredentialKeys({
     userId: session.userId,
     entries: session.entries,
+    entryCount: session.entries.length,
     workspaceId: session.workspaceId,
   });
 }
@@ -41,6 +45,16 @@ export function toChatSession(document: MongoSessionDocument): ChatSession {
     userId: document.userId,
     entries: document.entries as SessionEntry[],
     workspaceId: document.workspaceId,
+  };
+}
+
+/** Builds the list row from a projected document; a pre-0.6 one carries no counter and reads as a conversation of none. */
+export function toSessionSummary(document: MongoSessionDocument): SessionSummary {
+  return {
+    sessionId: document._id,
+    createdAt: document.createdAt,
+    updatedAt: document.updatedAt,
+    entryCount: document.entryCount ?? 0,
   };
 }
 

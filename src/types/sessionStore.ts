@@ -12,6 +12,20 @@ export interface BaseSession {
 export type SessionLookup<T extends BaseSession = ChatSession> =
   {status: 'active'; session: T} | {status: 'expired'; userId: string | number} | {status: 'missing'};
 
+/** What a conversation list needs of one session: never its entries, and never its credentials. */
+export interface SessionSummary {
+  sessionId: string;
+  createdAt: Date;
+  updatedAt: Date;
+  entryCount: number;
+}
+
+/** A window onto a user's conversations, newest activity first; `before` pages down that same order. */
+export interface SessionListOptions {
+  limit?: number;
+  before?: Date;
+}
+
 export interface SessionCreateOptions {
   authHeaders?: ChatSession['authHeaders'];
   workspaceId?: string | number;
@@ -27,6 +41,8 @@ export interface SessionStore<T extends BaseSession = ChatSession> {
   evict?(sessionId: string): Awaitable<boolean>;
   /** Write signal: fires once per processed user message; failures are swallowed (specs/hal-engine-session-write-signal/spec.md). */
   save?(session: T): Awaitable<void>;
+  /** Summaries of the user's conversations, newest activity first, so a client can offer a list of them (specs/hal-engine-conversation-list/spec.md). */
+  listFor?(userId: string | number, options?: SessionListOptions): Awaitable<SessionSummary[]>;
   /** The user's most recently active session the store still holds, so a connect that names none can continue it (specs/hal-engine-session-resume/spec.md). */
   latestFor?(userId: string | number): Awaitable<T | undefined>;
   /** Tells an expired session from a missing one; `missing` is always a permitted answer, and a store without it behaves as `get` (specs/hal-engine-session-resume/spec.md). */

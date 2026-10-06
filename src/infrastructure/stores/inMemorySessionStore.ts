@@ -1,5 +1,12 @@
 import type {ChatSession} from '../../types/session.js';
-import type {SessionStore, SessionCreateOptions, SessionLookup} from '../../types/sessionStore.js';
+import type {
+  SessionStore,
+  SessionCreateOptions,
+  SessionListOptions,
+  SessionLookup,
+  SessionSummary,
+} from '../../types/sessionStore.js';
+import {cappedLimit} from './sessionListWindow.js';
 
 // Eight hours: a memory bound, not a retention decision (specs/hal-engine-session-lifetime/spec.md).
 const DEFAULT_MAX_AGE_MS = 8 * 60 * 60 * 1000;
@@ -72,12 +79,24 @@ export class InMemorySessionStore implements SessionStore {
     this.sessions.clear();
   }
 
+  /** Summaries of the user's live sessions, newest activity first, by the same activity `latestFor` reads. */
+  listFor(userId: string | number, options?: SessionListOptions): SessionSummary[] {
+    // Reversed rather than sorted descending, so a tie breaks the way latestFor breaks it and the two agree.
+    const newestFirst = this.ownedBy(userId).sort(byActivity).reverse();
+    const before = options?.before?.getTime();
+    const paged = before === undefined ? newestFirst : newestFirst.filter(held => lastActivity(held) < before);
+    return paged.slice(0, cappedLimit(options?.limit)).map(summaryOf);
+  }
+
   /** The user's most recently active session that has not aged out: its newest entry decides, or its creation if it has none. */
   latestFor(userId: string | number): ChatSession | undefined {
-    const owned = [...this.sessions.values()].filter(held => held.session.userId === userId && !this.hasExpired(held));
     // Ascending and stable, so of two sessions last active at the same moment, the one created later wins.
-    const byActivity = owned.sort((first, second) => lastActivity(first) - lastActivity(second));
-    return byActivity.at(-1)?.session;
+    return this.ownedBy(userId).sort(byActivity).at(-1)?.session;
+  }
+
+  // Their own array, so a caller's sort never reorders the map's insertion order, which the sweep depends on.
+  private ownedBy(userId: string | number): HeldSession[] {
+    return [...this.sessions.values()].filter(held => held.session.userId === userId && !this.hasExpired(held));
   }
 
   // Insertion order approximates age order, so the first live entry ends the sweep and the rest cost nothing.
@@ -92,6 +111,21 @@ export class InMemorySessionStore implements SessionStore {
   private hasExpired(held: HeldSession): boolean {
     return Number.isFinite(held.createdAt) && Date.now() - held.createdAt > this.maxAgeMs;
   }
+}
+
+// Ascending, and stable for a tie, so reversing it is exactly the order a conversation list wants.
+function byActivity(first: HeldSession, second: HeldSession): number {
+  return lastActivity(first) - lastActivity(second);
+}
+
+function summaryOf(held: HeldSession): SessionSummary {
+  const {session} = held;
+  return {
+    sessionId: session.sessionId,
+    createdAt: new Date(held.createdAt),
+    updatedAt: new Date(lastActivity(held)),
+    entryCount: session.entries.length,
+  };
 }
 
 // The store has no save to stamp, so activity is read off the entries; an unusable clock reading counts as none.

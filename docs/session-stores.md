@@ -70,7 +70,8 @@ once is not something this store supports.
 With resume's `latest` option on, every connect that names no session id asks `latestFor(userId)`
 for the user's most recently active conversation. `MongoSessionStore` answers with the user's
 document that has the newest `updatedAt`, which each `save` moves forward, so create this index
-where the collection lives; the store creates none itself:
+where the collection lives; the store creates none itself. `listFor` sorts on the same index, so
+this one serves both and there is no second index to create:
 
 <!-- doc-block: none -- a mongo shell command run against the deployment, not code the package ships -->
 ```js
@@ -80,6 +81,39 @@ db.hal_sessions.createIndex({userId: 1, updatedAt: -1});
 `InMemorySessionStore` has no `save` to stamp, so it goes by a session's newest entry, or its
 creation for a session with none, and never returns one that has aged out. A store you write
 yourself can leave `latestFor` out, in which case such a connect simply starts a new session.
+
+## Listing a user's conversations
+
+`listFor(userId, options?)` is optional, and it answers summaries rather than sessions:
+`sessionId`, `createdAt`, `updatedAt` and `entryCount`, most recent activity first. A summary
+carries no entries and no `authHeaders`, so a conversation list cannot hand over a conversation or
+a credential. Its first row is always the session `latestFor` returns — both read the same
+activity, so a list and a resume cannot disagree about which conversation is newest.
+
+`options.limit` defaults to 50 and is capped at 200, and `options.before` takes the conversations
+older than a moment, so a client pages by passing back the `updatedAt` of the last row it saw. A
+store whose database fails rejects rather than answering an empty list: what to show a user who may
+have conversations is your decision, and "no conversations" is not a safe guess.
+
+`MongoSessionStore` filters on the user in the query, sorts on the § Latest session index and
+projects the entries away, so a page of summaries never carries a conversation out of the database.
+It counts a conversation from an `entryCount` field each `save` writes beside the entries. A
+document saved before 0.6 has no such field and lists as a conversation of no entries until you
+backfill it:
+
+<!-- doc-block: none -- a mongo shell command run against the deployment, not code the package ships -->
+```js
+db.hal_sessions.updateMany({entryCount: {$exists: false}}, [{$set: {entryCount: {$size: '$entries'}}}]);
+```
+
+`InMemorySessionStore` goes by a session's newest entry, or its creation for a session with none,
+and never lists one that has aged out. A store you write yourself can leave `listFor` out, in which
+case it has no conversation list to offer.
+
+**GDPR.** A summary is personal data: it shows that a user held a conversation, and when. It
+carries no message content, and the user's id is part of the query rather than a filter applied
+afterwards, so a list can only ever be one user's. How far back the list reaches is the retention
+decision, and it is yours — see § Retention.
 
 ## Lookup
 
