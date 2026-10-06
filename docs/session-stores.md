@@ -63,7 +63,10 @@ session saved by one store instance is readable by another built on the same col
 is not coherent across instances until a `save` — two processes serving the same conversation at
 once is not something this store supports.
 
-`count()` reports documents, not cache entries, so `delete` does not change it.
+`count()` reports documents, not cache entries, so `delete` does not change it. It counts **every**
+user's, not one user's: it is an operational figure, and putting it in front of a user would both
+misreport their history and disclose the size of everyone else's. There is no per-user count — see
+§ Listing a user's conversations for what to do instead.
 
 ## Latest session
 
@@ -102,6 +105,14 @@ A `limit` of `0` answers nothing, and a limit that is not a usable number is rea
 
 A store whose database fails rejects rather than answering an empty list: what to show a user who
 may have conversations is your decision, and "no conversations" is not a safe guess.
+
+**Knowing whether another page exists.** `listFor` answers an array and no `hasMore`, so read it off
+the page: a page shorter than the `limit` you asked for is the last one. A full page is ambiguous, so
+either accept one final round-trip that comes back empty, or ask for one row more than you intend to
+show — `{limit: pageSize + 1}`, display the first `pageSize`, and take the cursor from the last row
+you displayed. The extra row's presence is your `hasMore`. Because the limit is capped at 200, that
+trick works up to a `pageSize` of 199. Do not reach for `count()` for this: it counts every user's
+conversations, not this user's, and there is no per-user total today.
 
 `MongoSessionStore` filters on the user in the query, sorts `{updatedAt: -1, _id: -1}` and projects
 the entries away, so a page of summaries never carries a conversation out of the database.
