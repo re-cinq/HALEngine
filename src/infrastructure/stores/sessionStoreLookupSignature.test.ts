@@ -1,16 +1,9 @@
 import {InMemorySessionStore} from './inMemorySessionStore.js';
+import {fiveMemberStore} from './sessionStoreTestSupport.js';
 import type {ChatSession} from '../../types/session.js';
 import type {SessionStore} from '../../types/sessionStore.js';
 
 // lookup is optional, and named so it cannot collide with a load a durable store may already have.
-
-const fiveMembers: SessionStore = {
-  create: (sessionId, userId): ChatSession => ({sessionId, userId, entries: []}),
-  get: () => undefined,
-  delete: () => false,
-  count: () => 0,
-  clear: () => undefined,
-};
 
 class StoreWithItsOwnLoad implements SessionStore {
   private readonly rows = new Map<string, ChatSession>();
@@ -46,7 +39,7 @@ describe('the SessionStore lookup member', () => {
   it('leaves a store with only the five original members satisfying the interface beside the shipped one', () => {
     const shipped: SessionStore = new InMemorySessionStore();
 
-    expect({fiveMembers: fiveMembers.lookup, shipped: typeof shipped.lookup}).toEqual({
+    expect({fiveMembers: fiveMemberStore.lookup, shipped: typeof shipped.lookup}).toEqual({
       fiveMembers: undefined,
       shipped: 'function',
     });

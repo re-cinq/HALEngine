@@ -57,7 +57,10 @@ export type {
   MongoSessionStoreOptions,
   MongoSessionDocument,
   CollectionLike,
+  CursorLike,
   DbLike,
+  FindManyOptions,
+  FindOneOptions,
   MongoClientLike,
 } from './infrastructure/stores/mongo/index.js';
 export {InMemoryPromptStore} from './infrastructure/stores/inMemoryPromptStore.js';
@@ -112,6 +115,15 @@ export type {
 } from './types/messages.js';
 
 export type {WsAuthenticator, HttpAuthMiddleware, AuthenticatedRequest} from './types/auth.js';
-export type {SessionStore, SessionCreateOptions, BaseSession, Awaitable, SessionLookup} from './types/sessionStore.js';
+export type {
+  SessionStore,
+  SessionCreateOptions,
+  SessionListOptions,
+  SessionCursor,
+  SessionSummary,
+  BaseSession,
+  Awaitable,
+  SessionLookup,
+} from './types/sessionStore.js';
 export type {PromptStore, PromptTemplate} from './types/promptStore.js';
 export type {UsageStore, UsageRecord} from './types/usageStore.js';

@@ -8,6 +8,17 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+### Added
+
+- `SessionStore.listFor(userId, options?)`, an optional store member that answers the summaries of a user's conversations — `sessionId`, `createdAt`, `updatedAt` and `entryCount` — most recent activity first, so a consumer can build a conversation list instead of only rejoining one. Nothing in the engine calls it yet: the store answers the list, and the route or frame that carries it to a client is still yours to write. `InMemorySessionStore` and `MongoSessionStore` both implement it; a store of your own may leave it out. A summary never carries a conversation's entries or its credentials. Page with `limit` (50 by default, 200 at most, and `0` answers nothing) and `before`, which takes the last summary you saw: the cursor carries both `updatedAt` and `sessionId`, so two conversations saved in the same millisecond cannot straddle a page boundary and go unlisted. See `docs/session-stores.md` § Listing a user's conversations.
+
+### Changed
+
+- `MongoSessionStore` now writes an `entryCount` field beside the entries on every save, so a conversation list can count a conversation without reading one. A document saved by an earlier version lists as a conversation of no entries until you backfill it; `docs/session-stores.md` carries the one-line command.
+- `MongoSessionStore.latestFor` now breaks a tie on `updatedAt` by `_id`, so it and `listFor` agree on which conversation is newest when two were saved in the same millisecond. Which of two tied conversations a resume rejoins can therefore change.
+- The index to create for `MongoSessionStore` is now `{userId: 1, updatedAt: -1, _id: -1}`. The two-key form that served `latestFor` cannot satisfy `listFor`'s sort, so Mongo would sort a user's whole history on every page. `docs/session-stores.md` § Latest session has the command.
+- `CollectionLike` gains an optional `find`, and `CursorLike`, `FindManyOptions` and `FindOneOptions` are now exported for anyone writing their own adapter. A collection without `find` still satisfies the type; `listFor` refuses on it rather than reporting that the user has no conversations.
+
 ## [0.5.0] - 2026-10-04
 
 **Upgrading from 0.4.x.** One thing is removed, and several things an existing consumer observes change. Check these before you bump:

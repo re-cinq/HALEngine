@@ -63,7 +63,10 @@ session saved by one store instance is readable by another built on the same col
 is not coherent across instances until a `save` — two processes serving the same conversation at
 once is not something this store supports.
 
-`count()` reports documents, not cache entries, so `delete` does not change it.
+`count()` reports documents, not cache entries, so `delete` does not change it. It counts **every**
+user's, not one user's: it is an operational figure, and putting it in front of a user would both
+misreport their history and disclose the size of everyone else's. There is no per-user count — see
+§ Listing a user's conversations for what to do instead.
 
 ## Latest session
 
@@ -74,12 +77,81 @@ where the collection lives; the store creates none itself:
 
 <!-- doc-block: none -- a mongo shell command run against the deployment, not code the package ships -->
 ```js
-db.hal_sessions.createIndex({userId: 1, updatedAt: -1});
+db.hal_sessions.createIndex({userId: 1, updatedAt: -1, _id: -1});
 ```
+
+The trailing `_id` is there for `listFor`, which sorts on `{updatedAt: -1, _id: -1}`; `latestFor`
+alone would be served by the first two keys. Create the three-key form and both members are served
+— see § Listing a user's conversations for what the two-key form costs.
 
 `InMemorySessionStore` has no `save` to stamp, so it goes by a session's newest entry, or its
 creation for a session with none, and never returns one that has aged out. A store you write
 yourself can leave `latestFor` out, in which case such a connect simply starts a new session.
+
+## Listing a user's conversations
+
+`listFor(userId, options?)` is optional, and it answers summaries rather than sessions:
+`sessionId`, `createdAt`, `updatedAt` and `entryCount`, most recent activity first. A summary
+carries no entries and no `authHeaders`, so a conversation list cannot hand over a conversation or
+a credential. Its first row is the session `latestFor` returns, because both read the same activity,
+so a list and a resume agree about which conversation is newest.
+
+`options.limit` defaults to 50 and is capped at 200. `options.before` resumes after a row, so a
+client pages by passing back the last summary it saw — `SessionCursor` is `{updatedAt, sessionId}`,
+which a `SessionSummary` already satisfies, so `listFor(userId, {before: rows.at(-1)})` is the whole
+of it. The session id is in the cursor because `updatedAt` alone is not unique: two conversations
+saved in the same millisecond would straddle a page boundary and one of them would never be listed.
+A `limit` of `0` answers nothing, and a limit that is not a usable number is read as none given.
+
+A store whose database fails rejects rather than answering an empty list: what to show a user who
+may have conversations is your decision, and "no conversations" is not a safe guess.
+
+**Knowing whether another page exists.** `listFor` answers an array and no `hasMore`, so read it off
+the page: a page shorter than the `limit` you asked for is the last one. A full page is ambiguous, so
+either accept one final round-trip that comes back empty, or ask for one row more than you intend to
+show — `{limit: pageSize + 1}`, display the first `pageSize`, and take the cursor from the last row
+you displayed. The extra row's presence is your `hasMore`. Because the limit is capped at 200, that
+trick works up to a `pageSize` of 199. Do not reach for `count()` for this: it counts every user's
+conversations, not this user's, and there is no per-user total today.
+
+`MongoSessionStore` filters on the user in the query, sorts `{updatedAt: -1, _id: -1}` and projects
+the entries away, so a page of summaries never carries a conversation out of the database.
+
+**Create the three-key index from § Latest session.** `{userId: 1, updatedAt: -1}` cannot satisfy a
+two-key sort, so Mongo answers with a blocking sort over *every* conversation the user has and
+applies the limit after it: measured on 300 conversations, a 50-row page examined all 300 documents,
+where the three-key index made the same page an indexed sort examining exactly the 50 it returns. The
+index does not *cover* the query — `createdAt` and `entryCount` are not in it, so Mongo still fetches
+each row it answers with — and that is the point: with it, the work is the page; without it, the work
+is the history. Two consequences, not just a slow query — paging a long history that way is
+quadratic, and a blocking sort is bounded by Mongo's 100 MB sort limit, so a large enough history
+makes `listFor` fail rather than merely crawl.
+
+It answers a `limit` of `0` without querying at all, because MongoDB reads `limit: 0` as *no* limit
+and would otherwise hand back everything the filter matches. It counts a conversation from an
+`entryCount` field each `save` writes beside the entries. A document saved before 0.6 has no such
+field and lists as a conversation of no entries until you backfill it:
+
+<!-- doc-block: none -- a mongo shell command run against the deployment, not code the package ships -->
+```js
+db.hal_sessions.updateMany({entryCount: {$exists: false}}, [{$set: {entryCount: {$size: '$entries'}}}]);
+```
+
+`InMemorySessionStore` goes by a session's newest entry, or its creation for a session with none,
+and never lists one that has aged out. One divergence to know about, in that store only: where two
+of a user's conversations are last active in the same millisecond, the list puts the larger session
+id first while `latestFor` takes the one created later, so for tied conversations the head of the
+list and the session a resume rejoins can differ. `MongoSessionStore` breaks that tie the same way
+in both members, so the two agree there.
+
+A store you write yourself can leave `listFor` out, in which case it has no conversation list to
+offer. One built on an injected collection needs that collection to implement `find`: without it,
+`listFor` refuses rather than reporting that the user has no conversations.
+
+**GDPR.** A summary is personal data: it shows that a user held a conversation, and when. It
+carries no message content, and the user's id is part of the query rather than a filter applied
+afterwards, so a list can only ever be one user's. How far back the list reaches is the retention
+decision, and it is yours — see § Retention.
 
 ## Lookup
 

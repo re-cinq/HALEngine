@@ -3,6 +3,7 @@ import {MongoMemoryServer} from 'mongodb-memory-server';
 import {MongoClient} from 'mongodb';
 import type {Collection, Db} from 'mongodb';
 import type {MongoSessionDocument} from './mongoSessionDocument.js';
+import type {CollectionLike} from './mongoDriverTypes.js';
 
 // A real mongod, started once per suite: no cloud account, no Docker, and no double standing in for a database.
 
@@ -57,4 +58,18 @@ export function mongoCollection(): () => Collection<MongoSessionDocument> {
   });
 
   return () => collection;
+}
+
+/** A collection that answers nothing, for the suites that need one member to misbehave; override just that member. */
+export function fakeCollection(
+  overrides: Partial<CollectionLike<MongoSessionDocument>> = {}
+): CollectionLike<MongoSessionDocument> {
+  return {
+    findOne: () => Promise.resolve(null),
+    updateOne: () => Promise.resolve(undefined),
+    deleteOne: () => Promise.resolve({deletedCount: 0}),
+    deleteMany: () => Promise.resolve({deletedCount: 0}),
+    countDocuments: () => Promise.resolve(0),
+    ...overrides,
+  } as CollectionLike<MongoSessionDocument>;
 }

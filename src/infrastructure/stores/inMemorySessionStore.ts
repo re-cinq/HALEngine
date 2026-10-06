@@ -1,5 +1,12 @@
 import type {ChatSession} from '../../types/session.js';
-import type {SessionStore, SessionCreateOptions, SessionLookup} from '../../types/sessionStore.js';
+import type {
+  SessionStore,
+  SessionCreateOptions,
+  SessionListOptions,
+  SessionLookup,
+  SessionSummary,
+} from '../../types/sessionStore.js';
+import {cappedLimit, cursorAt, newestFirst, sitsAfter} from './sessionListWindow.js';
 
 // Eight hours: a memory bound, not a retention decision (specs/hal-engine-session-lifetime/spec.md).
 const DEFAULT_MAX_AGE_MS = 8 * 60 * 60 * 1000;
@@ -72,12 +79,28 @@ export class InMemorySessionStore implements SessionStore {
     this.sessions.clear();
   }
 
+  /** Summaries of the user's live sessions, newest activity first, by the same activity `latestFor` reads. */
+  listFor(userId: string | number, options?: SessionListOptions): SessionSummary[] {
+    const limit = cappedLimit(options?.limit);
+    if (limit === 0) return [];
+
+    const ordered = this.ownedBy(userId).map(summaryOf).sort(newestFirst);
+    const before = options?.before;
+    if (before === undefined) return ordered.slice(0, limit);
+
+    const at = cursorAt(before);
+    return ordered.filter(summary => sitsAfter(summary, at, before.sessionId)).slice(0, limit);
+  }
+
   /** The user's most recently active session that has not aged out: its newest entry decides, or its creation if it has none. */
   latestFor(userId: string | number): ChatSession | undefined {
-    const owned = [...this.sessions.values()].filter(held => held.session.userId === userId && !this.hasExpired(held));
     // Ascending and stable, so of two sessions last active at the same moment, the one created later wins.
-    const byActivity = owned.sort((first, second) => lastActivity(first) - lastActivity(second));
-    return byActivity.at(-1)?.session;
+    return this.ownedBy(userId).sort(byActivity).at(-1)?.session;
+  }
+
+  // Their own array, so a caller's sort never reorders the map's insertion order, which the sweep depends on.
+  private ownedBy(userId: string | number): HeldSession[] {
+    return [...this.sessions.values()].filter(held => held.session.userId === userId && !this.hasExpired(held));
   }
 
   // Insertion order approximates age order, so the first live entry ends the sweep and the rest cost nothing.
@@ -92,6 +115,21 @@ export class InMemorySessionStore implements SessionStore {
   private hasExpired(held: HeldSession): boolean {
     return Number.isFinite(held.createdAt) && Date.now() - held.createdAt > this.maxAgeMs;
   }
+}
+
+// Ascending and stable, so latestFor's `.at(-1)` takes the session created later when two are last active together.
+function byActivity(first: HeldSession, second: HeldSession): number {
+  return lastActivity(first) - lastActivity(second);
+}
+
+function summaryOf(held: HeldSession): SessionSummary {
+  const {session} = held;
+  return {
+    sessionId: session.sessionId,
+    createdAt: new Date(held.createdAt),
+    updatedAt: new Date(lastActivity(held)),
+    entryCount: session.entries.length,
+  };
 }
 
 // The store has no save to stamp, so activity is read off the entries; an unusable clock reading counts as none.
