@@ -5,6 +5,7 @@ import {createServer} from './createServer.js';
 import {InMemorySessionStore} from '../infrastructure/stores/inMemorySessionStore.js';
 import type {ChatOrchestrator} from '../orchestration/chatOrchestrator.js';
 import type {WsAuthenticator} from '../types/auth.js';
+import type {AuthenticatedUser} from '../types/session.js';
 import {setLogger} from '../shared/logger.js';
 
 // Raw requests over a real socket: a ws client always sends a Host and a valid target, so it cannot send these.
@@ -128,4 +129,32 @@ describe('an upgrade request the server cannot read', () => {
 
     expect(reply).toBe('HTTP/1.1 101 Switching Protocols');
   });
+
+  it('answers 401 when the authenticator resolves a non-scalar id, and still accepts a string or finite-number id', async () => {
+    const request = upgradeRequest('/hal/ws', 'Host: example.com\r\n');
+    const withId =
+      (id: unknown): WsAuthenticator =>
+      _req =>
+        Promise.resolve({id} as unknown as AuthenticatedUser);
+    const statusCodes = {
+      object: await statusLineFor(withId({$ne: null}), request),
+      null: await statusLineFor(withId(null), request),
+      undefined: await statusLineFor(withId(undefined), request),
+      array: await statusLineFor(withId([]), request),
+      NaN: await statusLineFor(withId(Number.NaN), request),
+      Infinity: await statusLineFor(withId(Number.POSITIVE_INFINITY), request),
+      string: await statusLineFor(withId('u1'), request),
+      finiteNumber: await statusLineFor(withId(42), request),
+    };
+    expect(statusCodes).toEqual({
+      object: 'HTTP/1.1 401 Unauthorized',
+      null: 'HTTP/1.1 401 Unauthorized',
+      undefined: 'HTTP/1.1 401 Unauthorized',
+      array: 'HTTP/1.1 401 Unauthorized',
+      NaN: 'HTTP/1.1 401 Unauthorized',
+      Infinity: 'HTTP/1.1 401 Unauthorized',
+      string: 'HTTP/1.1 101 Switching Protocols',
+      finiteNumber: 'HTTP/1.1 101 Switching Protocols',
+    });
+  }, 30_000);
 });

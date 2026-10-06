@@ -1,7 +1,16 @@
 import {jest} from '@jest/globals';
-import {createConnectionHandler, type ConnectionHandlerDeps, type ExtWebSocket} from './connectionHandler.js';
-import type {ChatSession} from '../../types/session.js';
+import {
+  createConnectionHandler,
+  createUpgradeHandler,
+  type ConnectionHandlerDeps,
+  type ExtWebSocket,
+} from './connectionHandler.js';
+import type {IncomingMessage} from 'http';
+import type {Duplex} from 'stream';
+import type {WebSocketServer} from 'ws';
+import type {ChatSession, AuthenticatedUser} from '../../types/session.js';
 import type {SessionStore} from '../../types/sessionStore.js';
+import type {WsAuthenticator} from '../../types/auth.js';
 import {captureErrors} from '../../shared/logCaptureTestSupport.js';
 
 // Pins the lifecycle hooks: that onConnect is called at all, when, and that neither hook can kill a connection.
@@ -337,5 +346,51 @@ describe('a session store that fails to release', () => {
     await settle();
 
     expect(evicted).toHaveLength(1);
+  });
+});
+
+describe('the websocket upgrade handler non-scalar id guard', () => {
+  const errors = captureErrors();
+
+  const upgradeWithId = async (id: unknown): Promise<{upgraded: boolean; written: string[]}> => {
+    let upgraded = false;
+    const written: string[] = [];
+    const wss = {
+      handleUpgrade: () => void (upgraded = true),
+    } as unknown as WebSocketServer;
+    const socket = {
+      write: (data: string) => written.push(data),
+      destroy: () => undefined,
+    } as unknown as Duplex;
+    const request = {headers: {host: 'localhost'}, url: '/hal/ws'} as unknown as IncomingMessage;
+    const wsAuth: WsAuthenticator = _req => Promise.resolve({id} as unknown as AuthenticatedUser);
+    const deps = {
+      wsAuth,
+      sessionStore: {} as SessionStore,
+      handleMessage: jest.fn(),
+      basePath: '/hal',
+    } as unknown as ConnectionHandlerDeps;
+    createUpgradeHandler(wss, deps)(request, socket, Buffer.from(''));
+    await settle();
+    return {upgraded, written};
+  };
+
+  it('logs the type of a refused non-scalar id and never its contents', async () => {
+    const sensitiveId = {$ne: null, secret: 'SENSITIVE-PAYLOAD'};
+    const {upgraded} = await upgradeWithId(sensitiveId);
+    const errorsJson = JSON.stringify(errors);
+    expect({
+      upgraded,
+      hasRefusalError: errors.length > 0,
+      leakedSecret: errorsJson.includes('SENSITIVE-PAYLOAD'),
+      leakedOperator: errorsJson.includes('$ne'),
+      loggedType: errorsJson.includes('object'),
+    }).toEqual({
+      upgraded: false,
+      hasRefusalError: true,
+      leakedSecret: false,
+      leakedOperator: false,
+      loggedType: true,
+    });
   });
 });
