@@ -64,4 +64,19 @@ describe('InMemorySessionStore', () => {
 
     expect({count: store.count(), s1: store.get('s1')}).toEqual({count: 0, s1: undefined});
   });
+
+  it('refuses a non-scalar userId in create', () => {
+    const nonScalar: unknown[] = [{$ne: null}, null, undefined, [], Number.NaN, Number.POSITIVE_INFINITY];
+    for (const id of nonScalar) {
+      expect(() => store.create('s1', id as string | number)).toThrow();
+    }
+  });
+
+  it('refuses a non-scalar userId in latestFor', () => {
+    store.create('s1', 'u1');
+    const nonScalar: unknown[] = [{$ne: null}, null, undefined, [], Number.NaN, Number.POSITIVE_INFINITY];
+    for (const id of nonScalar) {
+      expect(() => store.latestFor(id as string | number)).toThrow();
+    }
+  });
 });

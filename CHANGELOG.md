@@ -8,6 +8,10 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+### Security
+
+- **Non-scalar `id` from `WsAuthenticator` is now refused at the upgrade boundary.** A `wsAuth` that resolves an `AuthenticatedUser` whose `id` is not a `string` or finite `number` (objects, arrays, `null`, `undefined`, `NaN`, `Infinity`) is treated as a failed authentication: the upgrade is rejected with `401` and the id's _type_ is logged at error level so the fault is visible in the authenticator without credential material in the log. The store methods `create` and `latestFor` also refuse a non-scalar id with a `TypeError` before issuing any query, protecting consumer stores called outside the engine. **Breaking for consumers whose `wsAuth` returns a non-scalar id**: such connections now fail where they previously connected with a broken identity.
+
 ### Added
 
 - `SessionStore.listFor(userId, options?)`, an optional store member that answers the summaries of a user's conversations — `sessionId`, `createdAt`, `updatedAt` and `entryCount` — most recent activity first, so a consumer can build a conversation list instead of only rejoining one. Nothing in the engine calls it yet: the store answers the list, and the route or frame that carries it to a client is still yours to write. `InMemorySessionStore` and `MongoSessionStore` both implement it; a store of your own may leave it out. A summary never carries a conversation's entries or its credentials. Page with `limit` (50 by default, 200 at most, and `0` answers nothing) and `before`, which takes the last summary you saw: the cursor carries both `updatedAt` and `sessionId`, so two conversations saved in the same millisecond cannot straddle a page boundary and go unlisted. See `docs/session-stores.md` § Listing a user's conversations.
