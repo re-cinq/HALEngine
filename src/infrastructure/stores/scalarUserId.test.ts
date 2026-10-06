@@ -1,14 +1,10 @@
 import {assertScalarUserId} from './scalarUserId.js';
 
 describe('assertScalarUserId', () => {
-  it.each([
-    ['non-empty string', 'u1'],
-    ['empty string', ''],
-    ['positive integer', 42],
-    ['zero', 0],
-    ['negative integer', -1],
-  ] as [string, string | number][])('accepts userId: %s', (_label, id) => {
-    expect(() => assertScalarUserId(id)).not.toThrow();
+  it('accepts a string or finite-number userId', () => {
+    for (const id of ['u1', '', 42, 0, -1] as (string | number)[]) {
+      expect(() => assertScalarUserId(id)).not.toThrow();
+    }
   });
 
   it('throws a TypeError for a non-scalar userId: object, null, undefined, array, NaN, or Infinity', () => {
