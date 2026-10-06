@@ -1,6 +1,9 @@
-import type {IncomingMessage} from '../../types/messages.js';
+import type {ConversationCursor, IncomingMessage} from '../../types/messages.js';
+import {SESSION_ID_PATTERN} from './helpers.js';
 
 const MAX_CONTENT_LENGTH = 10000;
+// The store caps a page at 200; a frame asking for more is a client bug worth reporting rather than quietly clamping.
+const MAX_PAGE = 200;
 
 interface ValidationSuccess {
   valid: true;
@@ -14,6 +17,13 @@ interface ValidationFailure {
 
 export type ValidationResult = ValidationSuccess | ValidationFailure;
 
+// A Map rather than an object: a frame naming `constructor` or `__proto__` must miss, not reach an inherited member.
+const VALIDATORS = new Map<string, (message: Record<string, unknown>) => ValidationResult>([
+  ['user_message', validateUserMessage],
+  ['ping', validatePingMessage],
+  ['list_conversations', validateListConversations],
+]);
+
 export function validateMessage(payload: unknown): ValidationResult {
   if (typeof payload !== 'object' || payload === null) {
     return {valid: false, error: 'Message must be an object'};
@@ -25,14 +35,9 @@ export function validateMessage(payload: unknown): ValidationResult {
     return {valid: false, error: 'Message must have a type field'};
   }
 
-  switch (message.type) {
-    case 'user_message':
-      return validateUserMessage(message);
-    case 'ping':
-      return validatePingMessage(message);
-    default:
-      return {valid: false, error: `Unknown message type: ${message.type}`};
-  }
+  const validator = VALIDATORS.get(message.type);
+  if (validator === undefined) return {valid: false, error: `Unknown message type: ${message.type}`};
+  return validator(message);
 }
 
 function validateUserMessage(message: Record<string, unknown>): ValidationResult {
@@ -71,4 +76,32 @@ function validatePingMessage(message: Record<string, unknown>): ValidationResult
       timestamp: message.timestamp,
     },
   };
+}
+
+// Accepted whether or not the feature is on: a validator reads a frame, and the handler decides what is served.
+function validateListConversations(message: Record<string, unknown>): ValidationResult {
+  const {limit, before} = message;
+  if (limit !== undefined && !isPage(limit)) {
+    return {valid: false, error: `list_conversations limit must be a whole number from 1 to ${MAX_PAGE}`};
+  }
+
+  const cursor = before === undefined ? undefined : asCursor(before);
+  if (before !== undefined && cursor === undefined) {
+    return {valid: false, error: 'list_conversations before must carry an ISO updatedAt and a sessionId'};
+  }
+
+  return {valid: true, data: {type: 'list_conversations', limit: limit as number | undefined, before: cursor}};
+}
+
+function isPage(limit: unknown): limit is number {
+  return typeof limit === 'number' && Number.isInteger(limit) && limit >= 1 && limit <= MAX_PAGE;
+}
+
+// Both halves or neither: a cursor missing its session id would page on a time alone and skip a conversation on a tie.
+function asCursor(before: unknown): ConversationCursor | undefined {
+  if (typeof before !== 'object' || before === null) return undefined;
+  const {updatedAt, sessionId} = before as Record<string, unknown>;
+  if (typeof updatedAt !== 'string' || !Number.isFinite(Date.parse(updatedAt))) return undefined;
+  if (typeof sessionId !== 'string' || !SESSION_ID_PATTERN.test(sessionId)) return undefined;
+  return {updatedAt, sessionId};
 }

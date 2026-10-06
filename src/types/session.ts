@@ -39,6 +39,7 @@ export const ErrorCodes = {
   INVALID_FORMAT: 'INVALID_FORMAT',
   RATE_LIMITED: 'RATE_LIMITED',
   SERVER_ERROR: 'SERVER_ERROR',
+  UNSUPPORTED: 'UNSUPPORTED',
 } as const;
 
 export interface ChatSession {

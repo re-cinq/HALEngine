@@ -10,6 +10,11 @@ package, not for somebody reading this repository's commit log.
 
 ### Added
 
+- **Conversation list over the WebSocket.** With `transport: {history: {enabled: true}}` — off by default, and separate from `transport.resume` — a client sends `{"type": "list_conversations"}` and is answered with one `conversation_list` frame holding its own user's conversations, newest activity first: `sessionId`, `createdAt`, `updatedAt` and `entryCount`, no message content. Page with `limit` (1-200) and `before`, the last row you were sent. Reconnect with a row's `sessionId` to rejoin that conversation, which needs nothing new. The frame names no user and has no field for one: the engine lists the conversations of the user your `WsAuthenticator` returned. `docs/getting-started.md` § Conversation List has the exchange.
+- `UNSUPPORTED` joins `ErrorCodes`: the answer to a frame this server does not serve, because the feature is off or its store cannot list. A list that cannot be answered is never an empty list, which a client could not tell from a user who has no conversations.
+
+### Added
+
 - `SessionStore.listFor(userId, options?)`, an optional store member that answers the summaries of a user's conversations — `sessionId`, `createdAt`, `updatedAt` and `entryCount` — most recent activity first, so a consumer can build a conversation list instead of only rejoining one. Nothing in the engine calls it yet: the store answers the list, and the route or frame that carries it to a client is still yours to write. `InMemorySessionStore` and `MongoSessionStore` both implement it; a store of your own may leave it out. A summary never carries a conversation's entries or its credentials. Page with `limit` (50 by default, 200 at most, and `0` answers nothing) and `before`, which takes the last summary you saw: the cursor carries both `updatedAt` and `sessionId`, so two conversations saved in the same millisecond cannot straddle a page boundary and go unlisted. See `docs/session-stores.md` § Listing a user's conversations.
 
 ### Changed

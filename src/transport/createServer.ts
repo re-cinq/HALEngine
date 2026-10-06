@@ -9,6 +9,7 @@ import {createUpgradeHandler, createConnectionHandler, ExtWebSocket} from './ws/
 import {createMessageHandler} from './ws/messageHandler.js';
 import {selectSubprotocol} from './ws/subprotocol.js';
 import type {ConnectInfo, SessionResumeOptions} from './ws/sessionResume.js';
+import type {ConversationHistoryOptions} from './ws/conversationList.js';
 import {log} from '../shared/logger.js';
 
 export interface HalServerOptions {
@@ -23,6 +24,7 @@ export interface HalServerOptions {
   onConnect?: (session: import('../types/session.js').ChatSession, connection: ConnectInfo) => void | Promise<void>;
   onDisconnect?: (sessionId: string) => void | Promise<void>;
   resume?: SessionResumeOptions;
+  history?: ConversationHistoryOptions;
 }
 
 export interface HalServer {
@@ -40,7 +42,10 @@ export function createServer(options: HalServerOptions): HalServer {
     handleProtocols: selectSubprotocol,
   });
 
-  const handleMessage = createMessageHandler(options.orchestrator);
+  const handleMessage = createMessageHandler(options.orchestrator, {
+    sessionStore: options.sessionStore,
+    history: options.history,
+  });
   const examplePrompts = options.toolRegistry?.getExamplePrompts() ?? [];
 
   const deps = {

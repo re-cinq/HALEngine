@@ -54,6 +54,31 @@ Resume gets a client back into one conversation: the id it names, or the user's 
 - They break a tie on activity the same way, by session id ([validated by: break a tie on activity the same way, by session id](../../src/infrastructure/stores/storeListAgreement.test.ts#L52)).
 - They page identically through the documented call, `listFor(userId, {limit, before: rows.at(-1)})`, a page at a time until a page comes back empty ([validated by: page the same way through the documented call, two rows at a time from the last row seen](../../src/infrastructure/stores/storeListAgreement.test.ts#L61)).
 
+## Asking for the list over the socket
+
+- Serving a list is its own switch, `transport.history`, and not part of `transport.resume`: resume on with history off still refuses the frame. Rejoining hands a client back a conversation it was already in, while a list tells it what else the user has, and a deployer who agreed to the first did not thereby agree to the second ([validated by: refuses the frame with resume on but history off, since one switch is not the other](../../src/transport/conversationList.test.ts#L121)).
+- With `history.enabled`, a `list_conversations` frame is answered with one `conversation_list` carrying the user's conversations newest activity first, each `createdAt` and `updatedAt` an ISO string rather than a `Date`, which is what survives the wire ([validated by: answers the user's conversations newest first, with both times as ISO strings](../../src/transport/conversationList.test.ts#L67)).
+- The list is the connecting user's, taken from the connection: a frame carrying a `userId` of somebody else is answered with the caller's own conversations, and the store is asked for the caller's id ([validated by: answers the connecting user's own conversations even when the frame names another user](../../src/transport/conversationList.test.ts#L86)).
+- `limit` and `before` reach the store as the frame sent them, so a client pages the socket the way a consumer pages the store ([validated by: carries a limit and a cursor through to the store as the frame sent them](../../src/transport/conversationList.test.ts#L97)).
+- A client picks a conversation by reconnecting with `?sessionId=` from a row, which session resume already authorises and replays: there is no switch frame and no second replay path ([validated by: hands a client an id it can rejoin the conversation with](../../src/transport/conversationList.test.ts#L200)).
+- A `list_conversations` sent while a turn is streaming is answered before that turn ends, because a history request is not a turn and waits on no lock ([validated by: answers a list while a turn is still streaming, rather than queueing behind it](../../src/transport/conversationList.test.ts#L179)).
+
+## When the frame cannot be answered
+
+- Without `transport.history`, the frame is answered with an `error` of code `UNSUPPORTED` and no list ([validated by: refuses the frame when conversation history is not turned on](../../src/transport/conversationList.test.ts#L109)).
+- A store implementing no `listFor` is answered with the same code, never an empty list: a client cannot tell "no conversations" from "the server could not look", and a history view is the one place that difference matters ([validated by: refuses the frame when the store cannot list, rather than reporting no conversations](../../src/transport/conversationList.test.ts#L132)).
+- A store that fails is answered `SERVER_ERROR` with none of the store's own words, the socket stays open, and the log carries the error's type rather than its message, since a driver's message can hold a connection string and its password ([validated by: answers a failing store with a server error, keeps the socket open, and logs no word the store said](../../src/transport/conversationList.test.ts#L144)).
+
+- A store that rejects with something that is not an `Error` is logged by that value's type, so a driver throwing a string is still described ([validated by: reports the type of a rejection that is not an Error, rather than failing to describe it](../../src/transport/conversationList.test.ts#L166)).
+
+## Reading the frame
+
+- A `list_conversations` naming no window is accepted, and a field the frame does not define — a `userId`, for one — is dropped rather than forwarded ([validated by: accepts list_conversations with no window, and keeps no field the frame does not define](../../src/transport/ws/validation.test.ts#L23)).
+- `limit` is accepted as a whole number from 1 to 200, the bound the store caps a page at ([validated by: accepts a whole-number limit inside the page bound and a cursor carrying both halves](../../src/transport/ws/validation.test.ts#L29)).
+- Anything else is refused rather than clamped, since a limit of `0`, `201`, `1.5`, `'10'` or `NaN` is a client bug worth reporting ([validated by: refuses a limit that is not a whole number from one to two hundred](../../src/transport/ws/validation.test.ts#L37)).
+- `before` is accepted only carrying both halves, an ISO `updatedAt` and a `sessionId` of the shape the upgrade reads one in: a cursor missing its id would page on a time alone and skip a conversation on a tie ([validated by: refuses a cursor missing either half, or carrying a time nothing can parse](../../src/transport/ws/validation.test.ts#L45)).
+- The validator dispatches through a `Map`, so a frame whose `type` names an inherited member — `constructor`, `__proto__`, `toString` — is an unknown type rather than something that reaches it ([validated by: answers a frame naming an inherited member as an unknown type, rather than reaching it](../../src/transport/ws/validation.test.ts#L58)).
+
 ## A cursor the caller can actually hold
 
 - A cursor's `updatedAt` may be a `Date`, an ISO string or an epoch number, so a summary that went through JSON on its way to a client and back still pages ([validated by: pages on a cursor that has been through JSON, and refuses one carrying no usable moment](../../src/infrastructure/stores/inMemoryConversationList.test.ts#L123)).
