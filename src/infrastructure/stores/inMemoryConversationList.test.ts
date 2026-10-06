@@ -101,26 +101,23 @@ describe('the in-memory store conversation list', () => {
     });
   });
 
-  it('reads a fractional or negative limit as a count a caller can use rather than failing the list', () => {
+  it('floors a fractional limit, and reads a negative or unusable one as none given rather than as nothing', () => {
     const store = new InMemorySessionStore();
     store.create('s1', 'u1');
     store.create('s2', 'u1');
 
     expect({
       fractional: store.listFor('u1', {limit: 1.7}).length,
-      negative: store.listFor('u1', {limit: -5}),
-    }).toEqual({fractional: 1, negative: []});
+      negative: store.listFor('u1', {limit: -5}).length,
+      unusable: store.listFor('u1', {limit: Number.NaN}).length,
+    }).toEqual({fractional: 1, negative: 2, unusable: 2});
   });
 
-  it('answers nothing for a limit of none, and the default for a limit that is not a number', () => {
+  it('answers nothing only for a limit of exactly none', () => {
     const store = new InMemorySessionStore();
     store.create('s1', 'u1');
-    store.create('s2', 'u1');
 
-    expect({
-      none: store.listFor('u1', {limit: 0}),
-      unusable: store.listFor('u1', {limit: Number.NaN}).length,
-    }).toEqual({none: [], unusable: 2});
+    expect(store.listFor('u1', {limit: 0})).toEqual([]);
   });
 
   it('pages on a cursor that has been through JSON, and refuses one carrying no usable moment', () => {

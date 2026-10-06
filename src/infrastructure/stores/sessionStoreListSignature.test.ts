@@ -19,14 +19,22 @@ describe('the SessionStore listFor member', () => {
     }).toEqual({fiveMembers: undefined, memory: 'function', mongo: 'function'});
   });
 
-  it('carries no entries and no credentials, so a list can never hand over a conversation', () => {
-    const summary: SessionSummary = {sessionId: 's1', createdAt: START, updatedAt: START, entryCount: 2};
+  it('carries only its four fields, so a list can never hand over a conversation or a credential', () => {
+    const store = new InMemorySessionStore();
+    const session = store.create('s1', 'u1', {authHeaders: {cookie: 'session=secret'}});
+    session.entries.push({role: 'user', content: 'hello', timestamp: START.toISOString()});
+    const [summary] = store.listFor('u1') as [SessionSummary];
 
     expect({
+      keys: Object.keys(summary).sort(),
       // @ts-expect-error a summary has no entries: the conversation does not travel with the list.
       entries: summary.entries,
       // @ts-expect-error a summary has no authHeaders: a credential does not travel with the list.
       authHeaders: summary.authHeaders,
-    }).toEqual({entries: undefined, authHeaders: undefined});
+    }).toEqual({
+      keys: ['createdAt', 'entryCount', 'sessionId', 'updatedAt'],
+      entries: undefined,
+      authHeaders: undefined,
+    });
   });
 });

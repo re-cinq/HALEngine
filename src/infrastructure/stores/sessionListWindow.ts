@@ -7,10 +7,10 @@ const MAX_LIMIT = 200;
 
 /** How many summaries one `listFor` may answer with: the caller's limit, bounded, and 50 when it names none. */
 export function cappedLimit(limit: number | undefined): number {
-  // A limit that is not a usable number reads as none given, rather than as an unbounded or failing query.
-  if (limit === undefined || !Number.isFinite(limit)) return DEFAULT_LIMIT;
-  // Floored rather than rejected: a fractional or negative limit is a caller's slip, not a reason to fail a list.
-  return Math.min(Math.max(Math.floor(limit), 0), MAX_LIMIT);
+  // A limit that is not a usable count reads as none given: handing a user an empty history for a typo is worse.
+  if (limit === undefined || !Number.isFinite(limit) || limit < 0) return DEFAULT_LIMIT;
+  // Floored rather than rejected, so only an explicit 0 answers nothing, and a fractional limit still works.
+  return Math.min(Math.floor(limit), MAX_LIMIT);
 }
 
 /** Newest activity first, with the larger session id ahead of the smaller on a tie, so the order is total. */
