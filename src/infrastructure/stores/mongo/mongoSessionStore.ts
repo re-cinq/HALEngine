@@ -1,11 +1,20 @@
 import type {ChatSession} from '../../../types/session.js';
-import type {SessionCreateOptions, SessionStore} from '../../../types/sessionStore.js';
+import type {
+  SessionCreateOptions,
+  SessionCursor,
+  SessionListOptions,
+  SessionStore,
+  SessionSummary,
+} from '../../../types/sessionStore.js';
 import type {CollectionLike, MongoClientLike} from './mongoDriverTypes.js';
 import type {MongoSessionDocument} from './mongoSessionDocument.js';
-import {persistedFields, toChatSession} from './mongoSessionDocument.js';
+import {persistedFields, toChatSession, toSessionSummary} from './mongoSessionDocument.js';
+import {cappedLimit, cursorAt} from '../sessionListWindow.js';
 import {assertScalarUserId} from '../scalarUserId.js';
 
 const DEFAULT_COLLECTION_NAME = 'hal_sessions';
+// Entries are left out so a page of summaries never carries a conversation out of the database.
+const SUMMARY_FIELDS = {_id: 1, createdAt: 1, updatedAt: 1, entryCount: 1} as const;
 // Eight hours, matching InMemorySessionStore: a bound on the cache in front of the collection, not a retention period.
 const DEFAULT_MAX_AGE_MS = 8 * 60 * 60 * 1000;
 
@@ -107,11 +116,32 @@ export class MongoSessionStore implements SessionStore {
     );
   }
 
+  /** One query, filtered on the user in the database and sorted on the index `latestFor` already needs. */
+  async listFor(userId: string | number, options?: SessionListOptions): Promise<SessionSummary[]> {
+    const limit = cappedLimit(options?.limit);
+    // Never issued as a query: mongo reads `limit: 0` as no limit at all, which is the opposite of what it asks for.
+    if (limit === 0) return [];
+
+    const collection = await this.collection();
+    if (collection.find === undefined) {
+      throw new Error('The collection this store was built on implements no find, so it cannot list conversations');
+    }
+
+    const documents = await collection
+      .find(olderThan(userId, options?.before), {
+        sort: {updatedAt: -1, _id: -1},
+        limit,
+        projection: SUMMARY_FIELDS,
+      })
+      .toArray();
+    return documents.map(toSessionSummary);
+  }
+
   /** The user's most recently saved conversation, by `updatedAt`, read through `get` so a live one is the object its running turn writes to. */
   async latestFor(userId: string | number): Promise<ChatSession | undefined> {
     assertScalarUserId(userId);
     const collection = await this.collection();
-    const latest = await collection.findOne({userId}, {sort: {updatedAt: -1}, projection: {_id: 1}});
+    const latest = await collection.findOne({userId}, {sort: {updatedAt: -1, _id: -1}, projection: {_id: 1}});
     return latest === null ? undefined : this.get(latest._id);
   }
 
@@ -182,6 +212,14 @@ export class MongoSessionStore implements SessionStore {
     this.owned = client;
     return namedCollection(client, options.dbName, name);
   }
+}
+
+// The id breaks a tie on updatedAt, so two conversations saved in the same millisecond cannot straddle a page boundary.
+function olderThan(userId: string | number, before: SessionCursor | undefined): Record<string, unknown> {
+  if (before === undefined) return {userId};
+  // A Date, whatever the caller held: a string compares against no BSON date, so a JSON cursor would quietly match none.
+  const updatedAt = new Date(cursorAt(before));
+  return {userId, $or: [{updatedAt: {$lt: updatedAt}}, {updatedAt, _id: {$lt: before.sessionId}}]};
 }
 
 /** Builds a MongoDB-backed session store from a collection, a client, or a connection URL. */

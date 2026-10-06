@@ -17,7 +17,7 @@ The engine shipped `InMemorySessionStore` and nothing else, so a conversation di
 - `count` reports documents rather than cache entries, so it falls when a document is erased and is unmoved by a cache-only `clear` ([validated by: empties the cache on clear while every document survives](../../src/infrastructure/stores/mongo/mongoDurability.test.ts#L94)).
 - `get` reports `undefined` for a session no collection holds ([validated by: returns undefined for a session no collection holds](../../src/infrastructure/stores/mongo/mongoDurability.test.ts#L120)).
 - `create` returns the session with the `authHeaders` and `workspaceId` it was given, which live in memory for the tools and are never written ([validated by: carries the create options onto the session it returns](../../src/infrastructure/stores/mongo/mongoDurability.test.ts#L126)).
-- A `create` whose write fails caches nothing: the rejection reaches the caller and the store keeps no session it never stored, so a database outage cannot fill memory with conversations — or with the credentials they carry ([validated by: keeps nothing in the cache, so a failing database cannot fill memory](../../src/infrastructure/stores/mongo/mongoWriteFailure.test.ts#L20)).
+- A `create` whose write fails caches nothing: the rejection reaches the caller and the store keeps no session it never stored, so a database outage cannot fill memory with conversations — or with the credentials they carry ([validated by: keeps nothing in the cache, so a failing database cannot fill memory](../../src/infrastructure/stores/mongo/mongoWriteFailure.test.ts#L15)).
 
 ## Erasing, as opposed to evicting
 
