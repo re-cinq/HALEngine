@@ -26,9 +26,9 @@
 - [x] Add `countFor?(userId: string | number): Awaitable<number>` to `SessionStore` in `src/types/sessionStore.ts` (optional, beside `listFor` once #143 lands)
 - [x] Add `countFor` to `InMemorySessionStore` using the same `ownedBy(userId)` filter as `listFor` (or equivalent: filter sessions by userId, exclude aged-out, return length)
 - [x] Add `countFor` to `MongoSessionStore` calling `collection.countDocuments({userId})`
-- [ ] Add `§ Counting a user's conversations` to `specs/hal-engine-conversation-list/spec.md` (create spec if not yet created by #143); include GDPR note (per-user count is personal data; `count()` stays operational)
-- [ ] Update `docs/session-stores.md` § Listing a user's conversations and § Truth and cache per ticket
-- [ ] Add `## [Unreleased]` CHANGELOG entry; stamp new spec statements with validated-by citations; MINOR bump
+- [x] Add `§ Counting a user's conversations` to `specs/hal-engine-conversation-list/spec.md` (create spec if not yet created by #143); include GDPR note (per-user count is personal data; `count()` stays operational)
+- [x] Update `docs/session-stores.md` § Listing a user's conversations and § Truth and cache per ticket
+- [x] Add `## [Unreleased]` CHANGELOG entry; stamp new spec statements with validated-by citations; MINOR bump
 - [ ] Verify `src/infrastructure/stores/` coverage stays at 100% (jest coverage threshold)
 
 ## Out of scope
