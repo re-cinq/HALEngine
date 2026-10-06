@@ -57,7 +57,10 @@ export type {
   MongoSessionStoreOptions,
   MongoSessionDocument,
   CollectionLike,
+  CursorLike,
   DbLike,
+  FindManyOptions,
+  FindOneOptions,
   MongoClientLike,
 } from './infrastructure/stores/mongo/index.js';
 export {InMemoryPromptStore} from './infrastructure/stores/inMemoryPromptStore.js';

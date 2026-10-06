@@ -1,10 +1,20 @@
 import {jest} from '@jest/globals';
 import {InMemorySessionStore} from './inMemorySessionStore.js';
+import type {SessionCursor} from '../../types/sessionStore.js';
 
 // A list and the latest session read the same activity, so the two can never disagree about which is newest.
 
 const START = new Date('2026-01-01T00:00:00.000Z');
 const later = (ms: number): Date => new Date(START.getTime() + ms);
+
+const refusalOf = (call: () => unknown): string => {
+  try {
+    call();
+    return 'no refusal';
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+};
 
 describe('the in-memory store conversation list', () => {
   beforeEach(() => {
@@ -111,6 +121,24 @@ describe('the in-memory store conversation list', () => {
       none: store.listFor('u1', {limit: 0}),
       unusable: store.listFor('u1', {limit: Number.NaN}).length,
     }).toEqual({none: [], unusable: 2});
+  });
+
+  it('pages on a cursor that has been through JSON, and refuses one carrying no usable moment', () => {
+    const store = new InMemorySessionStore();
+    store.create('older', 'u1');
+    jest.setSystemTime(later(1000));
+    store.create('newer', 'u1');
+    const roundTripped = JSON.parse(JSON.stringify(store.listFor('u1', {limit: 1})[0])) as SessionCursor;
+
+    expect({
+      afterJson: store.listFor('u1', {before: roundTripped}).map(row => row.sessionId),
+      epoch: store.listFor('u1', {before: {updatedAt: later(1000).getTime(), sessionId: 'newer'}}).length,
+      unusable: refusalOf(() => store.listFor('u1', {before: {updatedAt: 'last tuesday', sessionId: 's1'}})),
+    }).toEqual({
+      afterJson: ['older'],
+      epoch: 1,
+      unusable: 'listFor cursor has no usable updatedAt: last tuesday',
+    });
   });
 
   it('keeps a conversation tied on activity rather than dropping it across a page boundary', () => {

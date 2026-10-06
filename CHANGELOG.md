@@ -15,6 +15,9 @@ package, not for somebody reading this repository's commit log.
 ### Changed
 
 - `MongoSessionStore` now writes an `entryCount` field beside the entries on every save, so a conversation list can count a conversation without reading one. A document saved by an earlier version lists as a conversation of no entries until you backfill it; `docs/session-stores.md` carries the one-line command.
+- `MongoSessionStore.latestFor` now breaks a tie on `updatedAt` by `_id`, so it and `listFor` agree on which conversation is newest when two were saved in the same millisecond. Which of two tied conversations a resume rejoins can therefore change.
+- The index to create for `MongoSessionStore` is now `{userId: 1, updatedAt: -1, _id: -1}`. The two-key form that served `latestFor` cannot satisfy `listFor`'s sort, so Mongo would sort a user's whole history on every page. `docs/session-stores.md` § Latest session has the command.
+- `CollectionLike` gains an optional `find`, and `CursorLike`, `FindManyOptions` and `FindOneOptions` are now exported for anyone writing their own adapter. A collection without `find` still satisfies the type; `listFor` refuses on it rather than reporting that the user has no conversations.
 
 ## [0.5.0] - 2026-10-04
 

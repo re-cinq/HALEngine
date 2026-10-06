@@ -19,7 +19,6 @@ const countingCollection = (reads: {findOne: number}): CollectionLike<MongoSessi
         updatedAt: START,
       });
     },
-    find: () => ({toArray: () => Promise.resolve([])}),
     updateOne: () => Promise.resolve(undefined),
     deleteOne: () => Promise.resolve({deletedCount: 1}),
     deleteMany: () => Promise.resolve({deletedCount: 0}),

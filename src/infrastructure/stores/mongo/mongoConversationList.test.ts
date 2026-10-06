@@ -1,7 +1,8 @@
 import {MongoSessionStore} from './mongoSessionStore.js';
-import {mongoCollection} from './mongoTestSupport.js';
+import {fakeCollection, mongoCollection} from './mongoTestSupport.js';
 import type {CollectionLike, FindManyOptions} from './mongoDriverTypes.js';
 import type {MongoSessionDocument} from './mongoSessionDocument.js';
+import type {SessionCursor} from '../../../types/sessionStore.js';
 
 // One query, filtered and sorted in the database, and projected so no conversation leaves it to be counted.
 
@@ -16,17 +17,13 @@ const recordingCollection = (
   calls: RecordedFind[],
   documents: MongoSessionDocument[]
 ): CollectionLike<MongoSessionDocument> =>
-  ({
-    findOne: () => Promise.resolve(null),
+  fakeCollection({
     find: (filter: Record<string, unknown>, options?: FindManyOptions) => {
       calls.push({filter, options});
       return {toArray: () => Promise.resolve(documents)};
     },
-    updateOne: () => Promise.resolve(undefined),
-    deleteOne: () => Promise.resolve({deletedCount: 0}),
-    deleteMany: () => Promise.resolve({deletedCount: 0}),
     countDocuments: () => Promise.resolve(documents.length),
-  }) as CollectionLike<MongoSessionDocument>;
+  });
 
 describe('the MongoDB store conversation list', () => {
   const collectionFor = mongoCollection();
@@ -150,6 +147,37 @@ describe('the MongoDB store conversation list', () => {
     expect({rows: await store.listFor('u1', {limit: 0}), queries: calls.length}).toEqual({rows: [], queries: 0});
   });
 
+  it('pages on a cursor that has been through JSON, where a string would have matched no stored date', async () => {
+    let clock = START;
+    const store = new MongoSessionStore({collection: collectionFor(), now: () => new Date(clock)});
+    await store.create('older', 'u1');
+    clock += 1000;
+    await store.create('newer', 'u1');
+    const roundTripped = JSON.parse(JSON.stringify((await store.listFor('u1', {limit: 1}))[0])) as SessionCursor;
+
+    expect((await store.listFor('u1', {before: roundTripped})).map(row => row.sessionId)).toEqual(['older']);
+  });
+
+  it('heads the list with the session latestFor returns even when every conversation shares an updatedAt', async () => {
+    const store = new MongoSessionStore({collection: collectionFor(), now: () => new Date(START)});
+    await store.create('s1', 'u1');
+    await store.create('s2', 'u1');
+    await store.create('s3', 'u1');
+
+    const listed = await store.listFor('u1');
+
+    expect({head: listed[0]?.sessionId, latest: (await store.latestFor('u1'))?.sessionId}).toEqual({
+      head: 's3',
+      latest: 's3',
+    });
+  });
+
+  it('refuses to list on a collection that implements no find, rather than reporting no conversations', async () => {
+    const store = new MongoSessionStore({collection: fakeCollection()});
+
+    await expect(store.listFor('u1')).rejects.toThrow('implements no find, so it cannot list conversations');
+  });
+
   it('answers from a projection alone, so a collection that never returns entries still lists conversations', async () => {
     const projected = [
       {_id: 's1', createdAt: new Date(START), updatedAt: new Date(START), entryCount: 3},
@@ -161,15 +189,36 @@ describe('the MongoDB store conversation list', () => {
     ]);
   });
 
+  it('needs the three-key index to answer without sorting the whole history, which the two-key form does not', async () => {
+    const collection = collectionFor();
+    const at = new Date(START);
+    await collection.insertMany(
+      Array.from({length: 50}, (_unused, index) => ({
+        _id: `s${index}`,
+        userId: 'u1',
+        entries: [],
+        createdAt: at,
+        updatedAt: new Date(START + index * 1000),
+      }))
+    );
+    const listSort = {sort: {updatedAt: -1 as const, _id: -1 as const}, limit: 5};
+
+    await collection.createIndex({userId: 1, updatedAt: -1});
+    const twoKey = await collection.find({userId: 'u1'}, listSort).explain('queryPlanner');
+    await collection.dropIndexes();
+    await collection.createIndex({userId: 1, updatedAt: -1, _id: -1});
+    const threeKey = await collection.find({userId: 'u1'}, listSort).explain('queryPlanner');
+
+    expect({
+      twoKeySorts: JSON.stringify(twoKey.queryPlanner.winningPlan).includes('"SORT"'),
+      threeKeySorts: JSON.stringify(threeKey.queryPlanner.winningPlan).includes('"SORT"'),
+    }).toEqual({twoKeySorts: true, threeKeySorts: false});
+  });
+
   it('rejects rather than answering a partial list when the collection fails', async () => {
-    const failing = {
-      findOne: () => Promise.resolve(null),
+    const failing = fakeCollection({
       find: () => ({toArray: () => Promise.reject(new Error('database unreachable'))}),
-      updateOne: () => Promise.resolve(undefined),
-      deleteOne: () => Promise.resolve({deletedCount: 0}),
-      deleteMany: () => Promise.resolve({deletedCount: 0}),
-      countDocuments: () => Promise.resolve(0),
-    } as CollectionLike<MongoSessionDocument>;
+    });
     const store = new MongoSessionStore({collection: failing});
 
     await expect(store.listFor('u1')).rejects.toThrow('database unreachable');

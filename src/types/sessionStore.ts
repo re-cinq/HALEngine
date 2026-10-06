@@ -22,7 +22,8 @@ export interface SessionSummary {
 
 /** Where a page of conversations resumes from: the last row the caller saw, which a `SessionSummary` satisfies. */
 export interface SessionCursor {
-  updatedAt: Date;
+  /** A `Date`, an ISO string or an epoch number, so a row that went through JSON still pages (specs/hal-engine-conversation-list/spec.md). */
+  updatedAt: Date | string | number;
   sessionId: string;
 }
 

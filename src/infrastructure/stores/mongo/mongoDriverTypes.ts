@@ -20,7 +20,8 @@ export interface CursorLike<T> {
 
 export interface CollectionLike<T> {
   findOne(filter: Record<string, unknown>, options?: FindOneOptions): Promise<T | null>;
-  find(filter: Record<string, unknown>, options?: FindManyOptions): CursorLike<T>;
+  /** Optional, so an adapter written before conversation lists existed still satisfies this port; `listFor` needs it. */
+  find?(filter: Record<string, unknown>, options?: FindManyOptions): CursorLike<T>;
   updateOne(
     filter: Record<string, unknown>,
     update: Record<string, unknown>,

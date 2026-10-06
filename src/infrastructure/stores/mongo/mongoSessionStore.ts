@@ -9,7 +9,7 @@ import type {
 import type {CollectionLike, MongoClientLike} from './mongoDriverTypes.js';
 import type {MongoSessionDocument} from './mongoSessionDocument.js';
 import {persistedFields, toChatSession, toSessionSummary} from './mongoSessionDocument.js';
-import {cappedLimit} from '../sessionListWindow.js';
+import {cappedLimit, cursorAt} from '../sessionListWindow.js';
 
 const DEFAULT_COLLECTION_NAME = 'hal_sessions';
 // Entries are left out so a page of summaries never carries a conversation out of the database.
@@ -121,6 +121,10 @@ export class MongoSessionStore implements SessionStore {
     if (limit === 0) return [];
 
     const collection = await this.collection();
+    if (collection.find === undefined) {
+      throw new Error('The collection this store was built on implements no find, so it cannot list conversations');
+    }
+
     const documents = await collection
       .find(olderThan(userId, options?.before), {
         sort: {updatedAt: -1, _id: -1},
@@ -134,7 +138,7 @@ export class MongoSessionStore implements SessionStore {
   /** The user's most recently saved conversation, by `updatedAt`, read through `get` so a live one is the object its running turn writes to. */
   async latestFor(userId: string | number): Promise<ChatSession | undefined> {
     const collection = await this.collection();
-    const latest = await collection.findOne({userId}, {sort: {updatedAt: -1}, projection: {_id: 1}});
+    const latest = await collection.findOne({userId}, {sort: {updatedAt: -1, _id: -1}, projection: {_id: 1}});
     return latest === null ? undefined : this.get(latest._id);
   }
 
@@ -210,8 +214,9 @@ export class MongoSessionStore implements SessionStore {
 // The id breaks a tie on updatedAt, so two conversations saved in the same millisecond cannot straddle a page boundary.
 function olderThan(userId: string | number, before: SessionCursor | undefined): Record<string, unknown> {
   if (before === undefined) return {userId};
-  const {updatedAt, sessionId} = before;
-  return {userId, $or: [{updatedAt: {$lt: updatedAt}}, {updatedAt, _id: {$lt: sessionId}}]};
+  // A Date, whatever the caller held: a string compares against no BSON date, so a JSON cursor would quietly match none.
+  const updatedAt = new Date(cursorAt(before));
+  return {userId, $or: [{updatedAt: {$lt: updatedAt}}, {updatedAt, _id: {$lt: before.sessionId}}]};
 }
 
 /** Builds a MongoDB-backed session store from a collection, a client, or a connection URL. */

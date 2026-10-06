@@ -6,7 +6,7 @@ import type {
   SessionLookup,
   SessionSummary,
 } from '../../types/sessionStore.js';
-import {cappedLimit, newestFirst, sitsAfter} from './sessionListWindow.js';
+import {cappedLimit, cursorAt, newestFirst, sitsAfter} from './sessionListWindow.js';
 
 // Eight hours: a memory bound, not a retention decision (specs/hal-engine-session-lifetime/spec.md).
 const DEFAULT_MAX_AGE_MS = 8 * 60 * 60 * 1000;
@@ -86,8 +86,10 @@ export class InMemorySessionStore implements SessionStore {
 
     const ordered = this.ownedBy(userId).map(summaryOf).sort(newestFirst);
     const before = options?.before;
-    const paged = before === undefined ? ordered : ordered.filter(summary => sitsAfter(summary, before));
-    return paged.slice(0, limit);
+    if (before === undefined) return ordered.slice(0, limit);
+
+    const at = cursorAt(before);
+    return ordered.filter(summary => sitsAfter(summary, at, before.sessionId)).slice(0, limit);
   }
 
   /** The user's most recently active session that has not aged out: its newest entry decides, or its creation if it has none. */

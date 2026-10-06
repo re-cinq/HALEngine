@@ -70,13 +70,16 @@ once is not something this store supports.
 With resume's `latest` option on, every connect that names no session id asks `latestFor(userId)`
 for the user's most recently active conversation. `MongoSessionStore` answers with the user's
 document that has the newest `updatedAt`, which each `save` moves forward, so create this index
-where the collection lives; the store creates none itself. `listFor` sorts on the same index, so
-this one serves both and there is no second index to create:
+where the collection lives; the store creates none itself:
 
 <!-- doc-block: none -- a mongo shell command run against the deployment, not code the package ships -->
 ```js
-db.hal_sessions.createIndex({userId: 1, updatedAt: -1});
+db.hal_sessions.createIndex({userId: 1, updatedAt: -1, _id: -1});
 ```
+
+The trailing `_id` is there for `listFor`, which sorts on `{updatedAt: -1, _id: -1}`; `latestFor`
+alone would be served by the first two keys. Create the three-key form and both members are served
+— see § Listing a user's conversations for what the two-key form costs.
 
 `InMemorySessionStore` has no `save` to stamp, so it goes by a session's newest entry, or its
 creation for a session with none, and never returns one that has aged out. A store you write
@@ -87,8 +90,8 @@ yourself can leave `latestFor` out, in which case such a connect simply starts a
 `listFor(userId, options?)` is optional, and it answers summaries rather than sessions:
 `sessionId`, `createdAt`, `updatedAt` and `entryCount`, most recent activity first. A summary
 carries no entries and no `authHeaders`, so a conversation list cannot hand over a conversation or
-a credential. Its first row is always the session `latestFor` returns — both read the same
-activity, so a list and a resume cannot disagree about which conversation is newest.
+a credential. Its first row is the session `latestFor` returns, because both read the same activity,
+so a list and a resume agree about which conversation is newest.
 
 `options.limit` defaults to 50 and is capped at 200. `options.before` resumes after a row, so a
 client pages by passing back the last summary it saw — `SessionCursor` is `{updatedAt, sessionId}`,
@@ -101,14 +104,19 @@ A store whose database fails rejects rather than answering an empty list: what t
 may have conversations is your decision, and "no conversations" is not a safe guess.
 
 `MongoSessionStore` filters on the user in the query, sorts `{updatedAt: -1, _id: -1}` and projects
-the entries away, so a page of summaries never carries a conversation out of the database. The
-§ Latest session index serves the leading keys of that sort; extend it to
-`{userId: 1, updatedAt: -1, _id: -1}` if you want the tie-break indexed too. It answers a `limit` of
-`0` without querying at all, because MongoDB reads `limit: 0` as *no* limit and would otherwise hand
-back everything the filter matches.
-It counts a conversation from an `entryCount` field each `save` writes beside the entries. A
-document saved before 0.6 has no such field and lists as a conversation of no entries until you
-backfill it:
+the entries away, so a page of summaries never carries a conversation out of the database.
+
+**Create the three-key index from § Latest session.** `{userId: 1, updatedAt: -1}` cannot satisfy a
+two-key sort, so Mongo answers with a blocking sort over *every* conversation the user has and
+applies the limit after it: measured on 300 conversations, a 50-row page examined all 300 documents,
+where the three-key index made the same page a covered query examining none. Two consequences, not
+just a slow query — paging a long history that way is quadratic, and a blocking sort is bounded by
+Mongo's 100 MB sort limit, so a large enough history makes `listFor` fail rather than merely crawl.
+
+It answers a `limit` of `0` without querying at all, because MongoDB reads `limit: 0` as *no* limit
+and would otherwise hand back everything the filter matches. It counts a conversation from an
+`entryCount` field each `save` writes beside the entries. A document saved before 0.6 has no such
+field and lists as a conversation of no entries until you backfill it:
 
 <!-- doc-block: none -- a mongo shell command run against the deployment, not code the package ships -->
 ```js
@@ -116,10 +124,15 @@ db.hal_sessions.updateMany({entryCount: {$exists: false}}, [{$set: {entryCount: 
 ```
 
 `InMemorySessionStore` goes by a session's newest entry, or its creation for a session with none,
-and never lists one that has aged out. Where two of a user's conversations are last active in the
-same millisecond, the list puts the larger session id first while `latestFor` takes the one created
-later, so for tied conversations the head of the list and the session a resume rejoins can differ. A store you write yourself can leave `listFor` out, in which
-case it has no conversation list to offer.
+and never lists one that has aged out. One divergence to know about, in that store only: where two
+of a user's conversations are last active in the same millisecond, the list puts the larger session
+id first while `latestFor` takes the one created later, so for tied conversations the head of the
+list and the session a resume rejoins can differ. `MongoSessionStore` breaks that tie the same way
+in both members, so the two agree there.
+
+A store you write yourself can leave `listFor` out, in which case it has no conversation list to
+offer. One built on an injected collection needs that collection to implement `find`: without it,
+`listFor` refuses rather than reporting that the user has no conversations.
 
 **GDPR.** A summary is personal data: it shows that a user held a conversation, and when. It
 carries no message content, and the user's id is part of the query rather than a filter applied

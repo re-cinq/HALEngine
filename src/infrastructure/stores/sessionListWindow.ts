@@ -20,8 +20,16 @@ export function newestFirst(first: SessionSummary, second: SessionSummary): numb
   return first.sessionId < second.sessionId ? 1 : -1;
 }
 
+/** The cursor's moment, from a `Date`, an ISO string or an epoch number, so a row that went through JSON still pages. */
+export function cursorAt(cursor: SessionCursor): number {
+  const time = new Date(cursor.updatedAt).getTime();
+  // Loudly, because every silent reading is wrong: page one again duplicates rows, and no page at all hides history.
+  if (!Number.isFinite(time)) throw new Error(`listFor cursor has no usable updatedAt: ${String(cursor.updatedAt)}`);
+  return time;
+}
+
 /** Whether a summary sits after the cursor in that order, which is what keeps a tie from falling between two pages. */
-export function sitsAfter(summary: SessionSummary, cursor: SessionCursor): boolean {
-  const gap = summary.updatedAt.getTime() - cursor.updatedAt.getTime();
-  return gap < 0 || (gap === 0 && summary.sessionId < cursor.sessionId);
+export function sitsAfter(summary: SessionSummary, cursorTime: number, cursorId: string): boolean {
+  const gap = summary.updatedAt.getTime() - cursorTime;
+  return gap < 0 || (gap === 0 && summary.sessionId < cursorId);
 }
