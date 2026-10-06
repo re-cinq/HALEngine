@@ -8,6 +8,10 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+### Added
+
+- **Count a user's conversations.** `SessionStore` gains an optional `countFor(userId)` member. `InMemorySessionStore` and `MongoSessionStore` implement it. A per-user count is personal data scoped to one user: use `countFor` for labelling, and never show `count()` — the store-wide total — as a user's own count. On MongoDB the call is an index-only scan on `{userId}`.
+
 ## [0.5.0] - 2026-10-04
 
 **Upgrading from 0.4.x.** One thing is removed, and several things an existing consumer observes change. Check these before you bump:

@@ -6,14 +6,14 @@ getting it wrong either destroys a customer's history or fails to honour their e
 
 ## Erases or evicts
 
-| Method | Cache | Durable storage |
-|---|---|---|
-| `delete(sessionId)` | evicts | **erases** — the consumer's erasure primitive; the engine never calls it |
-| `clear()` | evicts everything | untouched |
-| `evict(sessionId)` | evicts | **erases** — the engine's own call, for a session no client received |
-| `eraseConversation(sessionId)` | evicts | **erases that document, permanently** |
-| `eraseOlderThan(cutoff)` | evicts | **erases every document created before `cutoff`** |
-| `eraseAll()` | evicts everything | **erases every document** |
+| Method                         | Cache             | Durable storage                                                          |
+| ------------------------------ | ----------------- | ------------------------------------------------------------------------ |
+| `delete(sessionId)`            | evicts            | **erases** — the consumer's erasure primitive; the engine never calls it |
+| `clear()`                      | evicts everything | untouched                                                                |
+| `evict(sessionId)`             | evicts            | **erases** — the engine's own call, for a session no client received     |
+| `eraseConversation(sessionId)` | evicts            | **erases that document, permanently**                                    |
+| `eraseOlderThan(cutoff)`       | evicts            | **erases every document created before `cutoff`**                        |
+| `eraseAll()`                   | evicts everything | **erases every document**                                                |
 
 `delete` is the interface's own member and the engine never calls it, so `MongoSessionStore`
 implements it as a durable deletion — the same thing `eraseConversation` does, reachable by a
@@ -63,7 +63,13 @@ session saved by one store instance is readable by another built on the same col
 is not coherent across instances until a `save` — two processes serving the same conversation at
 once is not something this store supports.
 
-`count()` reports documents, not cache entries, so `delete` does not change it.
+`count()` reports documents, not cache entries, and counts across all users — it is an operational figure for monitoring, not a per-user total. Use `countFor(userId)` for a per-user count, and never show `count()` to an individual user as their own.
+
+## Listing and counting a user's conversations
+
+`listFor(userId, {limit, before})` pages through that user's conversations. A page shorter than `limit` is the last one, so a consumer can tell whether another page exists without any help from the engine.
+
+`countFor(userId)` is an optional member that answers how many conversations this user holds. Both `InMemorySessionStore` and `MongoSessionStore` implement it. On MongoDB it is an index-only scan whose cost grows with the user's conversation count — cheap next to reading documents, not cheap next to nothing. `countFor` answers one user's count and never the store-wide total; `count()` is the store-wide figure and must not be shown to an individual user as their own count.
 
 ## Latest session
 
@@ -73,6 +79,7 @@ document that has the newest `updatedAt`, which each `save` moves forward, so cr
 where the collection lives; the store creates none itself:
 
 <!-- doc-block: none -- a mongo shell command run against the deployment, not code the package ships -->
+
 ```js
 db.hal_sessions.createIndex({userId: 1, updatedAt: -1});
 ```

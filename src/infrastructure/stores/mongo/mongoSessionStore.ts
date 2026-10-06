@@ -91,6 +91,11 @@ export class MongoSessionStore implements SessionStore {
     return collection.countDocuments();
   }
 
+  async countFor(userId: string | number): Promise<number> {
+    const collection = await this.collection();
+    return collection.countDocuments({userId});
+  }
+
   // Empties the cache alone; eraseAll is the durable wipe, so neither can be reached by accident.
   clear(): void {
     this.cache.clear();
