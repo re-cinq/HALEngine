@@ -3,7 +3,7 @@
 | Field  | Value                 |
 | ------ | --------------------- |
 | Issue  | re-cinq/HALEngine#143 |
-| Status | Complete              |
+| Status | In Progress           |
 
 `SessionStore` lets consumers page through a user's conversations with `listFor`, but until now offered no way to count them without walking every page. `countFor` closes that gap as an optional member, keeping the interface backward-compatible: a store literal implementing only the five original members still satisfies the interface, and a consumer who cannot count cheaply is not forced to pretend otherwise.
 
