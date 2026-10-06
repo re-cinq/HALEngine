@@ -47,10 +47,14 @@ describe('MongoSessionStore scalar id guard', () => {
     for (const id of nonScalar) {
       try {
         await store.create('s1', id as string | number);
-      } catch {}
+      } catch {
+        // expected rejection — only checking that no query was issued
+      }
       try {
         await store.latestFor(id as string | number);
-      } catch {}
+      } catch {
+        // expected rejection — only checking that no query was issued
+      }
     }
     expect(calls).toEqual([]);
   });
