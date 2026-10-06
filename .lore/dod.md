@@ -25,8 +25,8 @@
 - [x] Apply the guard in `InMemorySessionStore.create` and `InMemorySessionStore.latestFor`
 - [x] Apply the guard in `MongoSessionStore.create` and `MongoSessionStore.latestFor`
 - [x] Add spec statements to `specs/hal-engine-websocket-protocol/spec.md` § 12 (Security Considerations) and cite the tests with the established parenthetical form
-- [ ] Update `docs/getting-started.md` § Authentication: what `id` must be (`string | finite number`) and what happens when it is not (401, logged as authenticator fault)
-- [ ] Add `CHANGELOG.md` entry with MINOR version bump; PR body notes the breaking change for consumers whose authenticator returns a non-scalar id
+- [x] Update `docs/getting-started.md` § Authentication: what `id` must be (`string | finite number`) and what happens when it is not (401, logged as authenticator fault)
+- [x] Add `CHANGELOG.md` entry with MINOR version bump; PR body notes the breaking change for consumers whose authenticator returns a non-scalar id
 - [ ] `npm run verify` passes
 
 ## Out of scope

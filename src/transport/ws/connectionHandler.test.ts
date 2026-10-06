@@ -359,7 +359,7 @@ describe('the websocket upgrade handler non-scalar id guard', () => {
       handleUpgrade: () => void (upgraded = true),
     } as unknown as WebSocketServer;
     const socket = {
-      write: (data: string) => written.push(data),
+      write: (responseChunk: string) => written.push(responseChunk),
       destroy: () => undefined,
     } as unknown as Duplex;
     const request = {headers: {host: 'localhost'}, url: '/hal/ws'} as unknown as IncomingMessage;

@@ -34,6 +34,8 @@ await engine.start();
 
 `ws` receives the WebSocket upgrade request, not a token, so pull whatever you authenticate with off `req.headers` yourself. A browser cannot set `Authorization` on a WebSocket, so it offers its token beside `hal.v1` in `Sec-WebSocket-Protocol`; `credentialFromSubprotocol` reads it the way the engine does, skipping the marker. Return an `AuthenticatedUser` — `id` is the only required field, and anything else you put on it reaches tools through `ToolContext`. Returning `null` rejects the upgrade with `401`.
 
+`id` must be a `string` or a finite `number` — the engine uses it as the key that separates one user's conversations from another's in every store query. A non-scalar value (`null`, `undefined`, an object, an array, `NaN`, or `Infinity`) is treated as a failed authentication: the upgrade is refused with `401` and an error is logged at the `idType` field (the type of the value, not its contents) so you can find the fault in your authenticator without the log carrying credential material.
+
 This starts a server with:
 
 - WebSocket endpoint at `ws://localhost:8086/api/ws`

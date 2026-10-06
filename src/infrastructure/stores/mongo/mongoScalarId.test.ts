@@ -22,17 +22,36 @@ const recordingCollection = (): {collection: CollectionLike<MongoSessionDocument
   return {collection, calls};
 };
 
-describe('MongoSessionStore scalar id guard', () => {
-  it('refuses a non-scalar userId in create and latestFor without issuing any queries', async () => {
-    const {collection, calls} = recordingCollection();
-    const store = new MongoSessionStore({collection});
-    const nonScalar: unknown[] = [{$ne: null}, null, undefined, [], Number.NaN, Number.POSITIVE_INFINITY];
+const nonScalar: unknown[] = [{$ne: null}, null, undefined, [], Number.NaN, Number.POSITIVE_INFINITY];
 
+describe('MongoSessionStore scalar id guard', () => {
+  it('refuses create with a non-scalar userId', async () => {
+    const {collection} = recordingCollection();
+    const store = new MongoSessionStore({collection});
     for (const id of nonScalar) {
       await expect(store.create('s1', id as string | number)).rejects.toThrow();
+    }
+  });
+
+  it('refuses latestFor with a non-scalar userId', async () => {
+    const {collection} = recordingCollection();
+    const store = new MongoSessionStore({collection});
+    for (const id of nonScalar) {
       await expect(store.latestFor(id as string | number)).rejects.toThrow();
     }
+  });
 
+  it('issues no queries when given a non-scalar userId', async () => {
+    const {collection, calls} = recordingCollection();
+    const store = new MongoSessionStore({collection});
+    for (const id of nonScalar) {
+      try {
+        await store.create('s1', id as string | number);
+      } catch {}
+      try {
+        await store.latestFor(id as string | number);
+      } catch {}
+    }
     expect(calls).toEqual([]);
   });
 });
