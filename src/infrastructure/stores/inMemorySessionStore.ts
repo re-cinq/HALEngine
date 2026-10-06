@@ -68,6 +68,10 @@ export class InMemorySessionStore implements SessionStore {
     return this.sessions.size;
   }
 
+  countFor(userId: string | number): number {
+    return [...this.sessions.values()].filter(held => held.session.userId === userId && !this.hasExpired(held)).length;
+  }
+
   clear(): void {
     this.sessions.clear();
   }
