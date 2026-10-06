@@ -1,10 +1,11 @@
 import net from 'node:net';
 import request from 'supertest';
+import type {Request, Response} from 'express';
 import {createHalEngine} from './config.js';
 import {log, setLogger} from './shared/logger.js';
 import type {Logger} from './shared/logger.js';
 import type {ChatSession} from './types/session.js';
-import type {WsAuthenticator} from './types/auth.js';
+import type {HttpAuthMiddleware, WsAuthenticator} from './types/auth.js';
 import {recordingSessionStore} from './infrastructure/writeSignalTestSupport.js';
 
 // Both options below are declared on HalEngineConfig and were dropped at the forwarding site.
@@ -215,8 +216,92 @@ describe('createHalEngine transport extension forwarding', () => {
     });
 
     const response = await request(engine.app).get('/hal/ping');
+    const atRoot = await request(engine.app).get('/ping');
 
-    expect({status: response.status, body: response.body}).toEqual({status: 200, body: {ok: true}});
+    expect({status: response.status, body: response.body, rootStatus: atRoot.status, rootBody: atRoot.body}).toEqual({
+      status: 200,
+      body: {ok: true},
+      rootStatus: 404,
+      rootBody: {error: 'Not Found'},
+    });
+  });
+
+  it('leaves additionalRoutes and rootRoutes open while auth.http still guards the chat routes', async () => {
+    const guarded: string[] = [];
+    const refuse: HttpAuthMiddleware = (req, res) => {
+      guarded.push(`${req.method} ${req.originalUrl}`);
+      res.status(401).json({error: 'refused'});
+    };
+    const ok = (_req: Request, res: Response) => res.json({ok: true});
+    const engine = createHalEngine({
+      ...base,
+      auth: {...base.auth, http: refuse},
+      transport: {additionalRoutes: router => router.get('/ping', ok), rootRoutes: router => router.get('/status', ok)},
+    });
+
+    const statuses = await Promise.all(
+      ['/hal/ping', '/status'].map(async path => (await request(engine.app).get(path)).status)
+    );
+    const chat = await request(engine.app).post('/hal/chats');
+
+    expect({statuses, chat: chat.status, guarded}).toEqual({
+      statuses: [200, 200],
+      chat: 401,
+      guarded: ['POST /hal/chats'],
+    });
+  });
+
+  it('gives additionalRoutes and rootRoutes the parsed JSON body, the cookies and the CORS headers', async () => {
+    const echo = (req: Request, res: Response) =>
+      res.json({body: req.body as unknown, cookies: req.cookies as unknown});
+    const engine = createHalEngine({
+      ...base,
+      transport: {
+        corsOrigin: 'https://shop.example',
+        additionalRoutes: router => router.post('/echo', echo),
+        rootRoutes: router => router.post('/echo', echo),
+      },
+    });
+    const call = async (path: string) => {
+      const pending = request(engine.app).post(path);
+      const response = await pending.set({Origin: 'https://shop.example', Cookie: 'theme=dark'}).send({city: 'Berlin'});
+      return {body: response.body as unknown, origin: response.headers['access-control-allow-origin']};
+    };
+
+    const answered = await Promise.all([call('/hal/echo'), call('/echo')]);
+
+    const expected = {body: {body: {city: 'Berlin'}, cookies: {theme: 'dark'}}, origin: 'https://shop.example'};
+    expect(answered).toEqual([expected, expected]);
+  });
+
+  it("hands transport.errorHandler a route's synchronous throw and its rejected promise, and answers with its response", async () => {
+    const engine = createHalEngine({
+      ...base,
+      transport: {
+        rootRoutes: router => {
+          router.get('/thrown', () => {
+            throw new Error('thrown');
+          });
+          router.get('/rejected', () => Promise.reject(new Error('rejected')));
+        },
+        errorHandler: (error: unknown, _req, res, _next) =>
+          void res.status(500).json({handled: error instanceof Error ? error.message : String(error)}),
+      },
+    });
+
+    const thrown = await request(engine.app).get('/thrown');
+    const rejected = await request(engine.app).get('/rejected');
+
+    expect([thrown.body, rejected.body]).toEqual([{handled: 'thrown'}, {handled: 'rejected'}]);
+  });
+
+  it('answers 404 for a route added to engine.app after createHalEngine returns', async () => {
+    const engine = createHalEngine({...base});
+    engine.app.get('/late', (_req, res) => res.json({late: true}));
+
+    const response = await request(engine.app).get('/late');
+
+    expect({status: response.status, body: response.body}).toEqual({status: 404, body: {error: 'Not Found'}});
   });
 });
 

@@ -45,6 +45,6 @@ export default {
     'src/infrastructure/stores/': {statements: 100, branches: 100, functions: 100, lines: 100},
     'src/providers/vertex/': {statements: 94.23, branches: 84.7, functions: 100, lines: 97.72},
     'src/providers/mock/': {statements: 100, branches: 81.25, functions: 100, lines: 100},
-    global: {statements: 91.18, branches: 83.33, functions: 89.79, lines: 91.78},
+    global: {statements: 91.3, branches: 83.55, functions: 89.79, lines: 91.92},
   },
 };

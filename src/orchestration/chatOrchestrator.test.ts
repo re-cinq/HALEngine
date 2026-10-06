@@ -658,6 +658,22 @@ describe('ChatOrchestrator tool loop', () => {
     expect(reported()).toEqual({inputTokens: 11, outputTokens: 7, totalTokens: 18});
   });
 
+  it('hands afterModelResponse undefined, not a zeroed total, when no round of the turn reports usage', async () => {
+    const received: unknown[] = [];
+    const hooks: OrchestratorHooks = {afterModelResponse: async (_session, _text, usage) => void received.push(usage)};
+
+    await turnOn(
+      [
+        [TOOL_CALL, STOP_FOR_TOOL],
+        [{type: 'text', text: 'done'}, STOP_DONE],
+      ],
+      registryReturning({result: 'r'}),
+      hooks
+    );
+
+    expect(received).toStrictEqual([undefined]);
+  });
+
   it('resolves processMessage and makes the validation-rejection text visible to the provider on the next round', async () => {
     let round = 0;
     let round2Messages: unknown[] = [];
