@@ -20,11 +20,11 @@
 
 ## Facets
 
-- [ ] Add a scalar-id guard (e.g. `assertScalarUserId`) exported from `src/infrastructure/stores/` so stores and the upgrade handler share one implementation
-- [ ] Apply the guard in `createUpgradeHandler` after `wsAuth` resolves: log `{idType: typeof user.id}` at error level, then call `rejectSocket(socket, '401 Unauthorized')`
-- [ ] Apply the guard in `InMemorySessionStore.create` and `InMemorySessionStore.latestFor`
-- [ ] Apply the guard in `MongoSessionStore.create` and `MongoSessionStore.latestFor`
-- [ ] Add spec statements to `specs/hal-engine-websocket-protocol/spec.md` § 12 (Security Considerations) and cite the tests with the established parenthetical form
+- [x] Add a scalar-id guard (e.g. `assertScalarUserId`) exported from `src/infrastructure/stores/` so stores and the upgrade handler share one implementation
+- [x] Apply the guard in `createUpgradeHandler` after `wsAuth` resolves: log `{idType: typeof user.id}` at error level, then call `rejectSocket(socket, '401 Unauthorized')`
+- [x] Apply the guard in `InMemorySessionStore.create` and `InMemorySessionStore.latestFor`
+- [x] Apply the guard in `MongoSessionStore.create` and `MongoSessionStore.latestFor`
+- [x] Add spec statements to `specs/hal-engine-websocket-protocol/spec.md` § 12 (Security Considerations) and cite the tests with the established parenthetical form
 - [ ] Update `docs/getting-started.md` § Authentication: what `id` must be (`string | finite number`) and what happens when it is not (401, logged as authenticator fault)
 - [ ] Add `CHANGELOG.md` entry with MINOR version bump; PR body notes the breaking change for consumers whose authenticator returns a non-scalar id
 - [ ] `npm run verify` passes

@@ -13,6 +13,7 @@ import {credentialFromSubprotocol} from './subprotocol.js';
 import {replayEntries, resumableSession, resumeFields} from './sessionResume.js';
 import type {ConnectInfo, SessionResumeOptions} from './sessionResume.js';
 import {log} from '../../shared/logger.js';
+import {assertScalarUserId} from '../../infrastructure/stores/scalarUserId.js';
 
 export interface ExtWebSocket extends WebSocket {
   isAlive: boolean;
@@ -53,6 +54,14 @@ export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandl
     authenticate(deps.wsAuth, request)
       .then(user => {
         if (!user) {
+          rejectSocket(socket, '401 Unauthorized');
+          return;
+        }
+
+        try {
+          assertScalarUserId(user.id);
+        } catch {
+          log.error('ws', 'authenticator returned non-scalar id', {idType: typeof user.id});
           rejectSocket(socket, '401 Unauthorized');
           return;
         }

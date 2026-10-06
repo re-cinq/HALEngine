@@ -10,16 +10,16 @@ The WebSocket `close` handler called `sessionStore.delete(sessionId)` unconditio
 ## What a close now does
 
 - A conversation survives its socket: after a full turn and a clean close, the store still holds the session and its entries are intact ([validated by: survives the close with its entries intact](../../src/transport/sessionSurvivesClose.test.ts#L29)).
-- `onDisconnect` is the consumer's seam and fires while the store still holds the session, so a consumer that wants the old behaviour writes `onDisconnect: sessionId => store.delete(sessionId)` — that one line is the whole migration ([validated by: is called with the session id while the store still holds the session](../../src/transport/ws/connectionHandler.test.ts#L135), [validated by: reaches an onDisconnect that can still read the session it names](../../src/transport/sessionSurvivesClose.test.ts#L41)).
+- `onDisconnect` is the consumer's seam and fires while the store still holds the session, so a consumer that wants the old behaviour writes `onDisconnect: sessionId => store.delete(sessionId)` — that one line is the whole migration ([validated by: is called with the session id while the store still holds the session](../../src/transport/ws/connectionHandler.test.ts#L144), [validated by: reaches an onDisconnect that can still read the session it names](../../src/transport/sessionSurvivesClose.test.ts#L41)).
 - **GDPR data minimisation, Art. 5(1)(c).** The credentials the socket carried are cleared from the session on close. They were issued for a request that is over, and without this they would sit in memory for as long as the conversation does; the entries, which are what the consumer keeps, are untouched ([validated by: survives the close with its entries intact](../../src/transport/sessionSurvivesClose.test.ts#L29)).
 
 ## Evicting what nobody received
 
-- A session whose socket closed while `create` was still pending is dropped through the optional `evict` member rather than `delete`: it has no entries and nothing to migrate, so dropping it erases nothing a consumer would want kept, and the close path of a delivered session calls no store method at all ([validated by: logs a rejecting evict rather than dropping it](../../src/transport/ws/connectionHandler.test.ts#L233)).
-- A session whose socket closed before it was delivered has its credentials cleared too, because `evict` is optional and a store that implements none still holds it ([validated by: clears the credentials of a session whose socket closed before it was delivered](../../src/transport/ws/connectionHandler.test.ts#L273)).
-- A connection whose setup throws unexpectedly is closed rather than left paused: the socket is resumed first, because a paused one never reads the close frame it would otherwise wait on ([validated by: does not strand a paused socket when connection setup throws](../../src/transport/ws/connectionHandler.test.ts#L325)).
-- A session created for a socket that dies before the `connected` frame can be written is evicted rather than left behind, so a failed handover leaves no conversation nobody will ever read ([validated by: evicts a session it created but could not hand over](../../src/transport/ws/connectionHandler.test.ts#L333)).
-- An `evict` that rejects is caught and logged with the session id rather than dropped, so a cleanup that failed is reported ([validated by: logs a rejecting evict rather than dropping it](../../src/transport/ws/connectionHandler.test.ts#L233)).
+- A session whose socket closed while `create` was still pending is dropped through the optional `evict` member rather than `delete`: it has no entries and nothing to migrate, so dropping it erases nothing a consumer would want kept, and the close path of a delivered session calls no store method at all ([validated by: logs a rejecting evict rather than dropping it](../../src/transport/ws/connectionHandler.test.ts#L242)).
+- A session whose socket closed before it was delivered has its credentials cleared too, because `evict` is optional and a store that implements none still holds it ([validated by: clears the credentials of a session whose socket closed before it was delivered](../../src/transport/ws/connectionHandler.test.ts#L282)).
+- A connection whose setup throws unexpectedly is closed rather than left paused: the socket is resumed first, because a paused one never reads the close frame it would otherwise wait on ([validated by: does not strand a paused socket when connection setup throws](../../src/transport/ws/connectionHandler.test.ts#L334)).
+- A session created for a socket that dies before the `connected` frame can be written is evicted rather than left behind, so a failed handover leaves no conversation nobody will ever read ([validated by: evicts a session it created but could not hand over](../../src/transport/ws/connectionHandler.test.ts#L342)).
+- An `evict` that rejects is caught and logged with the session id rather than dropped, so a cleanup that failed is reported ([validated by: logs a rejecting evict rather than dropping it](../../src/transport/ws/connectionHandler.test.ts#L242)).
 
 ## The default store's memory bound
 
@@ -41,8 +41,8 @@ Renaming `delete` to `evict` outright was considered and rejected: that is a bre
 
 ## Compatibility
 
-- `evict` is optional, so no existing implementation breaks; `InMemorySessionStore` implements it, where eviction and erasure coincide because it is only a cache ([validated by: logs a rejecting evict rather than dropping it](../../src/transport/ws/connectionHandler.test.ts#L233)).
-- The behaviour change is real rather than typed: a consumer relying on the store being emptied on close restores it with the one-line `onDisconnect` above, so the bump is MINOR with the note in the release notes ([validated by: is called with the session id while the store still holds the session](../../src/transport/ws/connectionHandler.test.ts#L135)).
+- `evict` is optional, so no existing implementation breaks; `InMemorySessionStore` implements it, where eviction and erasure coincide because it is only a cache ([validated by: logs a rejecting evict rather than dropping it](../../src/transport/ws/connectionHandler.test.ts#L242)).
+- The behaviour change is real rather than typed: a consumer relying on the store being emptied on close restores it with the one-line `onDisconnect` above, so the bump is MINOR with the note in the release notes ([validated by: is called with the session id while the store still holds the session](../../src/transport/ws/connectionHandler.test.ts#L144)).
 
 ## Out of scope
 

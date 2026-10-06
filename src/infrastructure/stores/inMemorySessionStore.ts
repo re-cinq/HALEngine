@@ -1,5 +1,6 @@
 import type {ChatSession} from '../../types/session.js';
 import type {SessionStore, SessionCreateOptions, SessionLookup} from '../../types/sessionStore.js';
+import {assertScalarUserId} from './scalarUserId.js';
 
 // Eight hours: a memory bound, not a retention decision (specs/hal-engine-session-lifetime/spec.md).
 const DEFAULT_MAX_AGE_MS = 8 * 60 * 60 * 1000;
@@ -23,6 +24,7 @@ export class InMemorySessionStore implements SessionStore {
   }
 
   create(sessionId: string, userId: string | number, options?: SessionCreateOptions): ChatSession {
+    assertScalarUserId(userId);
     this.sweepExpired();
 
     const session: ChatSession = {
@@ -74,6 +76,7 @@ export class InMemorySessionStore implements SessionStore {
 
   /** The user's most recently active session that has not aged out: its newest entry decides, or its creation if it has none. */
   latestFor(userId: string | number): ChatSession | undefined {
+    assertScalarUserId(userId);
     const owned = [...this.sessions.values()].filter(held => held.session.userId === userId && !this.hasExpired(held));
     // Ascending and stable, so of two sessions last active at the same moment, the one created later wins.
     const byActivity = owned.sort((first, second) => lastActivity(first) - lastActivity(second));

@@ -9,9 +9,9 @@ Closing a socket used to stop nothing. The turn it had started kept generating b
 
 ## The connection signal
 
-- Each connection has one `AbortController` of its own, and its signal reaches the message handler as the optional fourth argument of `ConnectionHandlerDeps.handleMessage`: every message on a connection is handed the same signal, and another connection gets another ([validated by: hands every message on a connection the same signal, and each connection its own](../../src/transport/ws/connectionHandler.test.ts#L170)).
+- Each connection has one `AbortController` of its own, and its signal reaches the message handler as the optional fourth argument of `ConnectionHandlerDeps.handleMessage`: every message on a connection is handed the same signal, and another connection gets another ([validated by: hands every message on a connection the same signal, and each connection its own](../../src/transport/ws/connectionHandler.test.ts#L179)).
 - The message handler hands that signal on to the run, as `processMessageStream`'s `signal` ([validated by: hands the run its connection signal](../../src/transport/ws/messageHandler.test.ts#L789)).
-- The socket's `close` listener aborts it first, before the session is torn down and before `onDisconnect` is called ([validated by: aborts the connection signal when its socket closes, before onDisconnect is called](../../src/transport/ws/connectionHandler.test.ts#L191)).
+- The socket's `close` listener aborts it first, before the session is torn down and before `onDisconnect` is called ([validated by: aborts the connection signal when its socket closes, before onDisconnect is called](../../src/transport/ws/connectionHandler.test.ts#L200)).
 
 ## When the socket closes mid-turn
 

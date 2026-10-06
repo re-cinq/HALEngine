@@ -14,17 +14,17 @@
 ## Waiting without dropping a frame
 
 - The socket is paused before the awaited `create` and resumed only once the `message` listener is attached, so a client that sends its first frame in its `open` handler — before `connected` has arrived — is answered rather than ignored; the `connected` frame still precedes every entry frame ([validated by: delivers a frame sent before the connected frame arrives](../../src/transport/awaitedSessionCreate.test.ts#L33)).
-- The `connected` frame is no longer sent inside the connection listener's own tick, since it now follows an awaited `create`. The hook ordering it anchors is unchanged: `onConnect` still runs after that frame is sent ([validated by: runs after the connected frame is sent, not before it](../../src/transport/ws/connectionHandler.test.ts#L82)).
+- The `connected` frame is no longer sent inside the connection listener's own tick, since it now follows an awaited `create`. The hook ordering it anchors is unchanged: `onConnect` still runs after that frame is sent ([validated by: runs after the connected frame is sent, not before it](../../src/transport/ws/connectionHandler.test.ts#L91)).
 
 ## When the socket loses the race
 
 - A socket that closes while `create` is still pending leaves no session behind: the `close` listener is attached before the await rather than after it, since one attached afterwards would miss the event entirely, so the handler releases the session once the create resolves and sends no `connected` frame to a socket that is already gone ([validated by: leaves no session behind when the socket closes during create](../../src/transport/awaitedSessionCreate.test.ts#L42)).
-- `onDisconnect` is the other half of `onConnect` rather than of the socket: a connection that was never handed a session — because `create` rejected, or because the socket closed before the `connected` frame — fires neither hook ([validated by: stays silent for a connection that was never handed a session](../../src/transport/ws/connectionHandler.test.ts#L257)).
+- `onDisconnect` is the other half of `onConnect` rather than of the socket: a connection that was never handed a session — because `create` rejected, or because the socket closed before the `connected` frame — fires neither hook ([validated by: stays silent for a connection that was never handed a session](../../src/transport/ws/connectionHandler.test.ts#L266)).
 
 ## When the store fails
 
 - **NIS-2 Article 21.** A `create` that rejects closes that one socket with an `error` frame carrying `SERVER_ERROR` and produces no `unhandledRejection`, since an async connection listener that rejects would otherwise end the process and take every other conversation on the server with it; the socket is resumed before it is closed, because `ws.close()` on a paused socket waits for a close frame it can never read and gives up only after the library's own thirty-second timeout ([validated by: answers a rejecting create with SERVER_ERROR rather than an unhandled rejection](../../src/transport/awaitedSessionCreate.test.ts#L56)).
-- **GDPR.** A store call that rejects while releasing a session is caught and logged with the session id, so a cleanup that failed is reported rather than silently recorded as done ([validated by: logs a rejecting evict rather than dropping it](../../src/transport/ws/connectionHandler.test.ts#L233)).
+- **GDPR.** A store call that rejects while releasing a session is caught and logged with the session id, so a cleanup that failed is reported rather than silently recorded as done ([validated by: logs a rejecting evict rather than dropping it](../../src/transport/ws/connectionHandler.test.ts#L242)).
 
 ## Compatibility
 

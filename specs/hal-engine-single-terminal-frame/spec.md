@@ -18,7 +18,7 @@ Every `user_message` the server receives now ends in exactly one `stream_end`, w
 - A valid `ping` produces `pong` and no `stream_end` ([validated by: answers a ping with the timestamp it was given](../../src/transport/ws/messageHandler.test.ts#L81)).
 - A malformed `ping` arriving mid-run gets its own `error` frame, the run's deltas continue unaffected, and exactly one `stream_end` is the very last frame ([validated by: keeps one stream_end, last, when a malformed ping lands mid-run](../../src/transport/ws/messageHandler.test.ts#L374)).
 - A three-round tool conversation still produces exactly one `stream_end`, as its last frame ([validated by: sends one stream_end for a three-round tool conversation](../../src/transport/ws/messageHandler.test.ts#L395)).
-- Unparseable JSON is rejected before the server can tell what frame type it was meant to be, so it produces `error` (`INVALID_FORMAT`) alone and is never dispatched; this is the one case in which a client falls back on the socket closing ([validated by: answers unparseable JSON with INVALID_FORMAT alone and never dispatches it](../../src/transport/ws/connectionHandler.test.ts#L211)).
+- Unparseable JSON is rejected before the server can tell what frame type it was meant to be, so it produces `error` (`INVALID_FORMAT`) alone and is never dispatched; this is the one case in which a client falls back on the socket closing ([validated by: answers unparseable JSON with INVALID_FORMAT alone and never dispatches it](../../src/transport/ws/connectionHandler.test.ts#L220)).
 
 ## What this replaces
 
