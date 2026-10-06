@@ -12,6 +12,11 @@ export interface BaseSession {
 export type SessionLookup<T extends BaseSession = ChatSession> =
   {status: 'active'; session: T} | {status: 'expired'; userId: string | number} | {status: 'missing'};
 
+/** Thrown by a store that cannot list conversations at all, so a deployment fault reads as one rather than a failed read. */
+export class StoreCannotList extends Error {
+  readonly name = 'StoreCannotList';
+}
+
 /** What a conversation list needs of one session: never its entries, and never its credentials. */
 export interface SessionSummary {
   sessionId: string;

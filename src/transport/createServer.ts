@@ -42,6 +42,11 @@ export function createServer(options: HalServerOptions): HalServer {
     handleProtocols: selectSubprotocol,
   });
 
+  // A list whose rows cannot be opened is a deployment slip worth saying out loud, not worth refusing to start over.
+  if (options.history?.enabled && !options.resume?.enabled) {
+    log.warn('server', 'conversation history is on but resume is off, so a listed conversation cannot be rejoined');
+  }
+
   const handleMessage = createMessageHandler(options.orchestrator, {
     sessionStore: options.sessionStore,
     history: options.history,

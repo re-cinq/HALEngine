@@ -10,7 +10,7 @@ interface ValidationSuccess {
   data: IncomingMessage;
 }
 
-interface ValidationFailure {
+export interface ValidationFailure {
   valid: false;
   error: string;
 }

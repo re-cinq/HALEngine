@@ -116,6 +116,7 @@ export type {
 } from './types/messages.js';
 
 export type {WsAuthenticator, HttpAuthMiddleware, AuthenticatedRequest} from './types/auth.js';
+export {StoreCannotList} from './types/sessionStore.js';
 export type {
   SessionStore,
   SessionCreateOptions,

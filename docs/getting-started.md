@@ -304,13 +304,13 @@ Resume gets a client back into one conversation. It does not tell it which conve
 ]}
 ```
 
-The frame names no user and has no field for one: the engine lists the conversations of the user your `WsAuthenticator` returned for that connection, so a client cannot ask for anybody else's. A summary carries no message content — see [session stores](session-stores.md#listing-a-users-conversations) for the shape and for what the store does to answer it.
+The frame names no user and has no field for one: the engine lists the conversations of the user your `WsAuthenticator` returned for that connection, so a client cannot ask for anybody else's. The conversation the connection is itself in is listed like any other, so a fresh connect sees a row with `entryCount: 0` among the user's older ones. A summary carries no message content — see [session stores](session-stores.md#listing-a-users-conversations) for the shape and for what the store does to answer it.
 
-**Picking one.** Nothing new is needed: reconnect with `?sessionId=<the id from the row>` and [Session Resume](#session-resume) rejoins it, ownership check and replay included.
+**Picking one needs resume on too.** Reconnect with `?sessionId=<the id from the row>` and [Session Resume](#session-resume) rejoins it, ownership check and replay included — but `?sessionId=` is read only when `resume` is enabled, so `history` on its own gives a list whose rows cannot be opened: the id is ignored and the client silently gets a fresh session. Turn both on, or expect a list that is only a list. The engine logs a warning at startup for that combination.
 
 **Paging.** Send `limit` (1 to 200) and `before`, which is the last row you were sent — both of its fields, `{"updatedAt": "…", "sessionId": "…"}`, not just the time. A page shorter than the `limit` you asked for is the last one.
 
-**When it cannot be answered.** An `error` frame with code `UNSUPPORTED` means either the switch is off or your store implements no `listFor`; `SERVER_ERROR` means the store failed. Never an empty list for any of the three — a client cannot tell "no conversations" from "something broke", and the one place that matters is a history view.
+**When it cannot be answered.** An `error` frame with code `UNSUPPORTED` means the server does not serve the frame: the switch is off, your store implements no `listFor`, or it threw `StoreCannotList` to say it cannot list at all — `MongoSessionStore` does that for a collection you injected without a `find`. `SERVER_ERROR` means a store that can list failed while listing, which is the one of the two worth retrying. Never an empty list for any of them: a client cannot tell "no conversations" from "something broke", and the one place that difference matters is a history view.
 
 **Answered off the turn.** A `list_conversations` sent while an answer is streaming is replied to immediately rather than queued behind it, and nothing is ever pushed: a `conversation_list` arrives only when asked for.
 

@@ -1,8 +1,20 @@
 import {WebSocket} from 'ws';
 import {InMemorySessionStore} from '../infrastructure/stores/inMemorySessionStore.js';
-import {captureErrors} from '../shared/logCaptureTestSupport.js';
-import {announcedId, connectClient, startEngineWith, stopEngines} from './wsTestSupport.js';
+import {captureLog} from '../shared/logCaptureTestSupport.js';
+import {jest} from '@jest/globals';
+import {createMessageHandler} from './ws/messageHandler.js';
+import {
+  announcedId,
+  answeringOrchestrator,
+  connectClient,
+  deferred,
+  startEngineWith,
+  stopEngines,
+} from './wsTestSupport.js';
 import type {ChatSession} from '../types/session.js';
+import type {ChatOrchestrator} from '../orchestration/chatOrchestrator.js';
+import type {MessageChunk} from '../types/ai.js';
+import {StoreCannotList} from '../types/sessionStore.js';
 import type {SessionListOptions, SessionStore, SessionSummary} from '../types/sessionStore.js';
 
 // The list is answered for the socket's own authenticated user, off the turn lock, and never as a silent empty page.
@@ -60,7 +72,7 @@ function storeListing(backing: InMemorySessionStore, listFor?: SessionStore['lis
 const listOnly = (reply: Reply): string[] => (reply.conversations as SessionSummary[]).map(row => row.sessionId);
 
 describe('the conversation list frame', () => {
-  const errors = captureErrors();
+  const {errors, warnings} = captureLog();
 
   afterEach(() => stopEngines());
 
@@ -72,14 +84,14 @@ describe('the conversation list frame', () => {
     const answered = await reply;
     const rows = answered.conversations as SessionSummary[];
 
-    expect({
-      order: listOnly(answered),
-      times: rows.map(row => `${typeof row.createdAt} ${typeof row.updatedAt}`),
-      newest: rows[0]?.updatedAt,
-    }).toEqual({
+    expect({order: listOnly(answered), newest: rows[0]}).toEqual({
       order: ['newest', 'middle', 'oldest', idOf()],
-      times: ['string string', 'string string', 'string string', 'string string'],
-      newest: new Date(AHEAD + 2000).toISOString(),
+      newest: {
+        sessionId: 'newest',
+        createdAt: rows[0]?.createdAt,
+        updatedAt: new Date(AHEAD + 2000).toISOString(),
+        entryCount: 1,
+      },
     });
   });
 
@@ -106,6 +118,17 @@ describe('the conversation list frame', () => {
     expect(options).toEqual([{limit: 7, before}]);
   });
 
+  it('warns at startup when history is on without resume, since no row could then be opened', async () => {
+    await startEngineWith({sessionStore: storeOfThree(), history: enabled});
+
+    expect(warnings.filter(line => line.category === 'server')).toEqual([
+      {
+        category: 'server',
+        message: 'conversation history is on but resume is off, so a listed conversation cannot be rejoined',
+      },
+    ]);
+  });
+
   it('refuses the frame when conversation history is not turned on', async () => {
     const {url} = await startEngineWith({sessionStore: storeOfThree()});
 
@@ -129,6 +152,34 @@ describe('the conversation list frame', () => {
     expect((await reply).code).toBe('UNSUPPORTED');
   });
 
+  it('lists the conversation the connection is in, like any other, holding no entries yet', async () => {
+    const store = new InMemorySessionStore();
+    store.create('earlier', 'u1');
+    const {url} = await startEngineWith({sessionStore: store, history: enabled});
+
+    const {client, reply} = asks(url, {type: 'list_conversations'}, 'conversation_list');
+    const idOf = announcedId(client);
+    const rows = (await reply).conversations as SessionSummary[];
+
+    // Sorted, not in answered order: both were created in the same millisecond, so the id breaks the tie between them.
+    expect(
+      rows.map(row => `${row.sessionId === idOf() ? 'this connection' : row.sessionId}:${row.entryCount}`).sort()
+    ).toEqual(['earlier:0', 'this connection:0']);
+  });
+
+  it('answers a handler built with no store at all, rather than leaving the client waiting', async () => {
+    const ws = {send: jest.fn(), readyState: WebSocket.OPEN} as unknown as WebSocket;
+    const session = {sessionId: 's1', userId: 'u1', entries: []};
+
+    await createMessageHandler(answeringOrchestrator)(ws, session, {type: 'list_conversations'});
+
+    const sent = (ws.send as jest.Mock).mock.calls;
+
+    expect(sent.map(([frame]) => JSON.parse(String(frame)))).toEqual([
+      {type: 'error', code: 'UNSUPPORTED', message: 'Conversation history is not enabled on this server'},
+    ]);
+  });
+
   it('refuses the frame when the store cannot list, rather than reporting no conversations', async () => {
     const {url} = await startEngineWith({sessionStore: storeListing(storeOfThree()), history: enabled});
 
@@ -138,6 +189,21 @@ describe('the conversation list frame', () => {
       type: 'error',
       code: 'UNSUPPORTED',
       message: 'This session store cannot list conversations',
+    });
+  });
+
+  it('tells a store that cannot list apart from one that failed, so a misconfiguration is not a blip', async () => {
+    const cannot = storeListing(storeOfThree(), () => {
+      throw new StoreCannotList('the collection implements no find');
+    });
+    const {url} = await startEngineWith({sessionStore: cannot, history: enabled});
+
+    const {reply} = asks(url, {type: 'list_conversations'}, 'error');
+    const answered = await reply;
+
+    expect({answered, logged: errors.map(line => `${String(line.message)}:${String(line.errorType)}`)}).toEqual({
+      answered: {type: 'error', code: 'UNSUPPORTED', message: 'This session store cannot list conversations'},
+      logged: ['store cannot list conversations:StoreCannotList'],
     });
   });
 
@@ -176,15 +242,32 @@ describe('the conversation list frame', () => {
     });
   });
 
-  it('answers a list while a turn is still streaming, rather than queueing behind it', async () => {
-    const {url} = await startEngineWith({sessionStore: storeOfThree(), history: enabled});
+  it('answers a list in the middle of a streaming turn, before that turn ends', async () => {
+    const held = deferred();
+    const blocking: ChatOrchestrator = {
+      processMessage: async () => 'hi',
+      async *processMessageStream(): AsyncGenerator<MessageChunk> {
+        yield {type: 'text', text: 'first'};
+        await held.until;
+        yield {type: 'text', text: 'second'};
+        yield {type: 'stop', stopReason: 'end_turn'};
+      },
+    };
+    const {url} = await startEngineWith({
+      sessionStore: storeOfThree(),
+      history: enabled,
+      orchestrator: blocking,
+    });
+
     const client = connectClient(url);
-    const seen: string[] = [];
-    const bothSeen = new Promise<string[]>(resolve => {
+    const order: string[] = [];
+    const ended = new Promise<void>(resolve => {
       client.on('message', raw => {
         const {type} = JSON.parse(String(raw)) as Reply;
-        seen.push(type);
-        if (type === 'stream_end') resolve(seen);
+        order.push(type);
+        // Released only once the list has been answered, so the turn cannot end before the list arrives by luck.
+        if (type === 'conversation_list') held.release();
+        if (type === 'stream_end') resolve();
       });
     });
 
@@ -192,9 +275,15 @@ describe('the conversation list frame', () => {
       client.send(JSON.stringify({type: 'user_message', content: 'hello'}));
       client.send(JSON.stringify({type: 'list_conversations'}));
     });
-    const order = await bothSeen;
+    await ended;
 
-    expect(order.indexOf('conversation_list') < order.indexOf('stream_end')).toBe(true);
+    // Positions, not indexOf: a list that never arrived would read as -1 and sit before everything.
+    expect({
+      list: order.filter(type => type === 'conversation_list').length,
+      beforeEnd:
+        order.indexOf('conversation_list') > 0 && order.indexOf('conversation_list') < order.indexOf('stream_end'),
+      mid: order.slice(order.indexOf('conversation_list')).includes('entry_delta'),
+    }).toEqual({list: 1, beforeEnd: true, mid: true});
   });
 
   it('hands a client an id it can rejoin the conversation with', async () => {
