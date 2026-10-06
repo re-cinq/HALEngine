@@ -593,6 +593,17 @@ describe('the websocket message handler', () => {
         stored,
       }).toMatchObject({skipped: true, deltas: [], stored: {role: 'assistant', content: SENTENCE}});
     });
+
+    it('sends no frame for the synthetic stop when no hook wrote a sentence, so the run ends as it did without one', async () => {
+      const exhausted = harness([LOOKUP, TOOL_STOP, BUDGET_STOP]);
+      const withoutIt = harness([LOOKUP, TOOL_STOP]);
+
+      await exhausted.send();
+      await withoutIt.send();
+
+      const frames = exhausted.frames();
+      expect({frames, last: frames.at(-1)}).toEqual({frames: withoutIt.frames(), last: 'stream_end'});
+    });
   });
 });
 
