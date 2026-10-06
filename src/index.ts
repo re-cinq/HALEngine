@@ -116,6 +116,7 @@ export type {
   SessionStore,
   SessionCreateOptions,
   SessionListOptions,
+  SessionCursor,
   SessionSummary,
   BaseSession,
   Awaitable,

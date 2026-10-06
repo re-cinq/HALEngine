@@ -10,7 +10,7 @@ package, not for somebody reading this repository's commit log.
 
 ### Added
 
-- `SessionStore.listFor(userId, options?)`, an optional store member that answers the summaries of a user's conversations — `sessionId`, `createdAt`, `updatedAt` and `entryCount` — most recent activity first, so a client can offer a conversation list instead of only rejoining one. `InMemorySessionStore` and `MongoSessionStore` both implement it; a store of your own may leave it out. Page with `limit` (50 by default, 200 at most) and `before`. A summary never carries a conversation's entries or its credentials. See `docs/session-stores.md` § Listing a user's conversations.
+- `SessionStore.listFor(userId, options?)`, an optional store member that answers the summaries of a user's conversations — `sessionId`, `createdAt`, `updatedAt` and `entryCount` — most recent activity first, so a client can offer a conversation list instead of only rejoining one. `InMemorySessionStore` and `MongoSessionStore` both implement it; a store of your own may leave it out. A summary never carries a conversation's entries or its credentials. Page with `limit` (50 by default, 200 at most, and `0` answers nothing) and `before`, which takes the last summary you saw: the cursor carries both `updatedAt` and `sessionId`, so two conversations saved in the same millisecond cannot straddle a page boundary and go unlisted. See `docs/session-stores.md` § Listing a user's conversations.
 
 ### Changed
 

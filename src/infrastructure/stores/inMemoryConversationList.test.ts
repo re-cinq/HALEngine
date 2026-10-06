@@ -29,14 +29,14 @@ describe('the in-memory store conversation list', () => {
     }).toEqual({order: ['newer', 'older'], heads: true});
   });
 
-  it('heads the list with the same tie-break latestFor applies, the session created later winning', () => {
+  it('breaks a tie on activity by session id, where latestFor takes the session created later', () => {
     const store = new InMemorySessionStore();
-    store.create('first', 'u1');
-    store.create('second', 'u1');
+    store.create('zeta', 'u1');
+    store.create('alpha', 'u1');
 
     expect({listed: store.listFor('u1').map(row => row.sessionId), latest: store.latestFor('u1')?.sessionId}).toEqual({
-      listed: ['second', 'first'],
-      latest: 'second',
+      listed: ['zeta', 'alpha'],
+      latest: 'alpha',
     });
   });
 
@@ -77,7 +77,7 @@ describe('the in-memory store conversation list', () => {
 
     expect({
       firstPage: firstPage.map(row => row.sessionId),
-      rest: store.listFor('u1', {before: firstPage[0]?.updatedAt}).map(row => row.sessionId),
+      rest: store.listFor('u1', {before: firstPage[0]}).map(row => row.sessionId),
     }).toEqual({firstPage: ['newest'], rest: ['middle', 'oldest']});
   });
 
@@ -91,14 +91,41 @@ describe('the in-memory store conversation list', () => {
     });
   });
 
-  it('reads a limit of none and a fractional one as a count a caller can use rather than failing the list', () => {
+  it('reads a fractional or negative limit as a count a caller can use rather than failing the list', () => {
     const store = new InMemorySessionStore();
     store.create('s1', 'u1');
     store.create('s2', 'u1');
 
     expect({
       fractional: store.listFor('u1', {limit: 1.7}).length,
-      below: store.listFor('u1', {limit: 0}).length,
-    }).toEqual({fractional: 1, below: 1});
+      negative: store.listFor('u1', {limit: -5}),
+    }).toEqual({fractional: 1, negative: []});
+  });
+
+  it('answers nothing for a limit of none, and the default for a limit that is not a number', () => {
+    const store = new InMemorySessionStore();
+    store.create('s1', 'u1');
+    store.create('s2', 'u1');
+
+    expect({
+      none: store.listFor('u1', {limit: 0}),
+      unusable: store.listFor('u1', {limit: Number.NaN}).length,
+    }).toEqual({none: [], unusable: 2});
+  });
+
+  it('keeps a conversation tied on activity rather than dropping it across a page boundary', () => {
+    const store = new InMemorySessionStore();
+    store.create('a', 'u1');
+    store.create('b', 'u1');
+    store.create('c', 'u1');
+
+    const pages: string[][] = [];
+    let page = store.listFor('u1', {limit: 1});
+    while (page.length > 0) {
+      pages.push(page.map(row => row.sessionId));
+      page = store.listFor('u1', {limit: 1, before: page[0]});
+    }
+
+    expect(pages).toEqual([['c'], ['b'], ['a']]);
   });
 });

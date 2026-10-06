@@ -6,7 +6,7 @@ import type {
   SessionLookup,
   SessionSummary,
 } from '../../types/sessionStore.js';
-import {cappedLimit} from './sessionListWindow.js';
+import {cappedLimit, newestFirst, sitsAfter} from './sessionListWindow.js';
 
 // Eight hours: a memory bound, not a retention decision (specs/hal-engine-session-lifetime/spec.md).
 const DEFAULT_MAX_AGE_MS = 8 * 60 * 60 * 1000;
@@ -81,11 +81,13 @@ export class InMemorySessionStore implements SessionStore {
 
   /** Summaries of the user's live sessions, newest activity first, by the same activity `latestFor` reads. */
   listFor(userId: string | number, options?: SessionListOptions): SessionSummary[] {
-    // Reversed rather than sorted descending, so a tie breaks the way latestFor breaks it and the two agree.
-    const newestFirst = this.ownedBy(userId).sort(byActivity).reverse();
-    const before = options?.before?.getTime();
-    const paged = before === undefined ? newestFirst : newestFirst.filter(held => lastActivity(held) < before);
-    return paged.slice(0, cappedLimit(options?.limit)).map(summaryOf);
+    const limit = cappedLimit(options?.limit);
+    if (limit === 0) return [];
+
+    const ordered = this.ownedBy(userId).map(summaryOf).sort(newestFirst);
+    const before = options?.before;
+    const paged = before === undefined ? ordered : ordered.filter(summary => sitsAfter(summary, before));
+    return paged.slice(0, limit);
   }
 
   /** The user's most recently active session that has not aged out: its newest entry decides, or its creation if it has none. */
@@ -113,7 +115,7 @@ export class InMemorySessionStore implements SessionStore {
   }
 }
 
-// Ascending, and stable for a tie, so reversing it is exactly the order a conversation list wants.
+// Ascending and stable, so latestFor's `.at(-1)` takes the session created later when two are last active together.
 function byActivity(first: HeldSession, second: HeldSession): number {
   return lastActivity(first) - lastActivity(second);
 }

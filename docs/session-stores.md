@@ -90,13 +90,22 @@ carries no entries and no `authHeaders`, so a conversation list cannot hand over
 a credential. Its first row is always the session `latestFor` returns — both read the same
 activity, so a list and a resume cannot disagree about which conversation is newest.
 
-`options.limit` defaults to 50 and is capped at 200, and `options.before` takes the conversations
-older than a moment, so a client pages by passing back the `updatedAt` of the last row it saw. A
-store whose database fails rejects rather than answering an empty list: what to show a user who may
-have conversations is your decision, and "no conversations" is not a safe guess.
+`options.limit` defaults to 50 and is capped at 200. `options.before` resumes after a row, so a
+client pages by passing back the last summary it saw — `SessionCursor` is `{updatedAt, sessionId}`,
+which a `SessionSummary` already satisfies, so `listFor(userId, {before: rows.at(-1)})` is the whole
+of it. The session id is in the cursor because `updatedAt` alone is not unique: two conversations
+saved in the same millisecond would straddle a page boundary and one of them would never be listed.
+A `limit` of `0` answers nothing, and a limit that is not a usable number is read as none given.
 
-`MongoSessionStore` filters on the user in the query, sorts on the § Latest session index and
-projects the entries away, so a page of summaries never carries a conversation out of the database.
+A store whose database fails rejects rather than answering an empty list: what to show a user who
+may have conversations is your decision, and "no conversations" is not a safe guess.
+
+`MongoSessionStore` filters on the user in the query, sorts `{updatedAt: -1, _id: -1}` and projects
+the entries away, so a page of summaries never carries a conversation out of the database. The
+§ Latest session index serves the leading keys of that sort; extend it to
+`{userId: 1, updatedAt: -1, _id: -1}` if you want the tie-break indexed too. It answers a `limit` of
+`0` without querying at all, because MongoDB reads `limit: 0` as *no* limit and would otherwise hand
+back everything the filter matches.
 It counts a conversation from an `entryCount` field each `save` writes beside the entries. A
 document saved before 0.6 has no such field and lists as a conversation of no entries until you
 backfill it:
@@ -107,7 +116,9 @@ db.hal_sessions.updateMany({entryCount: {$exists: false}}, [{$set: {entryCount: 
 ```
 
 `InMemorySessionStore` goes by a session's newest entry, or its creation for a session with none,
-and never lists one that has aged out. A store you write yourself can leave `listFor` out, in which
+and never lists one that has aged out. Where two of a user's conversations are last active in the
+same millisecond, the list puts the larger session id first while `latestFor` takes the one created
+later, so for tied conversations the head of the list and the session a resume rejoins can differ. A store you write yourself can leave `listFor` out, in which
 case it has no conversation list to offer.
 
 **GDPR.** A summary is personal data: it shows that a user held a conversation, and when. It

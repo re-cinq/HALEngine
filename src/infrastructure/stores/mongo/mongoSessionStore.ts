@@ -1,6 +1,7 @@
 import type {ChatSession} from '../../../types/session.js';
 import type {
   SessionCreateOptions,
+  SessionCursor,
   SessionListOptions,
   SessionStore,
   SessionSummary,
@@ -115,12 +116,15 @@ export class MongoSessionStore implements SessionStore {
 
   /** One query, filtered on the user in the database and sorted on the index `latestFor` already needs. */
   async listFor(userId: string | number, options?: SessionListOptions): Promise<SessionSummary[]> {
+    const limit = cappedLimit(options?.limit);
+    // Never issued as a query: mongo reads `limit: 0` as no limit at all, which is the opposite of what it asks for.
+    if (limit === 0) return [];
+
     const collection = await this.collection();
-    const before = options?.before;
     const documents = await collection
-      .find(before === undefined ? {userId} : {userId, updatedAt: {$lt: before}}, {
-        sort: {updatedAt: -1},
-        limit: cappedLimit(options?.limit),
+      .find(olderThan(userId, options?.before), {
+        sort: {updatedAt: -1, _id: -1},
+        limit,
         projection: SUMMARY_FIELDS,
       })
       .toArray();
@@ -201,6 +205,13 @@ export class MongoSessionStore implements SessionStore {
     this.owned = client;
     return namedCollection(client, options.dbName, name);
   }
+}
+
+// The id breaks a tie on updatedAt, so two conversations saved in the same millisecond cannot straddle a page boundary.
+function olderThan(userId: string | number, before: SessionCursor | undefined): Record<string, unknown> {
+  if (before === undefined) return {userId};
+  const {updatedAt, sessionId} = before;
+  return {userId, $or: [{updatedAt: {$lt: updatedAt}}, {updatedAt, _id: {$lt: sessionId}}]};
 }
 
 /** Builds a MongoDB-backed session store from a collection, a client, or a connection URL. */

@@ -75,7 +75,7 @@ describe('the MongoDB store conversation list', () => {
 
     expect({
       firstPage: firstPage.map(row => row.sessionId),
-      rest: (await store.listFor('u1', {before: firstPage[0]?.updatedAt})).map(row => row.sessionId),
+      rest: (await store.listFor('u1', {before: firstPage[0]})).map(row => row.sessionId),
     }).toEqual({firstPage: ['newest'], rest: ['middle', 'oldest']});
   });
 
@@ -108,19 +108,46 @@ describe('the MongoDB store conversation list', () => {
     expect((await collection.findOne({_id: 's1'}))?.entryCount).toBe(2);
   });
 
-  it('asks the database to filter on the user and sort on the resume index, and never for the entries', async () => {
+  it('asks the database to filter on the user, sort on the index with the id behind it, and never for the entries', async () => {
     const calls: RecordedFind[] = [];
     const store = new MongoSessionStore({collection: recordingCollection(calls, [])});
-    const before = new Date(START);
+    const updatedAt = new Date(START);
 
-    await store.listFor('u1', {limit: 7, before});
+    await store.listFor('u1', {limit: 7, before: {updatedAt, sessionId: 's9'}});
 
     expect(calls).toEqual([
       {
-        filter: {userId: 'u1', updatedAt: {$lt: before}},
-        options: {sort: {updatedAt: -1}, limit: 7, projection: {_id: 1, createdAt: 1, updatedAt: 1, entryCount: 1}},
+        filter: {userId: 'u1', $or: [{updatedAt: {$lt: updatedAt}}, {updatedAt, _id: {$lt: 's9'}}]},
+        options: {
+          sort: {updatedAt: -1, _id: -1},
+          limit: 7,
+          projection: {_id: 1, createdAt: 1, updatedAt: 1, entryCount: 1},
+        },
       },
     ]);
+  });
+
+  it('keeps a conversation tied on updatedAt rather than dropping it across a page boundary', async () => {
+    const store = new MongoSessionStore({collection: collectionFor(), now: () => new Date(START)});
+    await store.create('a', 'u1');
+    await store.create('b', 'u1');
+    await store.create('c', 'u1');
+
+    const pages: string[][] = [];
+    let page = await store.listFor('u1', {limit: 1});
+    while (page.length > 0) {
+      pages.push(page.map(row => row.sessionId));
+      page = await store.listFor('u1', {limit: 1, before: page[0]});
+    }
+
+    expect(pages).toEqual([['c'], ['b'], ['a']]);
+  });
+
+  it('answers a limit of none without asking the database, which reads a limit of zero as no limit at all', async () => {
+    const calls: RecordedFind[] = [];
+    const store = new MongoSessionStore({collection: recordingCollection(calls, [])});
+
+    expect({rows: await store.listFor('u1', {limit: 0}), queries: calls.length}).toEqual({rows: [], queries: 0});
   });
 
   it('answers from a projection alone, so a collection that never returns entries still lists conversations', async () => {

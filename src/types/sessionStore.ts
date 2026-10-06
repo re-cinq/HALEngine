@@ -20,10 +20,16 @@ export interface SessionSummary {
   entryCount: number;
 }
 
+/** Where a page of conversations resumes from: the last row the caller saw, which a `SessionSummary` satisfies. */
+export interface SessionCursor {
+  updatedAt: Date;
+  sessionId: string;
+}
+
 /** A window onto a user's conversations, newest activity first; `before` pages down that same order. */
 export interface SessionListOptions {
   limit?: number;
-  before?: Date;
+  before?: SessionCursor;
 }
 
 export interface SessionCreateOptions {
