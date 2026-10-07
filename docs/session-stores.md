@@ -109,7 +109,8 @@ A store whose database fails rejects rather than answering an empty list: what t
 may have conversations is your decision, and "no conversations" is not a safe guess.
 
 **Labelling a row.** `listFor(userId, {preview: true})` adds a `preview` to each summary: the
-conversation's opening question, trimmed, with internal whitespace collapsed, and cut to 120 code
+conversation's opening question, trimmed, with each run of internal whitespace replaced by one ASCII
+space (a lone non-breaking or ideographic space included), and cut to 120 code
 points with no ellipsis of its own — mark a cut however your client prefers, bearing in mind that the row
 carries no cut flag: a label of 120 code points was almost certainly cut, but a cut one can come back
 a little shorter where the cut stranded a space, so read the bound as a hint rather than a signal. It defaults to off,
