@@ -151,6 +151,31 @@ describe('the conversation list frame', () => {
     expect(((await reply).conversations as SessionSummary[]).map(row => 'preview' in row)).toEqual([false]);
   });
 
+  it('holds a store answering an over-long or non-text preview to the field the protocol documents', async () => {
+    const unruly = storeListing(new InMemorySessionStore(), () => [
+      {
+        sessionId: 'long',
+        createdAt: new Date(AHEAD),
+        updatedAt: new Date(AHEAD),
+        entryCount: 1,
+        preview: 'x'.repeat(900),
+      },
+      {
+        sessionId: 'nottext',
+        createdAt: new Date(AHEAD),
+        updatedAt: new Date(AHEAD),
+        entryCount: 1,
+        preview: 42 as unknown as string,
+      },
+    ]);
+    const {url} = await startEngineWith({sessionStore: unruly, history: labelling});
+
+    const {reply} = asks(url, {type: 'list_conversations'}, 'conversation_list');
+    const rows = (await reply).conversations as SessionSummary[];
+
+    expect(rows.map(row => ('preview' in row ? [...String(row.preview)].length : 'absent'))).toEqual([120, 'absent']);
+  });
+
   it('labels each conversation with its opening question where the deployer turned previews on', async () => {
     const {url} = await startEngineWith({sessionStore: storeOfThree(), history: labelling});
 

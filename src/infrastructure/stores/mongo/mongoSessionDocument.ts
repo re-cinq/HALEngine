@@ -68,10 +68,10 @@ export function toLabelledSummary(document: MongoSessionDocument): SessionSummar
   return {...summary, preview: label};
 }
 
-// The projection asks for one entry or for none at all, so a document read without a preview has no entries field.
+// Mongo applies $slice only to an array and hands back any other value untouched, so the shape is checked not assumed.
 function slicedFirst(document: MongoSessionDocument): SessionEntry | undefined {
-  const sliced: SessionEntry[] | undefined = document.entries;
-  return sliced === undefined ? undefined : sliced[0];
+  const sliced: unknown = document.entries;
+  return Array.isArray(sliced) ? (sliced[0] as SessionEntry | undefined) : undefined;
 }
 
 // A Date is a value the driver stores natively, so it is copied by reference rather than walked.

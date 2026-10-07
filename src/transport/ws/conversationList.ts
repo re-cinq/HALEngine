@@ -4,6 +4,7 @@ import {ErrorCodes} from '../../types/messages.js';
 import type {ChatSession} from '../../types/session.js';
 import type {SessionStore, SessionSummary} from '../../types/sessionStore.js';
 import {StoreCannotList} from '../../types/sessionStore.js';
+import {labelFrom} from '../../infrastructure/stores/sessionPreview.js';
 import {sendError, sendJson} from './sender.js';
 import {log} from '../../shared/logger.js';
 
@@ -97,8 +98,10 @@ function onTheWire(summary: SessionSummary): ConversationSummary {
 // The only mapper that copies a preview, so a store volunteering one cannot reach the wire through the other.
 function withPreview(summary: SessionSummary): ConversationSummary {
   const row = onTheWire(summary);
-  if (summary.preview === undefined) return row;
-  return {...row, preview: summary.preview};
+  // Cut again here, as the times are rebuilt above: the bound the protocol documents is the transport's to hold.
+  const label = labelFrom(summary.preview);
+  if (label === undefined) return row;
+  return {...row, preview: label};
 }
 
 function typeOf(error: unknown): string {

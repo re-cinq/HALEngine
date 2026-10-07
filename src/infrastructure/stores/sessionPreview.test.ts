@@ -1,4 +1,4 @@
-import {previewOf} from './sessionPreview.js';
+import {labelFrom, previewOf} from './sessionPreview.js';
 import type {SessionEntry} from '../../types/session.js';
 
 // A label is derived from the conversation's opening question alone, and never from an entry the model wrote.
@@ -41,5 +41,38 @@ describe('a conversation preview', () => {
 
   it('is absent for a conversation with no entry at all, and for one asked in whitespace alone', () => {
     expect([previewOf(undefined), previewOf(asked('   \n  '))]).toEqual([undefined, undefined]);
+  });
+
+  it('is absent for a stored entry whose text is missing or is not text, rather than failing the whole list', () => {
+    const malformed = [
+      {role: 'user', timestamp: AT},
+      {role: 'user', content: null, timestamp: AT},
+      {role: 'user', content: 42, timestamp: AT},
+      null,
+    ];
+
+    expect(malformed.map(entry => previewOf(entry as unknown as SessionEntry))).toEqual([
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it('drops a joiner the cut left with nothing to join, since it is invisible in what a client renders', () => {
+    const family = previewOf(asked('a'.repeat(118) + '👨‍👩‍👧'));
+
+    expect(family?.endsWith('a👨')).toBe(true);
+  });
+
+  it('holds text a store answered with to the same bound, however long it is and whatever type it is', () => {
+    const fromStore = [labelFrom('x'.repeat(5000)), labelFrom('😀'.repeat(300)), labelFrom(42), labelFrom(null)];
+
+    expect(fromStore.map(label => (typeof label === 'string' ? [...label].length : label))).toEqual([
+      120,
+      120,
+      undefined,
+      undefined,
+    ]);
   });
 });

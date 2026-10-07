@@ -93,6 +93,25 @@ describe('the two shipped stores', () => {
     ]);
   });
 
+  it('window a labelled list the same way, so asking for labels widens no page and reorders none', async () => {
+    const [memory, mongo] = await bothHolding(1000);
+
+    const labelledPages = async (store: SessionStore): Promise<string[][]> => {
+      const pages: string[][] = [];
+      let rows = (await store.listFor?.('u1', {preview: true, limit: 2})) ?? [];
+      while (rows.length > 0) {
+        pages.push(rows.map(row => row.sessionId));
+        rows = (await store.listFor?.('u1', {preview: true, limit: 2, before: rows.at(-1)})) ?? [];
+      }
+      return pages;
+    };
+
+    expect({memory: await labelledPages(memory), mongo: await labelledPages(mongo)}).toEqual({
+      memory: [['gamma', 'alpha'], ['beta']],
+      mongo: [['gamma', 'alpha'], ['beta']],
+    });
+  });
+
   it('page the same way through the documented call, two rows at a time from the last row seen', async () => {
     const [memory, mongo] = await bothHolding(0);
 

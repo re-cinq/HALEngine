@@ -138,14 +138,14 @@ describe('the in-memory store conversation list', () => {
     });
   });
 
-  it('carries no preview key at all unless one was asked for', () => {
+  it('carries no preview key for a list that did not ask for one, nor for an explicit preview of false', () => {
     const store = new InMemorySessionStore();
     const session = store.create('s1', 'u1');
     session.entries.push({role: 'user', content: 'hello', timestamp: START.toISOString()});
 
-    const [plain] = store.listFor('u1');
+    const asked = [store.listFor('u1'), store.listFor('u1', {preview: false})];
 
-    expect('preview' in plain).toBe(false);
+    expect(asked.map(rows => rows.map(row => 'preview' in row))).toEqual([[false], [false]]);
   });
 
   it('labels a conversation with its opening question when one is asked for', () => {
