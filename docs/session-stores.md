@@ -120,7 +120,10 @@ is labelled with nothing rather than with that entry's words, which is what keep
 showing text a tool deliberately suppressed. A conversation with no user entry carries no label. The
 text is that entry's as stored, so if a `beforeUserInput` hook of yours rewrites a user message —
 the hook's return value is written back to the entry — a label shows the rewritten text rather than
-what was typed.
+what was typed. Treat that as a caveat rather than a feature: do not reach for the hook to title a
+conversation, because it overwrites what the user actually typed in the history the model reads and a
+resume replays. The engine stores no title of its own yet; re-cinq/HALEngine#155 is where a field for
+one you write yourself is being tracked.
 
 A preview is conversation content, which a summary otherwise never carries, so treat it as personal
 data: an opening question can hold a booking reference, an order number or somebody's name. That is
