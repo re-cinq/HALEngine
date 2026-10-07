@@ -34,15 +34,18 @@ describe('the websocket frame validator', () => {
     expect(result).toEqual({valid: true, data: {type: 'list_conversations', limit: 200, before}});
   });
 
-  it('refuses a limit that is not a whole number from one to two hundred', () => {
-    const refusals = [0, 201, 1.5, '10', Number.NaN].map(
-      limit => validateMessage({type: 'list_conversations', limit}).valid
-    );
+  it('refuses a limit that is not a whole number from one to two hundred, naming the field', () => {
+    const refusals = [0, 201, 1.5, '10', Number.NaN].map(limit => {
+      const result = validateMessage({type: 'list_conversations', limit});
+      return result.valid ? 'accepted' : result.error;
+    });
 
-    expect(refusals).toEqual([false, false, false, false, false]);
+    const named = 'list_conversations limit must be a whole number from 1 to 200';
+
+    expect(refusals).toEqual([named, named, named, named, named]);
   });
 
-  it('refuses a cursor missing either half, or carrying a time nothing can parse', () => {
+  it('refuses a cursor missing either half, or carrying a time nothing can parse, naming the field', () => {
     const refusals = [
       {updatedAt: '2026-01-01T00:00:00.000Z'},
       {sessionId: 'abc-123'},
@@ -50,9 +53,14 @@ describe('the websocket frame validator', () => {
       {updatedAt: '2026-01-01T00:00:00.000Z', sessionId: '../etc/passwd'},
       {updatedAt: 1767225600000, sessionId: 'abc-123'},
       'abc-123',
-    ].map(before => validateMessage({type: 'list_conversations', before}).valid);
+    ].map(before => {
+      const result = validateMessage({type: 'list_conversations', before});
+      return result.valid ? 'accepted' : result.error;
+    });
 
-    expect(refusals).toEqual([false, false, false, false, false, false]);
+    const named = 'list_conversations before must carry an ISO updatedAt and a sessionId';
+
+    expect(refusals).toEqual([named, named, named, named, named, named]);
   });
 
   it('answers a frame naming an inherited member as an unknown type, rather than reaching it', () => {

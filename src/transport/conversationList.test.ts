@@ -42,6 +42,26 @@ function asks(url: string, frame: unknown, until: string): {client: WebSocket; r
   return {client, reply};
 }
 
+/** Resolves with every frame seen up to a pong sent for after the answer, so the set is complete rather than timed. */
+function asksThenFences(url: string, frame: unknown, until: string): {client: WebSocket; frames: Promise<Reply[]>} {
+  const client = connectClient(url);
+  const seen: Reply[] = [];
+  const frames = new Promise<Reply[]>(resolve => {
+    client.on('message', raw => {
+      const parsed = JSON.parse(String(raw)) as Reply;
+      if (parsed.type === 'pong') {
+        resolve(seen);
+        return;
+      }
+      seen.push(parsed);
+      // Pinged only once the answer has arrived: a ping is answered synchronously and would overtake a list that awaits.
+      if (parsed.type === until) client.send(JSON.stringify({type: 'ping', timestamp: 1}));
+    });
+  });
+  client.on('open', () => client.send(JSON.stringify(frame)));
+  return {client, frames};
+}
+
 /** A store holding three of the user's conversations, each with activity of its own, newest last. */
 function storeOfThree(): InMemorySessionStore {
   const store = new InMemorySessionStore();
@@ -78,13 +98,20 @@ describe('the conversation list frame', () => {
 
   it("answers the user's conversations newest first, with both times as ISO strings", async () => {
     const {url} = await startEngineWith({sessionStore: storeOfThree(), history: enabled});
-    const {client, reply} = asks(url, {type: 'list_conversations'}, 'conversation_list');
+    const {client, frames} = asksThenFences(url, {type: 'list_conversations'}, 'conversation_list');
     const idOf = announcedId(client);
 
-    const answered = await reply;
-    const rows = answered.conversations as SessionSummary[];
+    const seen = await frames;
+    const lists = seen.filter(seenFrame => seenFrame.type === 'conversation_list');
+    const rows = (lists[0]?.conversations ?? []) as SessionSummary[];
 
-    expect({order: listOnly(answered), newest: rows[0]}).toEqual({
+    expect({
+      // Every frame the answer consisted of: exactly one list, and nothing that belongs to a turn.
+      types: seen.map(seenFrame => seenFrame.type),
+      order: rows.map(row => row.sessionId),
+      newest: rows[0],
+    }).toEqual({
+      types: ['connected', 'conversation_list'],
       order: ['newest', 'middle', 'oldest', idOf()],
       newest: {
         sessionId: 'newest',
@@ -201,9 +228,17 @@ describe('the conversation list frame', () => {
     const {reply} = asks(url, {type: 'list_conversations'}, 'error');
     const answered = await reply;
 
-    expect({answered, logged: errors.map(line => `${String(line.message)}:${String(line.errorType)}`)}).toEqual({
+    expect({answered, logged: errors}).toEqual({
       answered: {type: 'error', code: 'UNSUPPORTED', message: 'This session store cannot list conversations'},
-      logged: ['store cannot list conversations:StoreCannotList'],
+      logged: [
+        {
+          category: 'message',
+          message: 'store cannot list conversations',
+          sessionId: expect.any(String),
+          userId: 'u1',
+          errorType: 'StoreCannotList',
+        },
+      ],
     });
   });
 
@@ -224,7 +259,15 @@ describe('the conversation list frame', () => {
     }).toEqual({
       answered: {type: 'error', code: 'SERVER_ERROR', message: 'Could not list conversations'},
       open: true,
-      logged: [{category: 'message', message: 'conversation list failed', userId: 'u1', errorType: 'Error'}],
+      logged: [
+        {
+          category: 'message',
+          message: 'conversation list failed',
+          sessionId: expect.any(String),
+          userId: 'u1',
+          errorType: 'Error',
+        },
+      ],
       leaked: false,
     });
   });
@@ -236,9 +279,12 @@ describe('the conversation list frame', () => {
     const {reply} = asks(url, {type: 'list_conversations'}, 'error');
     const answered = await reply;
 
-    expect({code: answered.code, logged: errors.map(line => line.errorType)}).toEqual({
+    expect({
+      code: answered.code,
+      logged: errors.map(line => `${String(line.sessionId).length > 0}:${String(line.errorType)}`),
+    }).toEqual({
       code: 'SERVER_ERROR',
-      logged: ['string'],
+      logged: ['true:string'],
     });
   });
 

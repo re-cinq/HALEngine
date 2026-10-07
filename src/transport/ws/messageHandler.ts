@@ -124,7 +124,7 @@ async function answerFrame(
   if (message.type !== 'list_conversations' || signal?.aborted) return;
 
   // The session's own user, never a user the frame names: the frame has no field for one.
-  await answerConversationList(ws, session.userId, message, deps);
+  await answerConversationList(ws, session, message, deps);
 }
 
 // Read from the raw frame, so a user_message that fails validation still gets its stream_end.
