@@ -214,6 +214,27 @@ describe('the MongoDB store conversation list', () => {
     expect(carried.map(documents => documents.map(document => document.entries.length))).toEqual([[1]]);
   });
 
+  it('survives a real database answering a slice of a field that is not an array, as a migrated document would', async () => {
+    const collection = collectionFor();
+    // What mongod does with $slice on a non-array decides whether a guard or a try/catch is the right answer here.
+    const shapes = [[{role: 'user', content: 'asked', timestamp: new Date(START).toISOString()}], 'text', {o: 1}, null];
+    await collection.insertMany(
+      shapes.map((entries, index) => ({
+        _id: `s${index}`,
+        userId: 'u1',
+        entries,
+        entryCount: 1,
+        createdAt: new Date(START),
+        updatedAt: new Date(START + index),
+      })) as unknown as MongoSessionDocument[]
+    );
+    const store = new MongoSessionStore({collection});
+
+    const rows = await store.listFor('u1', {preview: true});
+
+    expect(rows.map(row => row.preview)).toEqual([undefined, undefined, undefined, 'asked']);
+  });
+
   it('labels nothing where a stored entries field is absent, null or not an array, rather than failing', async () => {
     // What mongod answers for a $slice on a non-array: the value untouched, so a migrated document reaches the mapper.
     const shapes = [undefined, null, 'not an array', {nested: true}];

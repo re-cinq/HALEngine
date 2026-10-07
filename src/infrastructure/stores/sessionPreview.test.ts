@@ -65,6 +65,44 @@ describe('a conversation preview', () => {
     expect(family?.endsWith('a👨')).toBe(true);
   });
 
+  it('counts a cut by what the text held, so a label at the bound that was never cut keeps its last character', () => {
+    const exact = previewOf(asked(`${'g'.repeat(119)} `));
+
+    expect({length: [...(exact ?? '')].length, ends: exact?.endsWith('g')}).toEqual({length: 119, ends: true});
+  });
+
+  it('is a fixed point, so a label put through again is the label the store already answered with', () => {
+    // Each one lands the cut on something a tidy-up could change: a space, a joiner, an astral pair, a bare bound.
+    const awkward = [
+      'a '.repeat(200),
+      `${'b'.repeat(119)} tail`,
+      `${'c'.repeat(119)}‍d`,
+      '😀'.repeat(300),
+      ' ‍ ‍ ',
+      `${'e'.repeat(120)}f`,
+      'f'.repeat(120),
+    ];
+
+    const twice = awkward.map(text => {
+      const once = labelFrom(text);
+      return once === labelFrom(once);
+    });
+
+    expect(twice).toEqual([true, true, true, true, true, true, true]);
+  });
+
+  it('leaves a joiner the user typed where no cut reached it, since it shapes the letter before it', () => {
+    const untouched = [previewOf(asked('hello‍')), previewOf(asked('مرحبا‍'))];
+
+    expect(untouched).toEqual(['hello‍', 'مرحبا‍']);
+  });
+
+  it('tidies a space the cut stranded at the end, so the label never ends mid-gap', () => {
+    const spaced = previewOf(asked('a '.repeat(200)));
+
+    expect({length: [...(spaced ?? '')].length, ends: spaced?.endsWith('a')}).toEqual({length: 119, ends: true});
+  });
+
   it('holds text a store answered with to the same bound, however long it is and whatever type it is', () => {
     const fromStore = [labelFrom('x'.repeat(5000)), labelFrom('😀'.repeat(300)), labelFrom(42), labelFrom(null)];
 

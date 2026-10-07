@@ -111,7 +111,8 @@ may have conversations is your decision, and "no conversations" is not a safe gu
 **Labelling a row.** `listFor(userId, {preview: true})` adds a `preview` to each summary: the
 conversation's opening question, trimmed, with internal whitespace collapsed, and cut to 120 code
 points with no ellipsis of its own — mark a cut however your client prefers, bearing in mind that the row
-carries no cut flag, so a preview of exactly 120 code points is the only hint there was more. It defaults to off,
+carries no cut flag: a label of 120 code points was almost certainly cut, but a cut one can come back
+a little shorter where the cut stranded a space, so read the bound as a hint rather than a signal. It defaults to off,
 and a summary from a list that did not ask for one carries no `preview` key at all. Only the first
 entry is read, and only if it is the user's: a conversation opening with an entry the model wrote
 is labelled with nothing rather than with that entry's words, which is what keeps a list from
