@@ -91,6 +91,7 @@ const engine = createHalEngine({
     rootRoutes: router => router.get('/', (_req, res) => res.send('<h1>Hello</h1>')),
     errorHandler: (err, _req, res, _next) => res.status(500).json({error: String(err)}),
     resume: {enabled: true, latest: true}, // rejoin the conversation ?sessionId= names, else the user's latest; ?new=1 starts one; off by default, see Session Resume
+    history: {enabled: true},
   },
 
   // OPTIONAL: Orchestrator settings

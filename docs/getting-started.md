@@ -190,6 +190,7 @@ const engine = createHalEngine({
     rootRoutes: router => router.get('/', (_req, res) => res.send('<h1>Hello</h1>')),
     errorHandler: (err, _req, res, _next) => res.status(500).json({error: String(err)}),
     resume: {enabled: true, latest: true}, // rejoin the conversation ?sessionId= names, else the user's latest; ?new=1 starts one; off by default, see Session Resume
+    history: {enabled: true},
   },
 
   // OPTIONAL: Orchestrator settings
@@ -290,9 +291,33 @@ An answer still streaming when the client reconnects, because its turn is runnin
 
 **Latest session.** A page refresh or a new tab has no id to send. With `resume: {enabled: true, latest: true}`, a connect that names no id continues the user's most recently active conversation instead of starting an empty one, and a client starts a new conversation on purpose by connecting with `?new=1`, for a "new conversation" button. The store decides what "latest" means through its optional `latestFor(userId)`: `InMemorySessionStore` goes by the newest entry, `MongoSessionStore` by `updatedAt` (create the index in [session stores](session-stores.md#latest-session)). Two tabs share the conversation but do not sync live: a reply streams to the tab that asked, and the other shows it on its next connect. "Latest" is keyed on the authenticated user's id, so it assumes one login per person.
 
+**An id that is ignored.** With `resume` absent, `?sessionId=` is not read at all: the client gets a new session and no indication, because a `connected` frame with resume off is byte-for-byte what it was before resume existed. The server says so instead, warning the first time a client names an id it will ignore — once per engine, since the line reports a deployment that is wired wrong rather than anything the client did.
+
 **Why a resume failed.** When a connect names an id and is not rejoined, the `connected` frame says why in `resumeFailure`: `expired` tells the session's own owner that it aged out, and `unknown` covers every other case, an id never issued or one that is not theirs, so the answer still reveals nothing about which ids exist. A store tells expiry apart through its optional `lookup` (see [session stores](session-stores.md#lookup)); without one, every failure reads `unknown`.
 
 **GDPR.** With resume on, a conversation outlives its socket, so you own the retention bound: set `maxAgeMs` on `InMemorySessionStore` (eight hours by default), use `MongoSessionStore`'s erasure methods, and see _Control what the engine keeps in server-side conversation history_ (re-cinq/HALEngine#41). An unbounded retained store is a retention breach, not a memory leak.
+
+## Conversation List
+
+Resume gets a client back into one conversation. It does not tell it which conversations the user has, which is a second disclosure and a second switch: `transport: {history: {enabled: true}}`, off by default like `resume`. With it on, a client sends `{"type": "list_conversations"}` and is answered with one `conversation_list` frame carrying the user's conversations, newest activity first:
+
+```json
+{"type": "conversation_list", "conversations": [
+  {"sessionId": "0f9c…", "createdAt": "2026-10-06T08:12:04.001Z", "updatedAt": "2026-10-06T09:30:22.517Z", "entryCount": 12}
+]}
+```
+
+The frame names no user and has no field for one: the engine lists the conversations of the user your `WsAuthenticator` returned for that connection, so a client cannot ask for anybody else's. The conversation the connection is itself in is listed like any other, so a fresh connect sees a row with `entryCount: 0` among the user's older ones. A summary carries no message content — see [session stores](session-stores.md#listing-a-users-conversations) for the shape and for what the store does to answer it.
+
+**Picking one needs resume on too.** Reconnect with `?sessionId=<the id from the row>` and [Session Resume](#session-resume) rejoins it, ownership check and replay included — but `?sessionId=` is read only when `resume` is enabled, so `history` on its own gives a list whose rows cannot be opened: the id is ignored and the client silently gets a fresh session. Turn both on, or expect a list that is only a list. The engine logs a warning at startup for that combination. It also warns the first time any client names a `?sessionId=` while resume is off — that one is not specific to history, and is documented under [Session Resume](#session-resume).
+
+**Paging.** Send `limit` (1 to 200) and `before`, which is the last row you were sent — both of its fields, `{"updatedAt": "…", "sessionId": "…"}`, not just the time. A page shorter than the `limit` you asked for is the last one.
+
+**When it cannot be answered.** An `error` frame with code `UNSUPPORTED` means the server does not serve the frame: the switch is off, your store implements no `listFor`, or it threw `StoreCannotList` to say it cannot list at all — `MongoSessionStore` does that for a collection you injected without a `find`. `SERVER_ERROR` means a store that can list failed while listing, which is the one of the two worth retrying. Never an empty list for any of them: a client cannot tell "no conversations" from "something broke", and the one place that difference matters is a history view.
+
+**Answered off the turn.** A `list_conversations` sent while an answer is streaming is replied to immediately rather than queued behind it, and nothing is ever pushed: a `conversation_list` arrives only when asked for.
+
+**GDPR.** This hands a client the times of every conversation the user holds, for as long as the store holds them, so the retention bound is still yours (see [Session Resume](#session-resume)'s note and re-cinq/HALEngine#41). Turning it on is a decision about what a client may see, separate from turning resume on.
 
 ## Custom Session Store
 
