@@ -133,8 +133,14 @@ describe('createApp rootRoutes extension', () => {
     const root = await request(a).get('/');
     const health = await request(a).get('/hal/health');
 
-    expect({rootStatus: root.status, healthStatus: health.status, healthOk: health.body?.status}).toEqual({
+    expect({
+      rootStatus: root.status,
+      rootType: root.headers['content-type'],
+      healthStatus: health.status,
+      healthOk: health.body?.status,
+    }).toEqual({
       rootStatus: 200,
+      rootType: expect.stringContaining('text/html'),
       healthStatus: 200,
       healthOk: 'ok',
     });
