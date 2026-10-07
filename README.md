@@ -129,6 +129,7 @@ interface HalEngineConfig {
     basePath?: string; // URL prefix (default: '/hal')
     heartbeatIntervalMs?: number; // WS heartbeat (default: 30000)
     resume?: {enabled: boolean; latest?: boolean}; // opt-in: rejoin a conversation by ?sessionId=, or the user's latest
+    history?: {enabled: boolean}; // opt-in: answer list_conversations with the user's own conversations
     additionalRoutes?: (router: Router) => void; // mounted under basePath, no auth gate
     rootRoutes?: (router: Router) => void; // mounted at /, after basePath router
     errorHandler?: express.ErrorRequestHandler; // replaces Express default HTML errors

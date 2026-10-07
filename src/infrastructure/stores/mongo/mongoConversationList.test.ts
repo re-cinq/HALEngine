@@ -1,5 +1,6 @@
 import {MongoSessionStore} from './mongoSessionStore.js';
 import {fakeCollection, mongoCollection} from './mongoTestSupport.js';
+import {StoreCannotList} from '../../../types/sessionStore.js';
 import type {CollectionLike, FindManyOptions} from './mongoDriverTypes.js';
 import type {MongoSessionDocument} from './mongoSessionDocument.js';
 import type {SessionCursor} from '../../../types/sessionStore.js';
@@ -175,7 +176,7 @@ describe('the MongoDB store conversation list', () => {
   it('refuses to list on a collection that implements no find, rather than reporting no conversations', async () => {
     const store = new MongoSessionStore({collection: fakeCollection()});
 
-    await expect(store.listFor('u1')).rejects.toThrow('implements no find, so it cannot list conversations');
+    await expect(store.listFor('u1')).rejects.toThrow(StoreCannotList);
   });
 
   it('answers from a projection alone, so a collection that never returns entries still lists conversations', async () => {

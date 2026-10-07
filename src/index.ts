@@ -8,6 +8,7 @@ export type {HalServerOptions, HalServer} from './transport/createServer.js';
 export {createChatRoutes} from './transport/routes/chats.js';
 export {HAL_WS_SUBPROTOCOL, credentialFromSubprotocol} from './transport/ws/subprotocol.js';
 export type {ConnectInfo, SessionResumeOptions} from './transport/ws/sessionResume.js';
+export type {ConversationHistoryOptions} from './transport/ws/conversationList.js';
 
 export {createChatOrchestrator, TOOL_BUDGET_EXHAUSTED} from './orchestration/chatOrchestrator.js';
 export type {
@@ -115,6 +116,7 @@ export type {
 } from './types/messages.js';
 
 export type {WsAuthenticator, HttpAuthMiddleware, AuthenticatedRequest} from './types/auth.js';
+export {StoreCannotList} from './types/sessionStore.js';
 export type {
   SessionStore,
   SessionCreateOptions,

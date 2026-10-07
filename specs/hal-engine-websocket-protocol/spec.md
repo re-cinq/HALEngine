@@ -160,6 +160,30 @@ Application-level heartbeat. The server MUST respond with a `pong` message echoi
 | `type`      | string | Yes      | `"ping"`                          |
 | `timestamp` | number | Yes      | Client timestamp in milliseconds  |
 
+### 4.3 list_conversations
+
+Asks for the connecting user's own conversations. Served only when the server enables
+`transport.history`; otherwise it is answered with an `error` of code `UNSUPPORTED`.
+
+```json
+{
+  "type": "list_conversations",
+  "limit": 20,
+  "before": {"updatedAt": "2026-10-06T09:30:22.517Z", "sessionId": "0f9c8e41-..."}
+}
+```
+
+| Field    | Type   | Required | Description                                                              |
+| -------- | ------ | -------- | ------------------------------------------------------------------------ |
+| `type`   | string | Yes      | `"list_conversations"`                                                   |
+| `limit`  | number | No       | Whole number 1-200; how many rows to answer with, 50 when absent         |
+| `before` | object | No       | The last row received, `{updatedAt, sessionId}`; answers the ones after it |
+
+The frame carries no user id and there is no field for one: the server lists the conversations of
+the user its `WsAuthenticator` returned for that connection ([validated by: answers the connecting user's own conversations even when the frame names another user](../../src/transport/conversationList.test.ts#L125)). A `before` is accepted
+only carrying both fields, since a cursor on a time alone skips a conversation when two share one
+([validated by: refuses a cursor missing either half, or carrying a time nothing can parse, naming the field](../../src/transport/ws/validation.test.ts#L48)).
+
 ## 5. Server-to-Client Messages
 
 ### 5.1 connected
@@ -312,9 +336,14 @@ Defined error codes:
 | `INVALID_FORMAT`  | Message body is not valid JSON                                    |
 | `RATE_LIMITED`    | AI provider returned a rate limit error                           |
 | `SERVER_ERROR`    | Unexpected server error during message processing                 |
+| `UNSUPPORTED`     | The server does not serve this frame: the feature is off, or its store cannot |
 
 Semantics:
 
+- The protocol takes additive changes only: every client frame that shipped before the conversation list is still read by the validator as the frame it was, field for field, and the same literals are typed as `IncomingMessage`, so a required field added to one of them fails `npm run typecheck` ([validated by: are each still read by the validator as the frame they were, field for field](../../src/transport/ws/protocolAdditive.test.ts#L28)).
+- Every server frame that shipped before it still goes out through the sender as the frame it was, `connected` with none of the optional fields resume added to it included ([validated by: are each still sent on the wire as the frame they were, field for field](../../src/transport/ws/protocolAdditive.test.ts#L34)).
+- A `list_conversations` the server does not serve is answered with `UNSUPPORTED`, whether because `transport.history` is off or because its store implements no `listFor`, and never with an empty list, which a client could not tell from a user who has no conversations ([validated by: refuses the frame when conversation history is not turned on](../../src/transport/conversationList.test.ts#L238), [validated by: refuses the frame when the store cannot list, rather than reporting no conversations](../../src/transport/conversationList.test.ts#L289)).
+- A store that fails while listing is answered `SERVER_ERROR` carrying none of the store's own words, and the server logs the session id, the user id and the error's type rather than its message, since a driver's message can hold a connection string and its password; the user id in that line is personal data, as it is in every log line the engine writes ([validated by: answers a failing store with a server error, keeps the socket open, and logs no word the store said](../../src/transport/conversationList.test.ts#L324)).
 - A message the server cannot parse into a known type is answered with `INVALID_MESSAGE`, and no message stream is started for it ([validated by: rejects an unparseable message and never starts a stream](../../src/transport/ws/messageHandler.test.ts#L71)).
 - A rate limit reported by the AI provider is surfaced as `RATE_LIMITED`, which tells the client the same request is worth retrying ([validated by: tells the client to retry when the provider is rate limited](../../src/transport/ws/messageHandler.test.ts#L311)).
 - Any other failure raised while processing a message is reported as `SERVER_ERROR` ([validated by: reports any other failure as a server error](../../src/transport/ws/messageHandler.test.ts#L320)).
@@ -356,6 +385,39 @@ Semantics:
 - An `error` frame does not by itself end a stream. It is advisory: it may concern the run in flight or an unrelated frame, such as a malformed `ping`.
 - The client SHOULD use this message to clear any "processing" or "loading" indicators.
 - The client MUST treat a run as complete only at `stream_end` or when the socket closes. Unparseable JSON is the one frame answered with `INVALID_FORMAT` and no `stream_end`, because the server cannot tell what it was meant to be; for it the client falls back on the socket closing.
+
+### 5.9 conversation_list
+
+The answer to `list_conversations`: the connecting user's conversations, most recent activity
+first. Sent only when asked for, never pushed.
+
+```json
+{
+  "type": "conversation_list",
+  "conversations": [
+    {
+      "sessionId": "0f9c8e41-...",
+      "createdAt": "2026-10-06T08:12:04.001Z",
+      "updatedAt": "2026-10-06T09:30:22.517Z",
+      "entryCount": 12
+    }
+  ]
+}
+```
+
+| Field                      | Type   | Description                                                   |
+| -------------------------- | ------ | ------------------------------------------------------------- |
+| `type`                     | string | `"conversation_list"`                                         |
+| `conversations`            | array  | Summaries, most recent activity first                         |
+| `conversations[].sessionId`| string | The id to reconnect with to rejoin that conversation          |
+| `conversations[].createdAt`| string | ISO 8601 timestamp                                            |
+| `conversations[].updatedAt`| string | ISO 8601 timestamp of the conversation's most recent activity |
+| `conversations[].entryCount`| number| How many entries the conversation holds                       |
+
+A summary carries no message content, and the two times are ISO strings rather than `Date`s, which
+is what survives the wire ([validated by: answers the user's conversations newest first, with both times as ISO strings](../../src/transport/conversationList.test.ts#L99)). A row's `sessionId` is what a client reconnects with to rejoin that
+conversation, through the resume path in 2.1 ([validated by: hands a client an id it can rejoin the conversation with](../../src/transport/conversationList.test.ts#L474)). The frame is answered without waiting on a turn, so one asked for
+while an answer streams arrives before that answer ends ([validated by: answers a list in the middle of a streaming turn, before that turn ends](../../src/transport/conversationList.test.ts#L426)).
 
 ## 6. SessionEntry Objects
 

@@ -6,6 +6,7 @@ import type {
   SessionStore,
   SessionSummary,
 } from '../../../types/sessionStore.js';
+import {StoreCannotList} from '../../../types/sessionStore.js';
 import type {CollectionLike, MongoClientLike} from './mongoDriverTypes.js';
 import type {MongoSessionDocument} from './mongoSessionDocument.js';
 import {persistedFields, toChatSession, toSessionSummary} from './mongoSessionDocument.js';
@@ -122,7 +123,7 @@ export class MongoSessionStore implements SessionStore {
 
     const collection = await this.collection();
     if (collection.find === undefined) {
-      throw new Error('The collection this store was built on implements no find, so it cannot list conversations');
+      throw new StoreCannotList('The collection this store was built on implements no find');
     }
 
     const documents = await collection

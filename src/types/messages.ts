@@ -10,7 +10,20 @@ export interface PingMessage {
   timestamp: number;
 }
 
-export type IncomingMessage = UserMessagePayload | PingMessage;
+/** Where a page of conversations resumes from: the last row the client was sent, both fields as it received them. */
+export interface ConversationCursor {
+  updatedAt: string;
+  sessionId: string;
+}
+
+/** Asks for the connecting user's conversations. It names no user: the engine takes that from the connection. */
+export interface ListConversationsMessage {
+  type: 'list_conversations';
+  limit?: number;
+  before?: ConversationCursor;
+}
+
+export type IncomingMessage = UserMessagePayload | PingMessage | ListConversationsMessage;
 
 export interface ConnectedMessage {
   type: 'connected';
@@ -21,6 +34,20 @@ export interface ConnectedMessage {
   entryCount?: number;
   /** Why a named id was not rejoined: `expired` only for the session's own owner, `unknown` for every other case. */
   resumeFailure?: 'expired' | 'unknown';
+}
+
+/** One conversation in a list: a `SessionSummary` with its times as ISO strings, which is what survives the wire. */
+export interface ConversationSummary {
+  sessionId: string;
+  createdAt: string;
+  updatedAt: string;
+  entryCount: number;
+}
+
+/** The answer to `list_conversations`: the connecting user's own conversations, newest activity first. */
+export interface ConversationListMessage {
+  type: 'conversation_list';
+  conversations: ConversationSummary[];
 }
 
 export interface EntryUpsertMessage {
@@ -62,6 +89,7 @@ export interface StreamEndMessage {
 
 export type OutgoingMessage =
   | ConnectedMessage
+  | ConversationListMessage
   | EntryUpsertMessage
   | EntryDeltaMessage
   | EntryCommitMessage

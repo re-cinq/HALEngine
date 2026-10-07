@@ -20,6 +20,7 @@ import {createApp} from './transport/createApp.js';
 import type {HalAppOptions} from './transport/createApp.js';
 import {createServer} from './transport/createServer.js';
 import type {SessionResumeOptions} from './transport/ws/sessionResume.js';
+import type {ConversationHistoryOptions} from './transport/ws/conversationList.js';
 
 export interface HalEngineConfig {
   provider: ProviderConfig;
@@ -36,6 +37,7 @@ export interface HalEngineConfig {
     rootRoutes?: HalAppOptions['rootRoutes'];
     errorHandler?: HalAppOptions['errorHandler'];
     resume?: SessionResumeOptions;
+    history?: ConversationHistoryOptions;
   };
   auth: {
     ws: WsAuthenticator;
@@ -103,6 +105,7 @@ export function createHalEngine(config: HalEngineConfig): HalEngine {
     onConnect: config.onConnect,
     onDisconnect: config.onDisconnect,
     resume: config.transport?.resume,
+    history: config.transport?.history,
   });
 
   return {

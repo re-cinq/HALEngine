@@ -43,6 +43,9 @@ export interface ConnectionHandlerDeps {
   resume?: SessionResumeOptions;
 }
 export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandlerDeps) {
+  // Once per engine, not per upgrade: a client naming an id it cannot use must not let anyone flood the log.
+  let reportedIgnoredId = false;
+
   return function handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
     // Nothing may throw out of this listener: the `upgrade` event has no catch above it, so a throw ends the process.
     if (!request.headers.host || !isValidWsPath(request.url || '', deps.basePath)) {
@@ -67,9 +70,14 @@ export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandl
             host: (request.headers['x-forwarded-host'] as string | undefined) ?? request.headers.host,
           };
           extWs.isAlive = true;
+          const named = sessionIdFromUpgrade(request.url || '', deps.basePath);
           if (deps.resume?.enabled) {
-            extWs.requestedSessionId = sessionIdFromUpgrade(request.url || '', deps.basePath);
+            extWs.requestedSessionId = named;
             extWs.startNewSession = newSessionRequested(request.url || '', deps.basePath);
+          }
+          if (!deps.resume?.enabled && named !== undefined && !reportedIgnoredId) {
+            reportedIgnoredId = true;
+            log.warn('ws', 'a client named a session id but resume is off, so it was ignored');
           }
           wss.emit('connection', extWs, request);
         });

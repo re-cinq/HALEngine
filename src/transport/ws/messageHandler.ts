@@ -5,7 +5,9 @@ import {ErrorCodes} from '../../types/messages.js';
 import type {OutgoingMessage} from '../../types/messages.js';
 import {ThinkingTagParser, ParsedSegment} from '../../infrastructure/parsers/thinkingTagParser.js';
 import {validateMessage} from './validation.js';
-import type {ValidationResult} from './validation.js';
+import {answerConversationList} from './conversationList.js';
+import type {ConversationListDeps} from './conversationList.js';
+import type {ValidationFailure, ValidationResult} from './validation.js';
 import {PerSessionLock} from '../../shared/perSessionLock.js';
 import type {ChatOrchestrator} from '../../orchestration/chatOrchestrator.js';
 import {AIError} from '../../types/ai.js';
@@ -29,7 +31,10 @@ interface StreamState {
 
 type StateIndexKey = 'thinkingIndex' | 'assistantIndex';
 type EntryFactory = typeof createThinkingEntry | typeof createAssistantEntry;
-export function createMessageHandler(orchestrator: ChatOrchestrator) {
+/** What the handler needs besides the orchestrator: the store a conversation list reads, and whether one is served. */
+export type MessageHandlerDeps = ConversationListDeps;
+
+export function createMessageHandler(orchestrator: ChatOrchestrator, deps?: MessageHandlerDeps) {
   // Keyed by session, not socket: a resumed session can be open on more than one (specs/hal-engine-architecture/spec.md).
   const lock = new PerSessionLock();
   return function handleMessage(
@@ -44,7 +49,7 @@ export function createMessageHandler(orchestrator: ChatOrchestrator) {
       return lock.run(session.sessionId, () => answerInTurn(ws, session, orchestrator, validation, signal));
     }
     // An async action runs up to its first await at once, so a ping is answered now and a throw stays a rejection.
-    return wsErrorHandler(ws, async () => answerFrame(ws, validation));
+    return wsErrorHandler(ws, () => answerFrame(ws, session, validation, deps, signal));
   };
 }
 
@@ -90,18 +95,36 @@ async function answerUserMessage(
 ): Promise<void> {
   const message = validation.valid ? validation.data : undefined;
   if (message?.type === 'user_message') return handleUserMessage(ws, session, orchestrator, message.content, signal);
-  answerFrame(ws, validation);
+  // Only an invalid user_message frame reaches here: a valid frame of any other type never enters the lock.
+  reportInvalid(ws, validation);
 }
 
-function answerFrame(ws: WebSocket, validation: ValidationResult): void {
-  if (!validation.valid) {
-    log.warn('message', 'validation failed', {error: validation.error});
-    sendError(ws, ErrorCodes.INVALID_MESSAGE, validation.error);
-    return;
-  }
+// Reports a frame the validator refused, and says whether it did, so each caller can stop there.
+function reportInvalid(ws: WebSocket, validation: ValidationResult): validation is ValidationFailure {
+  if (validation.valid) return false;
+
+  log.warn('message', 'validation failed', {error: validation.error});
+  sendError(ws, ErrorCodes.INVALID_MESSAGE, validation.error);
+  return true;
+}
+
+// Off the per-session lock: neither frame here is a turn, and a list that queued behind a streaming answer looks broken.
+async function answerFrame(
+  ws: WebSocket,
+  session: ChatSession,
+  validation: ValidationResult,
+  deps: MessageHandlerDeps | undefined,
+  signal: AbortSignal | undefined
+): Promise<void> {
+  if (reportInvalid(ws, validation)) return;
 
   const message = validation.data;
   if (message.type === 'ping') handlePing(ws, message.timestamp);
+  // Abandoned when its socket has closed; otherwise answered even by a handler with no store, since silence is no answer.
+  if (message.type !== 'list_conversations' || signal?.aborted) return;
+
+  // The session's own user, never a user the frame names: the frame has no field for one.
+  await answerConversationList(ws, session, message, deps);
 }
 
 // Read from the raw frame, so a user_message that fails validation still gets its stream_end.
