@@ -1,9 +1,9 @@
 import type {ConversationCursor, IncomingMessage} from '../../types/messages.js';
 import {SESSION_ID_PATTERN} from './helpers.js';
+// The store's own cap, not a copy of it: a frame asking for more than it would give is a client bug worth reporting.
+import {MAX_LIMIT} from '../../infrastructure/stores/sessionListWindow.js';
 
 const MAX_CONTENT_LENGTH = 10000;
-// The store caps a page at 200; a frame asking for more is a client bug worth reporting rather than quietly clamping.
-const MAX_PAGE = 200;
 
 interface ValidationSuccess {
   valid: true;
@@ -82,7 +82,7 @@ function validatePingMessage(message: Record<string, unknown>): ValidationResult
 function validateListConversations(message: Record<string, unknown>): ValidationResult {
   const {limit, before} = message;
   if (limit !== undefined && !isPage(limit)) {
-    return {valid: false, error: `list_conversations limit must be a whole number from 1 to ${MAX_PAGE}`};
+    return {valid: false, error: `list_conversations limit must be a whole number from 1 to ${MAX_LIMIT}`};
   }
 
   const cursor = before === undefined ? undefined : asCursor(before);
@@ -94,7 +94,7 @@ function validateListConversations(message: Record<string, unknown>): Validation
 }
 
 function isPage(limit: unknown): limit is number {
-  return typeof limit === 'number' && Number.isInteger(limit) && limit >= 1 && limit <= MAX_PAGE;
+  return typeof limit === 'number' && Number.isInteger(limit) && limit >= 1 && limit <= MAX_LIMIT;
 }
 
 // Both halves or neither: a cursor missing its session id would page on a time alone and skip a conversation on a tie.

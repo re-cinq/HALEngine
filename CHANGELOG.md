@@ -17,6 +17,7 @@ package, not for somebody reading this repository's commit log.
 
 ### Changed
 
+- The server now logs a warning the first time a client names a `?sessionId=` while `transport.resume` is off, since the id is ignored and the client silently gets a new session. Once per engine, not per connection. This fires whether or not `transport.history` is on, so an existing install with resume off and clients that append a session id will see one new warn line.
 - `MongoSessionStore` now writes an `entryCount` field beside the entries on every save, so a conversation list can count a conversation without reading one. A document saved by an earlier version lists as a conversation of no entries until you backfill it; `docs/session-stores.md` carries the one-line command.
 - `MongoSessionStore.latestFor` now breaks a tie on `updatedAt` by `_id`, so it and `listFor` agree on which conversation is newest when two were saved in the same millisecond. Which of two tied conversations a resume rejoins can therefore change.
 - The index to create for `MongoSessionStore` is now `{userId: 1, updatedAt: -1, _id: -1}`. The two-key form that served `latestFor` cannot satisfy `listFor`'s sort, so Mongo would sort a user's whole history on every page. `docs/session-stores.md` § Latest session has the command.

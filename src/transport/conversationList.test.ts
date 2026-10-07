@@ -66,7 +66,7 @@ function asksThenFences(url: string, frame: unknown, until: string): {client: We
 function storeOfThree(): InMemorySessionStore {
   const store = new InMemorySessionStore();
   ['oldest', 'middle', 'newest'].forEach((id, index) => {
-    const session = store.create(id, 'u1') as ChatSession;
+    const session: ChatSession = store.create(id, 'u1');
     session.entries.push({
       role: 'user',
       content: 'hello',
@@ -196,6 +196,43 @@ describe('the conversation list frame', () => {
         message: 'a client named a session id but resume is off, so it was ignored',
       },
     ]);
+  });
+
+  it('sends only the four summary fields, so a store answering whole sessions leaks neither entries nor credentials', async () => {
+    const whole = [
+      {
+        sessionId: 's1',
+        createdAt: new Date(AHEAD),
+        updatedAt: new Date(AHEAD),
+        entryCount: 1,
+        userId: 'someone-else',
+        entries: [{role: 'user', content: 'my card number is 4111', timestamp: new Date(AHEAD).toISOString()}],
+        authHeaders: {cookie: 'session=secret'},
+      },
+    ] as unknown as SessionSummary[];
+    const store = storeListing(new InMemorySessionStore(), () => whole);
+    const {url} = await startEngineWith({sessionStore: store, history: enabled});
+
+    const {reply} = asks(url, {type: 'list_conversations'}, 'conversation_list');
+    const answered = await reply;
+
+    expect({
+      keys: (answered.conversations as SessionSummary[]).map(row => Object.keys(row).sort()),
+      leaked: /4111|secret|someone-else/.test(JSON.stringify(answered)),
+    }).toEqual({keys: [['createdAt', 'entryCount', 'sessionId', 'updatedAt']], leaked: false});
+  });
+
+  it('warns once per engine, so a second engine in the same process reports its own ignored id', async () => {
+    const named = async (): Promise<void> => {
+      const {url} = await startEngineWith({sessionStore: storeOfThree(), history: enabled});
+      const {reply} = asks(`${url}?sessionId=newest`, {type: 'ping', timestamp: 1}, 'pong');
+      await reply;
+    };
+
+    await named();
+    await named();
+
+    expect(warnings.filter(line => String(line.message).includes('named a session id')).length).toBe(2);
   });
 
   it('refuses the frame when conversation history is not turned on', async () => {
