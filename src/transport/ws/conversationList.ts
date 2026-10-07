@@ -17,8 +17,26 @@ export interface ConversationListDeps {
   history?: ConversationHistoryOptions;
 }
 
+// One read in flight per socket: nothing else lets a single client turn frames sent in one tick into parallel queries.
+const reading = new WeakMap<WebSocket, Promise<void>>();
+
 /** Answers one `list_conversations` for the socket's own authenticated user, never for a user the frame names. */
-export async function answerConversationList(
+export function answerConversationList(
+  ws: WebSocket,
+  session: Pick<ChatSession, 'sessionId' | 'userId'>,
+  frame: ListConversationsMessage,
+  deps?: ConversationListDeps
+): Promise<void> {
+  const answered = (reading.get(ws) ?? Promise.resolve()).then(() => answerOne(ws, session, frame, deps));
+  // A swallowed copy is what the next frame waits on, so one refusal does not reject every list queued behind it.
+  reading.set(
+    ws,
+    answered.catch(() => undefined)
+  );
+  return answered;
+}
+
+async function answerOne(
   ws: WebSocket,
   session: Pick<ChatSession, 'sessionId' | 'userId'>,
   frame: ListConversationsMessage,
@@ -53,11 +71,12 @@ export async function answerConversationList(
   }
 }
 
+// Through `new Date` rather than off the `Date`: a store answering ISO strings is the shape the wire shows, not a failure.
 function onTheWire(summary: SessionSummary): ConversationSummary {
   return {
     sessionId: summary.sessionId,
-    createdAt: summary.createdAt.toISOString(),
-    updatedAt: summary.updatedAt.toISOString(),
+    createdAt: new Date(summary.createdAt).toISOString(),
+    updatedAt: new Date(summary.updatedAt).toISOString(),
     entryCount: summary.entryCount,
   };
 }

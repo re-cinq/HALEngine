@@ -115,7 +115,7 @@ describe('the conversation list frame', () => {
       order: ['newest', 'middle', 'oldest', idOf()],
       newest: {
         sessionId: 'newest',
-        createdAt: rows[0]?.createdAt,
+        createdAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/) as unknown as string,
         updatedAt: new Date(AHEAD + 2000).toISOString(),
         entryCount: 1,
       },
@@ -143,6 +143,30 @@ describe('the conversation list frame', () => {
     await reply;
 
     expect(options).toEqual([{limit: 7, before}]);
+  });
+
+  it('puts a time on the wire as an ISO string whatever shape the store answered with', async () => {
+    const roundTripped = [
+      {
+        sessionId: 's1',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: Date.parse('2026-01-02T00:00:00.000Z'),
+        entryCount: 2,
+      },
+    ] as unknown as SessionSummary[];
+    const store = storeListing(new InMemorySessionStore(), () => roundTripped);
+    const {url} = await startEngineWith({sessionStore: store, history: enabled});
+
+    const {reply} = asks(url, {type: 'list_conversations'}, 'conversation_list');
+
+    expect((await reply).conversations).toEqual([
+      {
+        sessionId: 's1',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-02T00:00:00.000Z',
+        entryCount: 2,
+      },
+    ]);
   });
 
   it('warns at startup when history is on without resume, since no row could then be opened', async () => {
@@ -288,6 +312,33 @@ describe('the conversation list frame', () => {
     });
   });
 
+  it('reads the store once at a time per socket, however many frames arrive in one tick', async () => {
+    const seen = {inFlight: 0, peak: 0, answered: 0};
+    const counting = storeListing(new InMemorySessionStore(), async (): Promise<SessionSummary[]> => {
+      seen.inFlight += 1;
+      seen.peak = Math.max(seen.peak, seen.inFlight);
+      await Promise.resolve();
+      seen.inFlight -= 1;
+      return [];
+    });
+    const {url} = await startEngineWith({sessionStore: counting, history: enabled});
+
+    const client = connectClient(url);
+    const allAnswered = new Promise<void>(resolve => {
+      client.on('message', raw => {
+        if ((JSON.parse(String(raw)) as Reply).type !== 'conversation_list') return;
+        seen.answered += 1;
+        if (seen.answered === 10) resolve();
+      });
+    });
+    client.on('open', () => {
+      for (let sent = 0; sent < 10; sent++) client.send(JSON.stringify({type: 'list_conversations'}));
+    });
+    await allAnswered;
+
+    expect({peak: seen.peak, answered: seen.answered}).toEqual({peak: 1, answered: 10});
+  });
+
   it('answers a list in the middle of a streaming turn, before that turn ends', async () => {
     const held = deferred();
     const blocking: ChatOrchestrator = {
@@ -323,13 +374,17 @@ describe('the conversation list frame', () => {
     });
     await ended;
 
-    // Positions, not indexOf: a list that never arrived would read as -1 and sit before everything.
-    expect({
-      list: order.filter(type => type === 'conversation_list').length,
-      beforeEnd:
-        order.indexOf('conversation_list') > 0 && order.indexOf('conversation_list') < order.indexOf('stream_end'),
-      mid: order.slice(order.indexOf('conversation_list')).includes('entry_delta'),
-    }).toEqual({list: 1, beforeEnd: true, mid: true});
+    // The whole order, not positions: a list that never arrived would read as -1 and sit before everything.
+    expect(order).toEqual([
+      'connected',
+      'entry_upsert',
+      'conversation_list',
+      'entry_upsert',
+      'entry_delta',
+      'entry_delta',
+      'entry_commit',
+      'stream_end',
+    ]);
   });
 
   it('hands a client an id it can rejoin the conversation with', async () => {
