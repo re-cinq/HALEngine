@@ -22,7 +22,8 @@ export function captureLog(): {errors: Array<Record<string, unknown>>; warnings:
     setLogger({debug: quiet, info: quiet, warn: into(warnings), error: into(errors)});
   });
 
-  afterEach(() => setLogger());
+  // Left quiet rather than restored: a socket closing during teardown logs after its test, which jest reports as noise.
+  afterEach(() => setLogger({debug: quiet, info: quiet, warn: quiet, error: quiet}));
 
   return {errors, warnings};
 }
