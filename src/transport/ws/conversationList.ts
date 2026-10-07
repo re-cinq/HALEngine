@@ -55,9 +55,11 @@ async function answerOne(
     return;
   }
 
+  let conversations: ConversationSummary[];
+  // Only the read and the mapping of what it answered: a send that fails is this socket's fault, not the store's.
   try {
     const summaries = await listFor.call(deps.sessionStore, userId, {limit: frame.limit, before: frame.before});
-    sendJson(ws, {type: 'conversation_list', conversations: summaries.map(onTheWire)});
+    conversations = summaries.map(onTheWire);
   } catch (error) {
     if (error instanceof StoreCannotList) {
       // A store saying it cannot list at all is a deployment fault, not a failed read: the client hears the same as above.
@@ -68,7 +70,10 @@ async function answerOne(
     // The type alone, as the authenticator path does it: a driver's message can carry a connection string and its password.
     log.error('message', 'conversation list failed', {sessionId, userId, errorType: typeOf(error)});
     sendError(ws, ErrorCodes.SERVER_ERROR, 'Could not list conversations');
+    return;
   }
+
+  sendJson(ws, {type: 'conversation_list', conversations});
 }
 
 // Through `new Date` rather than off the `Date`: a store answering ISO strings is the shape the wire shows, not a failure.

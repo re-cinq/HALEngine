@@ -180,6 +180,24 @@ describe('the conversation list frame', () => {
     ]);
   });
 
+  it('warns when a client names a session id that resume being off makes the server ignore', async () => {
+    const {url} = await startEngineWith({sessionStore: storeOfThree(), history: enabled});
+    const named = `${url}?sessionId=newest`;
+
+    const first = asks(named, {type: 'ping', timestamp: 1}, 'pong');
+    await first.reply;
+    const second = asks(named, {type: 'ping', timestamp: 1}, 'pong');
+    await second.reply;
+
+    // Once for the engine, however many clients name one: the line is a deployment fault, not a per-client event.
+    expect(warnings.filter(line => String(line.message).includes('named a session id'))).toEqual([
+      {
+        category: 'ws',
+        message: 'a client named a session id but resume is off, so it was ignored',
+      },
+    ]);
+  });
+
   it('refuses the frame when conversation history is not turned on', async () => {
     const {url} = await startEngineWith({sessionStore: storeOfThree()});
 
@@ -312,10 +330,9 @@ describe('the conversation list frame', () => {
     });
   });
 
-  it('reports a send that threw and still answers the next list, rather than wedging the socket', async () => {
+  it('blames a send that threw on the socket, not the store, and still answers the next list', async () => {
     const sends: string[] = [];
-    // Twice: the first throw is reported with a second send, and that failing too is what escapes the answer itself.
-    let failures = 2;
+    let failures = 1;
     const ws = {
       readyState: WebSocket.OPEN,
       send: (frame: string) => {
@@ -335,7 +352,11 @@ describe('the conversation list frame', () => {
     await handle(ws, session, {type: 'list_conversations'}).catch(() => undefined);
     await handle(ws, session, {type: 'list_conversations'});
 
-    expect(sends.map(frame => (JSON.parse(frame) as Reply).type)).toEqual(['error', 'conversation_list']);
+    expect({
+      sent: sends.map(frame => (JSON.parse(frame) as Reply).type),
+      // A send that failed is reported as handling the message, never as the store having failed.
+      logged: errors.map(line => String(line.message)),
+    }).toEqual({sent: ['error', 'conversation_list'], logged: ['handling error']});
   });
 
   it('reads the store once at a time per socket, however many frames arrive in one tick', async () => {
