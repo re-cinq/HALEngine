@@ -93,8 +93,10 @@ yourself can leave `latestFor` out, in which case such a connect simply starts a
 `listFor(userId, options?)` is optional, and it answers summaries rather than sessions:
 `sessionId`, `createdAt`, `updatedAt` and `entryCount`, most recent activity first. A summary
 carries no entries and no `authHeaders`, so a conversation list cannot hand over a conversation or
-a credential. Its first row is the session `latestFor` returns, because both read the same activity,
-so a list and a resume agree about which conversation is newest.
+a credential; an optional `preview` is the one field that carries any of its text, and it is asked
+for rather than volunteered — see § Labelling a row below. Its first row is the session `latestFor`
+returns, because both read the same activity, so a list and a resume agree about which conversation
+is newest.
 
 `options.limit` defaults to 50 and is capped at 200. `options.before` resumes after a row, so a
 client pages by passing back the last summary it saw — `SessionCursor` is `{updatedAt, sessionId}`,
@@ -105,6 +107,26 @@ A `limit` of `0` answers nothing, and a limit that is not a usable number is rea
 
 A store whose database fails rejects rather than answering an empty list: what to show a user who
 may have conversations is your decision, and "no conversations" is not a safe guess.
+
+**Labelling a row.** `listFor(userId, {preview: true})` adds a `preview` to each summary: the
+conversation's opening question, trimmed, with internal whitespace collapsed, and cut to 120 code
+points with no ellipsis of its own — mark a cut however your client prefers. It defaults to off,
+and a summary from a list that did not ask for one carries no `preview` key at all. Only the first
+entry is read, and only if it is the user's: a conversation opening with an entry the model wrote
+is labelled with nothing rather than with that entry's words, which is what keeps a list from
+showing text a tool deliberately suppressed. A conversation with no user entry carries no label.
+
+A preview is conversation content, which a summary otherwise never carries, so treat it as personal
+data: an opening question can hold a booking reference, an order number or somebody's name. That is
+why it is off by default in both places — here, and again in `transport.history.preview` before the
+engine will put one on the wire.
+
+What it costs: on `InMemorySessionStore`, reading one entry per row of the page. On
+`MongoSessionStore`, `{entries: {$slice: 1}}` on the projection, so the database returns the first
+element of the array and not the rest — one entry per row leaves the collection, never a
+conversation. Ask for no preview and no `entries` field is projected at all, so the cheap path
+stays exactly as cheap as it was. The index from § Latest session serves both, since the extra
+field is fetched from the document Mongo already reads for `createdAt` and `entryCount`.
 
 **Knowing whether another page exists.** `listFor` answers an array and no `hasMore`, so read it off
 the page: a page shorter than the `limit` you asked for is the last one. A full page is ambiguous, so
@@ -118,16 +140,16 @@ conversations, not this user's, and there is no per-user total today.
 the entries away, so a page of summaries never carries a conversation out of the database.
 
 **Create the three-key index from § Latest session.** `{userId: 1, updatedAt: -1}` cannot satisfy a
-two-key sort, so Mongo answers with a blocking sort over *every* conversation the user has and
+two-key sort, so Mongo answers with a blocking sort over _every_ conversation the user has and
 applies the limit after it: measured on 300 conversations, a 50-row page examined all 300 documents,
 where the three-key index made the same page an indexed sort examining exactly the 50 it returns. The
-index does not *cover* the query — `createdAt` and `entryCount` are not in it, so Mongo still fetches
+index does not _cover_ the query — `createdAt` and `entryCount` are not in it, so Mongo still fetches
 each row it answers with — and that is the point: with it, the work is the page; without it, the work
 is the history. Two consequences, not just a slow query — paging a long history that way is
 quadratic, and a blocking sort is bounded by Mongo's 100 MB sort limit, so a large enough history
 makes `listFor` fail rather than merely crawl.
 
-It answers a `limit` of `0` without querying at all, because MongoDB reads `limit: 0` as *no* limit
+It answers a `limit` of `0` without querying at all, because MongoDB reads `limit: 0` as _no_ limit
 and would otherwise hand back everything the filter matches. It counts a conversation from an
 `entryCount` field each `save` writes beside the entries. A document saved before 0.6 has no such
 field and lists as a conversation of no entries until you backfill it:

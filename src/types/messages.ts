@@ -42,6 +42,8 @@ export interface ConversationSummary {
   createdAt: string;
   updatedAt: string;
   entryCount: number;
+  /** The conversation's opening question, present only where the deployer turned previews on (specs/hal-engine-conversation-list/spec.md). */
+  preview?: string;
 }
 
 /** The answer to `list_conversations`: the connecting user's own conversations, newest activity first. */

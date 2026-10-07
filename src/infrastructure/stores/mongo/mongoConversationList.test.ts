@@ -1,9 +1,11 @@
 import {MongoSessionStore} from './mongoSessionStore.js';
 import {fakeCollection, mongoCollection} from './mongoTestSupport.js';
+import type {Collection} from 'mongodb';
 import {StoreCannotList} from '../../../types/sessionStore.js';
 import type {CollectionLike, FindManyOptions} from './mongoDriverTypes.js';
 import type {MongoSessionDocument} from './mongoSessionDocument.js';
 import type {SessionCursor} from '../../../types/sessionStore.js';
+import type {SessionEntry} from '../../../types/session.js';
 
 // One query, filtered and sorted in the database, and projected so no conversation leaves it to be counted.
 
@@ -28,6 +30,18 @@ const recordingCollection = (
 
 describe('the MongoDB store conversation list', () => {
   const collectionFor = mongoCollection();
+
+  /** A real collection holding one conversation of the entries given, written through a real save. */
+  const holding = async (
+    entries: SessionEntry[]
+  ): Promise<{collection: Collection<MongoSessionDocument>; store: MongoSessionStore}> => {
+    const collection = collectionFor();
+    const store = new MongoSessionStore({collection});
+    const session = await store.create('s1', 'u1');
+    session.entries.push(...entries);
+    await store.save(session);
+    return {collection, store};
+  };
 
   it("answers the user's conversations newest saved first, headed by the one latestFor returns", async () => {
     let clock = START;
@@ -94,14 +108,10 @@ describe('the MongoDB store conversation list', () => {
   });
 
   it('counts a conversation from the field a save writes beside the entries', async () => {
-    const collection = collectionFor();
-    const store = new MongoSessionStore({collection});
-    const session = await store.create('s1', 'u1');
-    session.entries.push(
+    const {collection} = await holding([
       {role: 'user', content: 'hello', timestamp: new Date(START).toISOString()},
-      {role: 'thinking', content: 'pondering', isStreaming: false}
-    );
-    await store.save(session);
+      {role: 'thinking', content: 'pondering', isStreaming: false},
+    ]);
 
     expect((await collection.findOne({_id: 's1'}))?.entryCount).toBe(2);
   });
@@ -123,6 +133,76 @@ describe('the MongoDB store conversation list', () => {
         },
       },
     ]);
+  });
+
+  it('asks the database for the first entry alone when a label is wanted, and for no entry otherwise', async () => {
+    const calls: RecordedFind[] = [];
+    const store = new MongoSessionStore({collection: recordingCollection(calls, [])});
+
+    await store.listFor('u1', {preview: true});
+    await store.listFor('u1');
+
+    expect(calls.map(call => call.options?.projection)).toEqual([
+      {_id: 1, createdAt: 1, updatedAt: 1, entryCount: 1, entries: {$slice: 1}},
+      {_id: 1, createdAt: 1, updatedAt: 1, entryCount: 1},
+    ]);
+  });
+
+  it('labels a conversation with the opening question the slice returned', async () => {
+    const {store} = await holding([
+      {role: 'user', content: '  How   do I cancel?  ', timestamp: new Date(START).toISOString()},
+      {
+        role: 'assistant',
+        content: 'text no label may read',
+        timestamp: new Date(START).toISOString(),
+        isStreaming: false,
+      },
+    ]);
+
+    expect((await store.listFor('u1', {preview: true}))[0]?.preview).toBe('How do I cancel?');
+  });
+
+  it("labels nothing when the entry the slice returned is not the user's, rather than labelling it wrongly", async () => {
+    const sliced = [
+      {
+        _id: 's1',
+        createdAt: new Date(START),
+        updatedAt: new Date(START),
+        entryCount: 2,
+        entries: [{role: 'assistant', content: 'unprompted', isStreaming: false}],
+      },
+    ] as unknown as MongoSessionDocument[];
+    const store = new MongoSessionStore({collection: recordingCollection([], sliced)});
+
+    const [row] = await store.listFor('u1', {preview: true});
+
+    expect('preview' in row).toBe(false);
+  });
+
+  it('carries one entry out of the database for a label, never the conversation behind it', async () => {
+    const turns: SessionEntry[] = Array.from({length: 3}, (_unused, index) => ({
+      role: 'user',
+      content: `turn ${index}`,
+      timestamp: new Date(START).toISOString(),
+    }));
+    const {collection} = await holding(turns);
+    // The labelled query as the store issues it: a narrower projection would carry less and prove nothing about this one.
+    const labelled = {projection: {_id: 1 as const, entryCount: 1 as const, entries: {$slice: 1}}};
+
+    const [document] = await collection.find({userId: 'u1'}, labelled).toArray();
+
+    expect({read: document?.entries.length, held: document?.entryCount}).toEqual({read: 1, held: 3});
+  });
+
+  it('labels nothing for a collection that answered without the entries at all, rather than failing', async () => {
+    const unsliced = [
+      {_id: 's1', createdAt: new Date(START), updatedAt: new Date(START), entryCount: 2},
+    ] as unknown as MongoSessionDocument[];
+    const store = new MongoSessionStore({collection: recordingCollection([], unsliced)});
+
+    const [row] = await store.listFor('u1', {preview: true});
+
+    expect('preview' in row).toBe(false);
   });
 
   it('keeps a conversation tied on updatedAt rather than dropping it across a page boundary', async () => {

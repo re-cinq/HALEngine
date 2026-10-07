@@ -1,5 +1,6 @@
 import type {ChatSession} from '../../types/session.js';
 import type {
+  SessionCursor,
   SessionStore,
   SessionCreateOptions,
   SessionListOptions,
@@ -7,6 +8,7 @@ import type {
   SessionSummary,
 } from '../../types/sessionStore.js';
 import {cappedLimit, cursorAt, newestFirst, sitsAfter} from './sessionListWindow.js';
+import {previewOf} from './sessionPreview.js';
 
 // Eight hours: a memory bound, not a retention decision (specs/hal-engine-session-lifetime/spec.md).
 const DEFAULT_MAX_AGE_MS = 8 * 60 * 60 * 1000;
@@ -84,12 +86,11 @@ export class InMemorySessionStore implements SessionStore {
     const limit = cappedLimit(options?.limit);
     if (limit === 0) return [];
 
-    const ordered = this.ownedBy(userId).map(summaryOf).sort(newestFirst);
-    const before = options?.before;
-    if (before === undefined) return ordered.slice(0, limit);
-
-    const at = cursorAt(before);
-    return ordered.filter(summary => sitsAfter(summary, at, before.sessionId)).slice(0, limit);
+    const rows = this.ownedBy(userId).map(rowOf).sort(byNewestRow);
+    const page = from(rows, options?.before).slice(0, limit);
+    // Read for the page alone rather than for every conversation the user owns, so asking costs one entry per row.
+    if (options?.preview !== true) return page.map(row => row.summary);
+    return page.map(labelled);
   }
 
   /** The user's most recently active session that has not aged out: its newest entry decides, or its creation if it has none. */
@@ -115,6 +116,35 @@ export class InMemorySessionStore implements SessionStore {
   private hasExpired(held: HeldSession): boolean {
     return Number.isFinite(held.createdAt) && Date.now() - held.createdAt > this.maxAgeMs;
   }
+}
+
+// The session stays beside its summary through the ordering, so a label is read off the row rather than looked up again.
+interface ListRow {
+  held: HeldSession;
+  summary: SessionSummary;
+}
+
+function rowOf(held: HeldSession): ListRow {
+  return {held, summary: summaryOf(held)};
+}
+
+function byNewestRow(first: ListRow, second: ListRow): number {
+  return newestFirst(first.summary, second.summary);
+}
+
+// Where the cursor's page starts in an order already built, so the limit applies to the page and not to the history.
+function from(rows: ListRow[], before: SessionCursor | undefined): ListRow[] {
+  if (before === undefined) return rows;
+
+  const at = cursorAt(before);
+  return rows.filter(row => sitsAfter(row.summary, at, before.sessionId));
+}
+
+function labelled(row: ListRow): SessionSummary {
+  const {entries} = row.held.session;
+  const preview = previewOf(entries[0]);
+  if (preview === undefined) return row.summary;
+  return {...row.summary, preview};
 }
 
 // Ascending and stable, so latestFor's `.at(-1)` takes the session created later when two are last active together.
