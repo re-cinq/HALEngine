@@ -416,8 +416,8 @@ first. Sent only when asked for, never pushed.
 
 A summary carries no message content, and the two times are ISO strings rather than `Date`s, which
 is what survives the wire ([validated by: answers the user's conversations newest first, with both times as ISO strings](../../src/transport/conversationList.test.ts#L99)). A row's `sessionId` is what a client reconnects with to rejoin that
-conversation, through the resume path in 2.1 ([validated by: hands a client an id it can rejoin the conversation with](../../src/transport/conversationList.test.ts#L390)). The frame is answered without waiting on a turn, so one asked for
-while an answer streams arrives before that answer ends ([validated by: answers a list in the middle of a streaming turn, before that turn ends](../../src/transport/conversationList.test.ts#L342)).
+conversation, through the resume path in 2.1 ([validated by: hands a client an id it can rejoin the conversation with](../../src/transport/conversationList.test.ts#L416)). The frame is answered without waiting on a turn, so one asked for
+while an answer streams arrives before that answer ends ([validated by: answers a list in the middle of a streaming turn, before that turn ends](../../src/transport/conversationList.test.ts#L368)).
 
 ## 6. SessionEntry Objects
 

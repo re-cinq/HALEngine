@@ -312,6 +312,32 @@ describe('the conversation list frame', () => {
     });
   });
 
+  it('reports a send that threw and still answers the next list, rather than wedging the socket', async () => {
+    const sends: string[] = [];
+    // Twice: the first throw is reported with a second send, and that failing too is what escapes the answer itself.
+    let failures = 2;
+    const ws = {
+      readyState: WebSocket.OPEN,
+      send: (frame: string) => {
+        if (failures > 0) {
+          failures -= 1;
+          throw new Error('socket went away mid-answer');
+        }
+        sends.push(frame);
+      },
+    } as unknown as WebSocket;
+    const session = {sessionId: 's1', userId: 'u1', entries: []};
+    const handle = createMessageHandler(answeringOrchestrator, {
+      sessionStore: new InMemorySessionStore(),
+      history: enabled,
+    });
+
+    await handle(ws, session, {type: 'list_conversations'}).catch(() => undefined);
+    await handle(ws, session, {type: 'list_conversations'});
+
+    expect(sends.map(frame => (JSON.parse(frame) as Reply).type)).toEqual(['error', 'conversation_list']);
+  });
+
   it('reads the store once at a time per socket, however many frames arrive in one tick', async () => {
     const seen = {inFlight: 0, peak: 0, answered: 0};
     const counting = storeListing(new InMemorySessionStore(), async (): Promise<SessionSummary[]> => {
