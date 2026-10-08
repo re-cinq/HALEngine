@@ -2,10 +2,10 @@
 
 | Field  | Value                 |
 | ------ | --------------------- |
-| Issue  | re-cinq/Otto#102      |
+| Issue  | re-cinq/HALEngine#42  |
 | Status | Implemented           |
 
-`SessionStore` was fully synchronous — `create` returned `T`, `get` returned `T | undefined`, `delete` returned `boolean` — and no store backed by a real database can honour that. The org already had the proof: `the-expert`'s `MongoSessionStore` satisfies the interface out of an in-process `Map` and does every durable operation through three private methods that are not on the interface at all, so what is called a `SessionStore` is really a cache plus a hidden API. Every member is now `Awaitable<T>`, which is `T | Promise<T>` rather than a hard `Promise<T>`, so a synchronous implementation needs no change while a database-backed one becomes expressible for the first time. The only call site that had to change is the WebSocket connection handler, and the care there is about what happens to a socket while the store is still thinking. The known consumer, `the-expert`, types its store as the concrete `MongoSessionStore` class rather than as the interface, so it is unaffected either way.
+`SessionStore` was fully synchronous — `create` returned `T`, `get` returned `T | undefined`, `delete` returned `boolean` — and no store backed by a real database can honour that. The proof already existed in a consumer's own code: a `MongoSessionStore` that satisfies the interface out of an in-process `Map` and does every durable operation through three private methods that are not on the interface at all, so what is called a `SessionStore` is really a cache plus a hidden API. Every member is now `Awaitable<T>`, which is `T | Promise<T>` rather than a hard `Promise<T>`, so a synchronous implementation needs no change while a database-backed one becomes expressible for the first time. The only call site that had to change is the WebSocket connection handler, and the care there is about what happens to a socket while the store is still thinking. That consumer types its store as the concrete `MongoSessionStore` class rather than as the interface, so it is unaffected either way.
 
 ## The widened interface
 
@@ -33,4 +33,4 @@
 
 ## Out of scope
 
-Resuming a conversation from a session id (re-cinq/Otto#103); removing the engine's `delete` call on socket close, which this issue only makes observable rather than settles (re-cinq/Otto#117); what `delete` should mean once a store is durable; bounding and redacting what a session keeps (re-cinq/Otto#89); and the Mongo-backed store itself (re-cinq/HALEngine#92).
+Resuming a conversation from a session id (re-cinq/HALEngine#45); removing the engine's `delete` call on socket close, which this issue only makes observable rather than settles (re-cinq/HALEngine#44); what `delete` should mean once a store is durable; bounding and redacting what a session keeps (re-cinq/HALEngine#41); and the Mongo-backed store itself (re-cinq/HALEngine#92).

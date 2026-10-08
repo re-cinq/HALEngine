@@ -1,9 +1,9 @@
 # Session Lifetime
 
-| Field  | Value            |
-| ------ | ---------------- |
-| Issue  | re-cinq/Otto#117 |
-| Status | Implemented      |
+| Field  | Value                |
+| ------ | -------------------- |
+| Issue  | re-cinq/HALEngine#44 |
+| Status | Implemented          |
 
 The WebSocket `close` handler called `sessionStore.delete(sessionId)` unconditionally, and it was the only caller of `delete` in the engine outside the store's own tests. Composed with a durable store that destroys data: the one persistent store the engine's own documentation sketches implements `delete` as a real deletion, so mounted behind this transport every conversation was written and then erased the moment the customer closed their tab. The engine's own spec already promised the opposite — sessions persist across disconnections — and the transport did the reverse. The call is gone. `SessionStore.delete` keeps its name and now has no engine-internal caller at all, which makes it purely the consumer's erasure primitive and makes the existing GDPR erasure documentation true for the first time. Because nothing erases on close any more, the default in-memory store would grow without bound, so it gains an age bound of its own — a memory bound, not a retention decision, which belongs to the deployment with a named human behind it.
 
@@ -46,4 +46,4 @@ Renaming `delete` to `evict` outright was considered and rejected: that is a bre
 
 ## Out of scope
 
-The retention period itself, which is a deployment's decision; bounding and redacting what a session keeps (re-cinq/Otto#89); resuming a conversation from a session id (re-cinq/Otto#103); the Mongo-backed store and its erasure methods (re-cinq/HALEngine#92); a session-count cap or LRU eviction, since age is the only policy here; and the two other paths that end conversations with no customer action — a missed heartbeat's `terminate()` and `stop()` closing every socket on shutdown.
+The retention period itself, which is a deployment's decision; bounding and redacting what a session keeps (re-cinq/HALEngine#41); resuming a conversation from a session id (re-cinq/HALEngine#45); the Mongo-backed store and its erasure methods (re-cinq/HALEngine#92); a session-count cap or LRU eviction, since age is the only policy here; and the two other paths that end conversations with no customer action — a missed heartbeat's `terminate()` and `stop()` closing every socket on shutdown.
