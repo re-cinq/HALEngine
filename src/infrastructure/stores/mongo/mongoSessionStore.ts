@@ -9,12 +9,14 @@ import type {
 import {StoreCannotList} from '../../../types/sessionStore.js';
 import type {CollectionLike, MongoClientLike} from './mongoDriverTypes.js';
 import type {MongoSessionDocument} from './mongoSessionDocument.js';
-import {persistedFields, toChatSession, toSessionSummary} from './mongoSessionDocument.js';
+import {persistedFields, toChatSession, toLabelledSummary, toSessionSummary} from './mongoSessionDocument.js';
 import {cappedLimit, cursorAt} from '../sessionListWindow.js';
 
 const DEFAULT_COLLECTION_NAME = 'hal_sessions';
 // Entries are left out so a page of summaries never carries a conversation out of the database.
 const SUMMARY_FIELDS = {_id: 1, createdAt: 1, updatedAt: 1, entryCount: 1} as const;
+// The first element and no more, so a labelled page still leaves every entry after the opening question behind.
+const LABELLED_FIELDS = {...SUMMARY_FIELDS, entries: {$slice: 1}} as const;
 // Eight hours, matching InMemorySessionStore: a bound on the cache in front of the collection, not a retention period.
 const DEFAULT_MAX_AGE_MS = 8 * 60 * 60 * 1000;
 
@@ -126,14 +128,15 @@ export class MongoSessionStore implements SessionStore {
       throw new StoreCannotList('The collection this store was built on implements no find');
     }
 
+    const preview = options?.preview === true;
     const documents = await collection
       .find(olderThan(userId, options?.before), {
         sort: {updatedAt: -1, _id: -1},
         limit,
-        projection: SUMMARY_FIELDS,
+        projection: preview ? LABELLED_FIELDS : SUMMARY_FIELDS,
       })
       .toArray();
-    return documents.map(toSessionSummary);
+    return documents.map(preview ? toLabelledSummary : toSessionSummary);
   }
 
   /** The user's most recently saved conversation, by `updatedAt`, read through `get` so a live one is the object its running turn writes to. */

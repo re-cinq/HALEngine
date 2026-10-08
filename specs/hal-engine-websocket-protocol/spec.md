@@ -180,7 +180,7 @@ Asks for the connecting user's own conversations. Served only when the server en
 | `before` | object | No       | The last row received, `{updatedAt, sessionId}`; answers the ones after it |
 
 The frame carries no user id and there is no field for one: the server lists the conversations of
-the user its `WsAuthenticator` returned for that connection ([validated by: answers the connecting user's own conversations even when the frame names another user](../../src/transport/conversationList.test.ts#L125)). A `before` is accepted
+the user its `WsAuthenticator` returned for that connection ([validated by: answers the connecting user's own conversations even when the frame names another user](../../src/transport/conversationList.test.ts#L126)). A `before` is accepted
 only carrying both fields, since a cursor on a time alone skips a conversation when two share one
 ([validated by: refuses a cursor missing either half, or carrying a time nothing can parse, naming the field](../../src/transport/ws/validation.test.ts#L48)).
 
@@ -342,8 +342,8 @@ Semantics:
 
 - The protocol takes additive changes only: every client frame that shipped before the conversation list is still read by the validator as the frame it was, field for field, and the same literals are typed as `IncomingMessage`, so a required field added to one of them fails `npm run typecheck` ([validated by: are each still read by the validator as the frame they were, field for field](../../src/transport/ws/protocolAdditive.test.ts#L28)).
 - Every server frame that shipped before it still goes out through the sender as the frame it was, `connected` with none of the optional fields resume added to it included ([validated by: are each still sent on the wire as the frame they were, field for field](../../src/transport/ws/protocolAdditive.test.ts#L34)).
-- A `list_conversations` the server does not serve is answered with `UNSUPPORTED`, whether because `transport.history` is off or because its store implements no `listFor`, and never with an empty list, which a client could not tell from a user who has no conversations ([validated by: refuses the frame when conversation history is not turned on](../../src/transport/conversationList.test.ts#L238), [validated by: refuses the frame when the store cannot list, rather than reporting no conversations](../../src/transport/conversationList.test.ts#L289)).
-- A store that fails while listing is answered `SERVER_ERROR` carrying none of the store's own words, and the server logs the session id, the user id and the error's type rather than its message, since a driver's message can hold a connection string and its password; the user id in that line is personal data, as it is in every log line the engine writes ([validated by: answers a failing store with a server error, keeps the socket open, and logs no word the store said](../../src/transport/conversationList.test.ts#L324)).
+- A `list_conversations` the server does not serve is answered with `UNSUPPORTED`, whether because `transport.history` is off or because its store implements no `listFor`, and never with an empty list, which a client could not tell from a user who has no conversations ([validated by: refuses the frame when conversation history is not turned on](../../src/transport/conversationList.test.ts#L302), [validated by: refuses the frame when the store cannot list, rather than reporting no conversations](../../src/transport/conversationList.test.ts#L353)).
+- A store that fails while listing is answered `SERVER_ERROR` carrying none of the store's own words, and the server logs the session id, the user id and the error's type rather than its message, since a driver's message can hold a connection string and its password; the user id in that line is personal data, as it is in every log line the engine writes ([validated by: answers a failing store with a server error, keeps the socket open, and logs no word the store said](../../src/transport/conversationList.test.ts#L388)).
 - A message the server cannot parse into a known type is answered with `INVALID_MESSAGE`, and no message stream is started for it ([validated by: rejects an unparseable message and never starts a stream](../../src/transport/ws/messageHandler.test.ts#L71)).
 - A rate limit reported by the AI provider is surfaced as `RATE_LIMITED`, which tells the client the same request is worth retrying ([validated by: tells the client to retry when the provider is rate limited](../../src/transport/ws/messageHandler.test.ts#L311)).
 - Any other failure raised while processing a message is reported as `SERVER_ERROR` ([validated by: reports any other failure as a server error](../../src/transport/ws/messageHandler.test.ts#L320)).
@@ -399,7 +399,8 @@ first. Sent only when asked for, never pushed.
       "sessionId": "0f9c8e41-...",
       "createdAt": "2026-10-06T08:12:04.001Z",
       "updatedAt": "2026-10-06T09:30:22.517Z",
-      "entryCount": 12
+      "entryCount": 12,
+      "preview": "How do I cancel my subscription?"
     }
   ]
 }
@@ -413,11 +414,16 @@ first. Sent only when asked for, never pushed.
 | `conversations[].createdAt`| string | ISO 8601 timestamp                                            |
 | `conversations[].updatedAt`| string | ISO 8601 timestamp of the conversation's most recent activity |
 | `conversations[].entryCount`| number| How many entries the conversation holds                       |
+| `conversations[].preview`  | string | Optional. The conversation's opening question, at most 120 code points, present only where the server enables previews |
 
-A summary carries no message content, and the two times are ISO strings rather than `Date`s, which
-is what survives the wire ([validated by: answers the user's conversations newest first, with both times as ISO strings](../../src/transport/conversationList.test.ts#L99)). A row's `sessionId` is what a client reconnects with to rejoin that
-conversation, through the resume path in 2.1 ([validated by: hands a client an id it can rejoin the conversation with](../../src/transport/conversationList.test.ts#L474)). The frame is answered without waiting on a turn, so one asked for
-while an answer streams arrives before that answer ends ([validated by: answers a list in the middle of a streaming turn, before that turn ends](../../src/transport/conversationList.test.ts#L426)).
+Apart from `preview`, a summary carries no message content, and the two times are ISO strings rather than `Date`s, which
+is what survives the wire ([validated by: answers the user's conversations newest first, with both times as ISO strings](../../src/transport/conversationList.test.ts#L100)). A row's `sessionId` is what a client reconnects with to rejoin that
+conversation, through the resume path in 2.1 ([validated by: hands a client an id it can rejoin the conversation with](../../src/transport/conversationList.test.ts#L538)). The frame is answered without waiting on a turn, so one asked for
+while an answer streams arrives before that answer ends ([validated by: answers a list in the middle of a streaming turn, before that turn ends](../../src/transport/conversationList.test.ts#L490)). The `preview` field is the one
+that carries conversation content, and it is the server's decision rather than the client's: a client
+cannot ask for one, and where the deployment has not enabled previews no row carries the key, even
+against a store that would supply it ([validated by: strips a preview the store volunteered when this deployment did not turn previews on](../../src/transport/conversationList.test.ts#L137)). Where it has, each row carries its conversation's
+opening question ([validated by: labels each conversation with its opening question where the deployer turned previews on](../../src/transport/conversationList.test.ts#L179)).
 
 ## 6. SessionEntry Objects
 

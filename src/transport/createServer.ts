@@ -47,6 +47,11 @@ export function createServer(options: HalServerOptions): HalServer {
     log.warn('server', 'conversation history is on but resume is off, so a listed conversation cannot be rejoined');
   }
 
+  // Asking for a label on a list this server does not serve: inert, and silence would read as previews being on.
+  if (options.history?.preview === true && !options.history.enabled) {
+    log.warn('server', 'conversation previews are on but conversation history is off, so no list is served at all');
+  }
+
   const handleMessage = createMessageHandler(options.orchestrator, {
     sessionStore: options.sessionStore,
     history: options.history,

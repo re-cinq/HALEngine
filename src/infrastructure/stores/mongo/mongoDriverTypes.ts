@@ -6,7 +6,8 @@ export interface DeleteOutcome {
 
 export interface FindOneOptions {
   sort?: Record<string, 1 | -1>;
-  projection?: Record<string, 0 | 1>;
+  /** `$slice` is admitted beside the flags so a list can read a conversation's first entry without reading the rest. */
+  projection?: Record<string, 0 | 1 | {$slice: number}>;
 }
 
 /** `sort` and `limit` ride on the options rather than a chained cursor, so the port stays one method wide. */

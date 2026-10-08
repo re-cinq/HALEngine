@@ -305,6 +305,23 @@ describe('createHalEngine transport extension forwarding', () => {
   });
 });
 
+// The transport reads `history.preview`, so the warning it logs for an inert one is evidence the field crossed over.
+describe('createHalEngine conversation history forwarding', () => {
+  afterEach(() => setLogger());
+
+  it('forwards every field of transport.history, not only the switch the engine reads first', () => {
+    const lines: string[] = [];
+    const collect = (_category: string, message: string) => void lines.push(message);
+    setLogger({debug: collect, info: collect, warn: collect, error: collect});
+
+    createHalEngine({...base, transport: {history: {enabled: false, preview: true}}});
+
+    expect(lines).toEqual([
+      'conversation previews are on but conversation history is off, so no list is served at all',
+    ]);
+  });
+});
+
 // The store was declared on HalEngineConfig and reached the transport, but never the orchestrator.
 describe('createHalEngine session store forwarding', () => {
   it('forwards the session store, so its write signal reaches the orchestrator', async () => {

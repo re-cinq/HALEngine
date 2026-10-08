@@ -23,6 +23,8 @@ export interface SessionSummary {
   createdAt: Date;
   updatedAt: Date;
   entryCount: number;
+  /** The conversation's opening question as a label, only when asked for, and absent when it opens with no user entry (specs/hal-engine-conversation-list/spec.md). */
+  preview?: string;
 }
 
 /** Where a page of conversations resumes from: the last row the caller saw, which a `SessionSummary` satisfies. */
@@ -36,6 +38,8 @@ export interface SessionCursor {
 export interface SessionListOptions {
   limit?: number;
   before?: SessionCursor;
+  /** Whether each summary carries a `preview`; `false` by default, because a plain summary carries no conversation content. */
+  preview?: boolean;
 }
 
 export interface SessionCreateOptions {

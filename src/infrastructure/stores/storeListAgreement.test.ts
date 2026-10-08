@@ -2,6 +2,7 @@ import {InMemorySessionStore} from './inMemorySessionStore.js';
 import {MongoSessionStore} from './mongo/mongoSessionStore.js';
 import {mongoCollection} from './mongo/mongoTestSupport.js';
 import type {SessionStore, SessionSummary} from '../../types/sessionStore.js';
+import type {SessionEntry} from '../../types/session.js';
 
 // Both shipped stores answer one order, so a consumer swapping one for the other sees the same conversation list.
 
@@ -56,6 +57,59 @@ describe('the two shipped stores', () => {
       ['gamma', 'beta', 'alpha'],
       ['gamma', 'beta', 'alpha'],
     ]);
+  });
+
+  it('label a conversation with the same opening question, and refuse a model-authored opening alike', async () => {
+    const openings: Array<[string, SessionEntry]> = [
+      ['asked', {role: 'user', content: '  How   do I cancel?  ', timestamp: new Date(START).toISOString()}],
+      [
+        'spoken',
+        {
+          role: 'assistant',
+          content: 'no label may read this',
+          timestamp: new Date(START + 1000).toISOString(),
+          isStreaming: false,
+        },
+      ],
+    ];
+    let clock = START;
+    const memory = new InMemorySessionStore();
+    const mongo = new MongoSessionStore({collection: collectionFor(), now: () => new Date(clock)});
+    for (const [index, [id, opening]] of openings.entries()) {
+      clock = START + index * 1000;
+      const held = memory.create(id, 'u1');
+      held.entries.push(opening);
+      const stored = await mongo.create(id, 'u1');
+      stored.entries.push(opening);
+      await mongo.save(stored);
+    }
+
+    const labelled = async (store: SessionStore): Promise<Array<string | undefined>> =>
+      ((await store.listFor?.('u1', {preview: true})) ?? []).map(row => row.preview);
+
+    expect([await labelled(memory), await labelled(mongo)]).toEqual([
+      [undefined, 'How do I cancel?'],
+      [undefined, 'How do I cancel?'],
+    ]);
+  });
+
+  it('window a labelled list the same way, so asking for labels widens no page and reorders none', async () => {
+    const [memory, mongo] = await bothHolding(1000);
+
+    const labelledPages = async (store: SessionStore): Promise<string[][]> => {
+      const pages: string[][] = [];
+      let rows = (await store.listFor?.('u1', {preview: true, limit: 2})) ?? [];
+      while (rows.length > 0) {
+        pages.push(rows.map(row => row.sessionId));
+        rows = (await store.listFor?.('u1', {preview: true, limit: 2, before: rows.at(-1)})) ?? [];
+      }
+      return pages;
+    };
+
+    expect({memory: await labelledPages(memory), mongo: await labelledPages(mongo)}).toEqual({
+      memory: [['gamma', 'alpha'], ['beta']],
+      mongo: [['gamma', 'alpha'], ['beta']],
+    });
   });
 
   it('page the same way through the documented call, two rows at a time from the last row seen', async () => {

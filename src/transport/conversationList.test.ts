@@ -23,6 +23,7 @@ import type {SessionListOptions, SessionStore, SessionSummary} from '../types/se
 const AHEAD = Date.parse('2099-01-01T00:00:00.000Z');
 
 const enabled = {enabled: true};
+const labelling = {enabled: true, preview: true};
 
 interface Reply {
   type: string;
@@ -133,6 +134,69 @@ describe('the conversation list frame', () => {
     expect(asked).toEqual(['u1']);
   });
 
+  it('strips a preview the store volunteered when this deployment did not turn previews on', async () => {
+    const volunteering = storeListing(new InMemorySessionStore(), () => [
+      {
+        sessionId: 's1',
+        createdAt: new Date(AHEAD),
+        updatedAt: new Date(AHEAD),
+        entryCount: 1,
+        preview: 'How do I cancel?',
+      },
+    ]);
+    const {url} = await startEngineWith({sessionStore: volunteering, history: enabled});
+
+    const {reply} = asks(url, {type: 'list_conversations'}, 'conversation_list');
+
+    expect(((await reply).conversations as SessionSummary[]).map(row => 'preview' in row)).toEqual([false]);
+  });
+
+  it('holds a store answering an over-long or non-text preview to the field the protocol documents', async () => {
+    const unruly = storeListing(new InMemorySessionStore(), () => [
+      {
+        sessionId: 'long',
+        createdAt: new Date(AHEAD),
+        updatedAt: new Date(AHEAD),
+        entryCount: 1,
+        preview: 'x'.repeat(900),
+      },
+      {
+        sessionId: 'nottext',
+        createdAt: new Date(AHEAD),
+        updatedAt: new Date(AHEAD),
+        entryCount: 1,
+        preview: 42 as unknown as string,
+      },
+    ]);
+    const {url} = await startEngineWith({sessionStore: unruly, history: labelling});
+
+    const {reply} = asks(url, {type: 'list_conversations'}, 'conversation_list');
+    const rows = (await reply).conversations as SessionSummary[];
+
+    expect(rows.map(row => ('preview' in row ? [...String(row.preview)].length : 'absent'))).toEqual([120, 'absent']);
+  });
+
+  it('labels each conversation with its opening question where the deployer turned previews on', async () => {
+    const {url} = await startEngineWith({sessionStore: storeOfThree(), history: labelling});
+
+    const {reply} = asks(url, {type: 'list_conversations'}, 'conversation_list');
+    const rows = (await reply).conversations as SessionSummary[];
+
+    expect(rows.map(row => row.preview)).toEqual(['hello', 'hello', 'hello', undefined]);
+  });
+
+  it('asks the store for a preview only where this deployment allows one, never because a client asked', async () => {
+    const options: Array<SessionListOptions | undefined> = [];
+    const labels = await startEngineWith({sessionStore: recordingStore([], options), history: labelling});
+    const plain = await startEngineWith({sessionStore: recordingStore([], options), history: enabled});
+
+    await asks(labels.url, {type: 'list_conversations'}, 'conversation_list').reply;
+    // Asked for by a client the deployment did not allow it on: the validator rebuilds the frame and drops the field.
+    await asks(plain.url, {type: 'list_conversations', preview: true}, 'conversation_list').reply;
+
+    expect(options.map(option => option?.preview)).toEqual([true, false]);
+  });
+
   it('carries a limit and a cursor through to the store as the frame sent them', async () => {
     const options: Array<SessionListOptions | undefined> = [];
     const store = recordingStore([], options);
@@ -142,7 +206,7 @@ describe('the conversation list frame', () => {
     const {reply} = asks(url, {type: 'list_conversations', limit: 7, before}, 'conversation_list');
     await reply;
 
-    expect(options).toEqual([{limit: 7, before}]);
+    expect(options).toEqual([{limit: 7, before, preview: false}]);
   });
 
   it('puts a time on the wire as an ISO string whatever shape the store answered with', async () => {

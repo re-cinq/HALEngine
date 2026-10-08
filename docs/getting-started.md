@@ -190,7 +190,7 @@ const engine = createHalEngine({
     rootRoutes: router => router.get('/', (_req, res) => res.send('<h1>Hello</h1>')),
     errorHandler: (err, _req, res, _next) => res.status(500).json({error: String(err)}),
     resume: {enabled: true, latest: true}, // rejoin the conversation ?sessionId= names, else the user's latest; ?new=1 starts one; off by default, see Session Resume
-    history: {enabled: true},
+    history: {enabled: true, preview: true},
   },
 
   // OPTIONAL: Orchestrator settings
@@ -311,13 +311,21 @@ The frame names no user and has no field for one: the engine lists the conversat
 
 **Picking one needs resume on too.** Reconnect with `?sessionId=<the id from the row>` and [Session Resume](#session-resume) rejoins it, ownership check and replay included — but `?sessionId=` is read only when `resume` is enabled, so `history` on its own gives a list whose rows cannot be opened: the id is ignored and the client silently gets a fresh session. Turn both on, or expect a list that is only a list. The engine logs a warning at startup for that combination. It also warns the first time any client names a `?sessionId=` while resume is off — that one is not specific to history, and is documented under [Session Resume](#session-resume).
 
+**Labelling the rows.** A row of an id and two timestamps makes a user pick their history by date arithmetic, so `transport: {history: {enabled: true, preview: true}}` adds the conversation's opening question to each row:
+
+```json
+{"sessionId": "0f9c…", "createdAt": "2026-10-06T08:12:04.001Z", "updatedAt": "2026-10-06T09:30:22.517Z", "entryCount": 12, "preview": "How do I cancel my subscription?"}
+```
+
+It is trimmed, has its internal whitespace collapsed, and is cut to 120 code points with no ellipsis — mark a cut however you like, remembering that the row carries no cut flag: 120 code points means it was almost certainly cut, but a cut label can come back slightly shorter where the cut stranded a space, so treat the bound as a hint rather than a signal. A cut counts code points, so it never splits a surrogate pair, though it can still land inside a longer grapheme cluster. This is the deployer's switch and not the client's: a client cannot ask for a preview, and with `preview` off no row carries the key. Only the user's own first message is ever read, never anything the model wrote, so a list cannot show text a tool suppressed; a conversation that opens with no user message carries no label. If a `beforeUserInput` hook of yours rewrites the user's message, the label shows the rewritten text, because the hook's return value is written back to that entry. The engine generates no titles — that is a provider call per conversation, and your decision rather than ours — and it has nowhere to keep one you generate yourself yet, which re-cinq/HALEngine#155 tracks. Do not use `beforeUserInput` as a stand-in: it overwrites the user's own words in the stored conversation.
+
 **Paging.** Send `limit` (1 to 200) and `before`, which is the last row you were sent — both of its fields, `{"updatedAt": "…", "sessionId": "…"}`, not just the time. A page shorter than the `limit` you asked for is the last one.
 
 **When it cannot be answered.** An `error` frame with code `UNSUPPORTED` means the server does not serve the frame: the switch is off, your store implements no `listFor`, or it threw `StoreCannotList` to say it cannot list at all — `MongoSessionStore` does that for a collection you injected without a `find`. `SERVER_ERROR` means a store that can list failed while listing, which is the one of the two worth retrying. Never an empty list for any of them: a client cannot tell "no conversations" from "something broke", and the one place that difference matters is a history view.
 
 **Answered off the turn.** A `list_conversations` sent while an answer is streaming is replied to immediately rather than queued behind it, and nothing is ever pushed: a `conversation_list` arrives only when asked for.
 
-**GDPR.** This hands a client the times of every conversation the user holds, for as long as the store holds them, so the retention bound is still yours (see [Session Resume](#session-resume)'s note and re-cinq/HALEngine#41). Turning it on is a decision about what a client may see, separate from turning resume on.
+**GDPR.** This hands a client the times of every conversation the user holds, for as long as the store holds them, so the retention bound is still yours (see [Session Resume](#session-resume)'s note and re-cinq/HALEngine#41). Turning it on is a decision about what a client may see, separate from turning resume on. `preview` is a further one: it puts the user's own words into a list payload, and an opening question can carry a booking reference, an order number or somebody's name, so it is off until you turn it on and belongs in your record of what this deployment discloses.
 
 ## Custom Session Store
 

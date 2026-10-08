@@ -1,5 +1,6 @@
 import type {ChatSession, SessionEntry} from '../../../types/session.js';
 import type {SessionSummary} from '../../../types/sessionStore.js';
+import {previewOf} from '../sessionPreview.js';
 
 /** Keys never written to the database, matched case-insensitively at any depth. */
 export const REDACTED_KEYS: readonly string[] = ['authheaders', 'authorization', 'cookie', 'host'];
@@ -56,6 +57,21 @@ export function toSessionSummary(document: MongoSessionDocument): SessionSummary
     updatedAt: document.updatedAt,
     entryCount: document.entryCount ?? 0,
   };
+}
+
+/** The same row carrying the conversation's opening question, for a document whose projection sliced one entry. */
+export function toLabelledSummary(document: MongoSessionDocument): SessionSummary {
+  const summary = toSessionSummary(document);
+  // Absent rather than wrong when the sliced entry is not the user's, which is the only entry a preview may read.
+  const label = previewOf(slicedFirst(document));
+  if (label === undefined) return summary;
+  return {...summary, preview: label};
+}
+
+// Mongo applies $slice only to an array and hands back any other value untouched, so the shape is checked not assumed.
+function slicedFirst(document: MongoSessionDocument): SessionEntry | undefined {
+  const sliced: unknown = document.entries;
+  return Array.isArray(sliced) ? (sliced[0] as SessionEntry | undefined) : undefined;
 }
 
 // A Date is a value the driver stores natively, so it is copied by reference rather than walked.

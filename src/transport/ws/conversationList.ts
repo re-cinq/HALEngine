@@ -4,12 +4,15 @@ import {ErrorCodes} from '../../types/messages.js';
 import type {ChatSession} from '../../types/session.js';
 import type {SessionStore, SessionSummary} from '../../types/sessionStore.js';
 import {StoreCannotList} from '../../types/sessionStore.js';
+import {labelFrom} from '../../infrastructure/stores/sessionPreview.js';
 import {sendError, sendJson} from './sender.js';
 import {log} from '../../shared/logger.js';
 
 /** Opt-in, and the deployer's decision: it tells a client what conversations a user has, which rejoining one does not. GDPR: it reaches as far back as the store keeps conversations, so the consumer owns the retention bound — the store's `maxAgeMs` and erasure methods, and see re-cinq/HALEngine#41. */
 export interface ConversationHistoryOptions {
   enabled: boolean;
+  /** Whether a listed conversation carries its opening question; `false` by default, since that text is conversation content. GDPR: a preview is personal data the client renders, so turning it on extends what this deployment discloses under its own lawful basis. */
+  preview?: boolean;
 }
 
 export interface ConversationListDeps {
@@ -55,11 +58,17 @@ async function answerOne(
     return;
   }
 
+  // The deployer's switch, never the client's: the frame has no field for it and the validator would drop one.
+  const preview = deps.history.preview === true;
   let conversations: ConversationSummary[];
   // Only the read and the mapping of what it answered: a send that fails is this socket's fault, not the store's.
   try {
-    const summaries = await listFor.call(deps.sessionStore, userId, {limit: frame.limit, before: frame.before});
-    conversations = summaries.map(onTheWire);
+    const summaries = await listFor.call(deps.sessionStore, userId, {
+      limit: frame.limit,
+      before: frame.before,
+      preview,
+    });
+    conversations = summaries.map(preview ? withPreview : onTheWire);
   } catch (error) {
     if (error instanceof StoreCannotList) {
       // A store saying it cannot list at all is a deployment fault, not a failed read: the client hears the same as above.
@@ -84,6 +93,15 @@ function onTheWire(summary: SessionSummary): ConversationSummary {
     updatedAt: new Date(summary.updatedAt).toISOString(),
     entryCount: summary.entryCount,
   };
+}
+
+// The only mapper that copies a preview, so a store volunteering one cannot reach the wire through the other.
+function withPreview(summary: SessionSummary): ConversationSummary {
+  const row = onTheWire(summary);
+  // Cut again here, as the times are rebuilt above: the bound the protocol documents is the transport's to hold.
+  const label = labelFrom(summary.preview);
+  if (label === undefined) return row;
+  return {...row, preview: label};
 }
 
 function typeOf(error: unknown): string {

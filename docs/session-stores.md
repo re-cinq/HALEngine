@@ -93,8 +93,10 @@ yourself can leave `latestFor` out, in which case such a connect simply starts a
 `listFor(userId, options?)` is optional, and it answers summaries rather than sessions:
 `sessionId`, `createdAt`, `updatedAt` and `entryCount`, most recent activity first. A summary
 carries no entries and no `authHeaders`, so a conversation list cannot hand over a conversation or
-a credential. Its first row is the session `latestFor` returns, because both read the same activity,
-so a list and a resume agree about which conversation is newest.
+a credential; an optional `preview` is the one field that carries any of its text, and it is asked
+for rather than volunteered — see **Labelling a row** below. Its first row is the session `latestFor`
+returns, because both read the same activity, so a list and a resume agree about which conversation
+is newest.
 
 `options.limit` defaults to 50 and is capped at 200. `options.before` resumes after a row, so a
 client pages by passing back the last summary it saw — `SessionCursor` is `{updatedAt, sessionId}`,
@@ -105,6 +107,35 @@ A `limit` of `0` answers nothing, and a limit that is not a usable number is rea
 
 A store whose database fails rejects rather than answering an empty list: what to show a user who
 may have conversations is your decision, and "no conversations" is not a safe guess.
+
+**Labelling a row.** `listFor(userId, {preview: true})` adds a `preview` to each summary: the
+conversation's opening question, trimmed, with each run of internal whitespace replaced by one ASCII
+space (a lone non-breaking or ideographic space included), and cut to 120 code
+points with no ellipsis of its own — mark a cut however your client prefers, bearing in mind that the row
+carries no cut flag: a label of 120 code points was almost certainly cut, but a cut one can come back
+a little shorter where the cut stranded a space, so read the bound as a hint rather than a signal. It defaults to off,
+and a summary from a list that did not ask for one carries no `preview` key at all. Only the first
+entry is read, and only if it is the user's: a conversation opening with an entry the model wrote
+is labelled with nothing rather than with that entry's words, which is what keeps a list from
+showing text a tool deliberately suppressed. A conversation with no user entry carries no label. The
+text is that entry's as stored, so if a `beforeUserInput` hook of yours rewrites a user message —
+the hook's return value is written back to the entry — a label shows the rewritten text rather than
+what was typed. Treat that as a caveat rather than a feature: do not reach for the hook to title a
+conversation, because it overwrites what the user actually typed in the history the model reads and a
+resume replays. The engine stores no title of its own yet; re-cinq/HALEngine#155 is where a field for
+one you write yourself is being tracked.
+
+A preview is conversation content, which a summary otherwise never carries, so treat it as personal
+data: an opening question can hold a booking reference, an order number or somebody's name. That is
+why it is off by default in both places — here, and again in `transport.history.preview` before the
+engine will put one on the wire.
+
+What it costs: on `InMemorySessionStore`, reading one entry per row of the page. On
+`MongoSessionStore`, `{entries: {$slice: 1}}` on the projection, so the database returns the first
+element of the array and not the rest — one entry per row leaves the collection, never a
+conversation. Ask for no preview and no `entries` field is projected at all, so the cheap path
+stays exactly as cheap as it was. The index from § Latest session serves both, since the extra
+field is fetched from the document Mongo already reads for `createdAt` and `entryCount`.
 
 **Knowing whether another page exists.** `listFor` answers an array and no `hasMore`, so read it off
 the page: a page shorter than the `limit` you asked for is the last one. A full page is ambiguous, so

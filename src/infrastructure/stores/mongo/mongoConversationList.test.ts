@@ -1,9 +1,11 @@
 import {MongoSessionStore} from './mongoSessionStore.js';
 import {fakeCollection, mongoCollection} from './mongoTestSupport.js';
+import type {Collection} from 'mongodb';
 import {StoreCannotList} from '../../../types/sessionStore.js';
 import type {CollectionLike, FindManyOptions} from './mongoDriverTypes.js';
 import type {MongoSessionDocument} from './mongoSessionDocument.js';
 import type {SessionCursor} from '../../../types/sessionStore.js';
+import type {SessionEntry} from '../../../types/session.js';
 
 // One query, filtered and sorted in the database, and projected so no conversation leaves it to be counted.
 
@@ -28,6 +30,37 @@ const recordingCollection = (
 
 describe('the MongoDB store conversation list', () => {
   const collectionFor = mongoCollection();
+
+  /** A real collection holding one conversation of the entries given, written through a real save. */
+  const holding = async (
+    entries: SessionEntry[]
+  ): Promise<{collection: Collection<MongoSessionDocument>; store: MongoSessionStore}> => {
+    const collection = collectionFor();
+    const store = new MongoSessionStore({collection});
+    const session = await store.create('s1', 'u1');
+    session.entries.push(...entries);
+    await store.save(session);
+    return {collection, store};
+  };
+
+  /** The real collection, with every document its `find` answered recorded, so a test can see what left the database. */
+  const watching = (
+    collection: Collection<MongoSessionDocument>,
+    carried: MongoSessionDocument[][]
+  ): CollectionLike<MongoSessionDocument> => ({
+    findOne: (filter, options) => collection.findOne(filter, options) as Promise<MongoSessionDocument | null>,
+    find: (filter, options) => ({
+      toArray: async () => {
+        const documents = (await collection.find(filter, options).toArray()) as MongoSessionDocument[];
+        carried.push(documents);
+        return documents;
+      },
+    }),
+    updateOne: (filter, update, options) => collection.updateOne(filter, update, options),
+    deleteOne: filter => collection.deleteOne(filter),
+    deleteMany: filter => collection.deleteMany(filter),
+    countDocuments: filter => collection.countDocuments(filter),
+  });
 
   it("answers the user's conversations newest saved first, headed by the one latestFor returns", async () => {
     let clock = START;
@@ -94,14 +127,10 @@ describe('the MongoDB store conversation list', () => {
   });
 
   it('counts a conversation from the field a save writes beside the entries', async () => {
-    const collection = collectionFor();
-    const store = new MongoSessionStore({collection});
-    const session = await store.create('s1', 'u1');
-    session.entries.push(
+    const {collection} = await holding([
       {role: 'user', content: 'hello', timestamp: new Date(START).toISOString()},
-      {role: 'thinking', content: 'pondering', isStreaming: false}
-    );
-    await store.save(session);
+      {role: 'thinking', content: 'pondering', isStreaming: false},
+    ]);
 
     expect((await collection.findOne({_id: 's1'}))?.entryCount).toBe(2);
   });
@@ -123,6 +152,132 @@ describe('the MongoDB store conversation list', () => {
         },
       },
     ]);
+  });
+
+  it('asks the database for the first entry alone when a label is wanted, and for no entry otherwise', async () => {
+    const calls: RecordedFind[] = [];
+    const store = new MongoSessionStore({collection: recordingCollection(calls, [])});
+
+    await store.listFor('u1', {preview: true});
+    await store.listFor('u1');
+
+    expect(calls.map(call => call.options?.projection)).toEqual([
+      {_id: 1, createdAt: 1, updatedAt: 1, entryCount: 1, entries: {$slice: 1}},
+      {_id: 1, createdAt: 1, updatedAt: 1, entryCount: 1},
+    ]);
+  });
+
+  it('labels a conversation with the opening question the slice returned', async () => {
+    const {store} = await holding([
+      {role: 'user', content: '  How   do I cancel?  ', timestamp: new Date(START).toISOString()},
+      {
+        role: 'assistant',
+        content: 'text no label may read',
+        timestamp: new Date(START).toISOString(),
+        isStreaming: false,
+      },
+    ]);
+
+    expect((await store.listFor('u1', {preview: true}))[0]?.preview).toBe('How do I cancel?');
+  });
+
+  it("labels nothing when the entry the slice returned is not the user's, rather than labelling it wrongly", async () => {
+    const sliced = [
+      {
+        _id: 's1',
+        createdAt: new Date(START),
+        updatedAt: new Date(START),
+        entryCount: 2,
+        entries: [{role: 'assistant', content: 'unprompted', isStreaming: false}],
+      },
+    ] as unknown as MongoSessionDocument[];
+    const store = new MongoSessionStore({collection: recordingCollection([], sliced)});
+
+    const [row] = await store.listFor('u1', {preview: true});
+
+    expect('preview' in row).toBe(false);
+  });
+
+  it('carries one entry out of the database for a label, never the conversation behind it', async () => {
+    const turns: SessionEntry[] = Array.from({length: 3}, (_unused, index) => ({
+      role: 'user',
+      content: `turn ${index}`,
+      timestamp: new Date(START).toISOString(),
+    }));
+    const {collection} = await holding(turns);
+    // Watches what the store's own query carried out, rather than reissuing a copy of it that could drift.
+    const carried: MongoSessionDocument[][] = [];
+    const store = new MongoSessionStore({collection: watching(collection, carried)});
+
+    await store.listFor('u1', {preview: true});
+
+    expect(carried.map(documents => documents.map(document => document.entries.length))).toEqual([[1]]);
+  });
+
+  it('survives a real database answering a slice of a field that is not an array, as a migrated document would', async () => {
+    const collection = collectionFor();
+    // What mongod does with $slice on a non-array decides whether a guard or a try/catch is the right answer here.
+    const shapes = [[{role: 'user', content: 'asked', timestamp: new Date(START).toISOString()}], 'text', {o: 1}, null];
+    await collection.insertMany(
+      shapes.map((entries, index) => ({
+        _id: `s${index}`,
+        userId: 'u1',
+        entries,
+        entryCount: 1,
+        createdAt: new Date(START),
+        updatedAt: new Date(START + index),
+      })) as unknown as MongoSessionDocument[]
+    );
+    const store = new MongoSessionStore({collection});
+
+    const rows = await store.listFor('u1', {preview: true});
+
+    expect(rows.map(row => row.preview)).toEqual([undefined, undefined, undefined, 'asked']);
+  });
+
+  it('labels nothing where a stored entries field is absent, null or not an array, rather than failing', async () => {
+    // What mongod answers for a $slice on a non-array: the value untouched, so a migrated document reaches the mapper.
+    const shapes = [undefined, null, 'not an array', {nested: true}];
+    const malformed = shapes.map((entries, index) => ({
+      _id: `s${index}`,
+      createdAt: new Date(START),
+      updatedAt: new Date(START),
+      entryCount: 2,
+      entries,
+    })) as unknown as MongoSessionDocument[];
+    const store = new MongoSessionStore({collection: recordingCollection([], malformed)});
+
+    const rows = await store.listFor('u1', {preview: true});
+
+    expect(rows.map(row => 'preview' in row)).toEqual([false, false, false, false]);
+  });
+
+  it('asks for no entry and labels nothing for an explicit preview of false, which is what the transport sends', async () => {
+    const calls: RecordedFind[] = [];
+    const entries = [{role: 'user', content: 'hello', timestamp: new Date(START).toISOString()}];
+    const documents = [{_id: 's1', createdAt: new Date(START), updatedAt: new Date(START), entryCount: 1, entries}];
+    const store = new MongoSessionStore({collection: recordingCollection(calls, documents as MongoSessionDocument[])});
+
+    const [row] = await store.listFor('u1', {preview: false});
+
+    const [call] = calls;
+
+    expect({projection: call?.options?.projection, labelled: 'preview' in row}).toEqual({
+      projection: {_id: 1, createdAt: 1, updatedAt: 1, entryCount: 1},
+      labelled: false,
+    });
+  });
+
+  it('labels nothing on a plain list even where the collection answered with the entries anyway', async () => {
+    const entries = [{role: 'user', content: 'hello', timestamp: new Date(START).toISOString()}];
+    const ignoring = [
+      {_id: 's1', createdAt: new Date(START), updatedAt: new Date(START), entryCount: 1, entries},
+    ] as unknown as MongoSessionDocument[];
+    const store = new MongoSessionStore({collection: recordingCollection([], ignoring)});
+
+    const [row] = await store.listFor('u1');
+
+    expect('preview' in row).toBe(false);
   });
 
   it('keeps a conversation tied on updatedAt rather than dropping it across a page boundary', async () => {
