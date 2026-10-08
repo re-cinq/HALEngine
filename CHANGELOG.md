@@ -8,6 +8,16 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-08
+
+**Upgrading from 0.5.x.** Nothing is removed, and the new features are off until you turn them on. Two of them need an action on an existing MongoDB install, and three things an existing consumer observes change. Check these before you bump:
+
+- **Create the index `{userId: 1, updatedAt: -1, _id: -1}`**, replacing the `{userId: 1, updatedAt: -1}` form 0.5.0 asked for, and **do it before or alongside the upgrade rather than after** if you use `resume: {latest: true}`. Nothing breaks without it, but `latestFor` now breaks its tie by `_id` and so sorts on two keys: under the old index it examines every conversation the user has to answer with one — measured, 300 instead of 1 — on every connect that names no session id. Under the new index that answer comes from the index alone. The same index is what keeps a conversation list's page bounded to the page. `docs/session-stores.md` § Latest session has the command; creating it is safe at any time, and you can add it before dropping the old one.
+- **Backfill `entryCount`** on documents written by an earlier version, or they list as conversations of no entries. `docs/session-stores.md` § Listing a user's conversations carries the one-line command. Harmless to skip until you serve a list.
+- Which of two conversations saved in the same millisecond a resume rejoins can change: `MongoSessionStore.latestFor` now breaks that tie by `_id` so that it and `listFor` agree on which is newest.
+- One new `warn` line, the first time any client names a `?sessionId=` while `transport.resume` is off. An install running resume off with clients that append a session id will see it once per engine. It fires whether or not you enable anything new here.
+- Writing your own `SessionStore` or `CollectionLike`: `listFor` is now always called with a `preview` key, and the projection type admits `{$slice: number}`. Neither breaks an existing implementation — see § Changed below for why.
+
 ### Added
 
 - `SessionStore.listFor(userId, options?)`, an optional store member that answers the summaries of a user's conversations — `sessionId`, `createdAt`, `updatedAt` and `entryCount` — most recent activity first, so a consumer can build a conversation list instead of only rejoining one. The engine serves it over the WebSocket when `transport.history` is on, below; a consumer holding the store can also call it directly. `InMemorySessionStore` and `MongoSessionStore` both implement it; a store of your own may leave it out. A summary never carries a conversation's entries or its credentials. Page with `limit` (50 by default, 200 at most, and `0` answers nothing) and `before`, which takes the last summary you saw: the cursor carries both `updatedAt` and `sessionId`, so two conversations saved in the same millisecond cannot straddle a page boundary and go unlisted. See `docs/session-stores.md` § Listing a user's conversations.
