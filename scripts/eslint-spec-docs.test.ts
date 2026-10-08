@@ -80,7 +80,7 @@ describe('the spec and ADR document lint guardrails', () => {
     ]);
   });
 
-  // Nor with one whose line sits above the first it(): line 1 of a test file is an import.
+  // Nor with one whose line sits outside every declaration in the file it names.
   it('a spec whose only link points at a line holding no test is told to set "Draft"', () => {
     expect(reLintMessages(results, `ungrounded-line${sep}spec.md`)).toMatchObject([
       {
