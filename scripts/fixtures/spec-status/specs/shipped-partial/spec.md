@@ -11,5 +11,5 @@ leg after dusk.
 ## The rule
 
 - The ferry leaves on the hour whatever the tide
-  ([validated by](../../../../../src/orchestration/chatOrchestrator.test.ts#L14)).
+  ([validated by](../../../../../src/orchestration/chatOrchestrator.test.ts)).
 - The spare lamp is lit before the return leg and never during the crossing.

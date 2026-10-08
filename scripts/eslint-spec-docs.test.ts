@@ -10,6 +10,8 @@ const lint = (): LintResult[] =>
     `${fixtureDir}/specs/untagged/spec.md`,
     `${fixtureDir}/specs/unreadable-status/spec.md`,
     `${fixtureDir}/specs/shipped-partial/spec.md`,
+    `${fixtureDir}/specs/stale-link/spec.md`,
+    `${fixtureDir}/specs/ungrounded-line/spec.md`,
     `${fixtureDir}/specs/in-progress/spec.md`,
     `${fixtureDir}/specs/in-review-partial/spec.md`,
     `${fixtureDir}/specs/accepted-partial/spec.md`,
@@ -63,6 +65,27 @@ describe('the spec and ADR document lint guardrails', () => {
         ruleId: 're-lint/require-status-matches-coverage',
         line: 6,
         message: expect.stringContaining('set the status to "In Progress"'),
+      },
+    ]);
+  });
+
+  // A Shipped row cannot be bought with a citation whose test file is gone.
+  it('a spec whose only link names a test file that does not exist buckets draft', () => {
+    expect(reLintMessages(results, `stale-link${sep}spec.md`)).toMatchObject([
+      {
+        ruleId: 're-lint/require-status-matches-coverage',
+        line: 6,
+        message: expect.stringContaining('1 carry a link whose target file or line holds no test'),
+      },
+    ]);
+  });
+
+  // Nor with one whose line sits above the first it(): line 1 of a test file is an import.
+  it('a spec whose only link points at a line holding no test is told to set "Draft"', () => {
+    expect(reLintMessages(results, `ungrounded-line${sep}spec.md`)).toMatchObject([
+      {
+        ruleId: 're-lint/require-status-matches-coverage',
+        message: expect.stringContaining('set the status to "Draft"'),
       },
     ]);
   });

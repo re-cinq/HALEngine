@@ -178,7 +178,12 @@ introduces a spec, its anchors have to be corrected by hand.
 The convention's tooling is wired up here: `npm run check:spec-links`, `npm run check:spec-status` and
 `node scripts/repoint-spec-anchors.mjs --check origin/main` all gate CI, and
 `re-lint/require-status-matches-coverage` derives each `Status` row from its
-spec's citations. `re-lint/require-spec-link` gates in `eslint.config.mjs`: every test cites a
+spec's citations - from the ones that are evidence, since 1.8.0 of the plugin: a citation
+whose file is gone, or whose `#Lnn` lands outside any `it()`/`test()` declaration, counts
+for nothing, so a drifted anchor costs a spec its tier rather than quietly holding it. That
+rule now also carries a fixer that rewrites the `Status` row, so `eslint --fix` run over the
+tree will restate a spec's status for you; no CI job here runs one.
+`re-lint/require-spec-link` gates in `eslint.config.mjs`: every test cites a
 statement, so an uncited new test fails the build. Its statement-side mirror,
 `require-statement-links`, runs at `warn` from `eslint.config.backlog.mjs` and
 reports without blocking - the severities the rule pair is designed for.
