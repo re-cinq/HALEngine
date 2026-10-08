@@ -159,9 +159,12 @@ carries a limit, so Mongo bounds it to the page rather than materialising the hi
 conversations of 600 KB each still answered a 200-row page without hitting the 100 MB sort cap.
 
 `latestFor` needs the same index for a second reason: since 0.6.0 it breaks its tie by `_id`, so it
-sorts on the same two keys a list does. Under the old two-key index it examines every conversation
-the user has to answer with one; under the three-key index the answer comes from the index alone,
-examining no documents at all.
+sorts on the same two keys a list does. It asks two questions — which conversation is newest, and
+then what that conversation holds — and only the first is sorted. That first query projects `_id`
+alone, so the three-key index covers it and answers which one is newest examining no documents at
+all; under the old two-key index it examines every conversation the user has to answer with one.
+Either way the session itself is then read by `_id`, through the store's cache, which is one document
+and no sort.
 
 It answers a `limit` of `0` without querying at all, because MongoDB reads `limit: 0` as *no* limit
 and would otherwise hand back everything the filter matches. It counts a conversation from an
