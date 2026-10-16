@@ -62,6 +62,31 @@ describe('createBedrockProvider', () => {
       });
     });
 
+    it('sends a tool_use block carrying signature sig-1 to Bedrock as a toolUse without it', async () => {
+      mockSend.mockResolvedValue({});
+
+      await collectChunks(
+        provider().sendMessage({
+          messages: [
+            {role: 'user', content: 'look it up'},
+            {
+              role: 'assistant',
+              content: [{type: 'tool_use', toolUseId: 't1', name: 'lookup', input: {q: 'x'}, signature: 'sig-1'}],
+            },
+            {role: 'user', content: [{type: 'tool_result', toolUseId: 't1', content: 'found'}]},
+          ],
+          systemPrompt: 'test',
+        })
+      );
+
+      const [[command]] = mockSend.mock.calls;
+      const {input} = command as {input: {messages: unknown[]}};
+      expect(input.messages[1]).toStrictEqual({
+        role: 'assistant',
+        content: [{toolUse: {toolUseId: 't1', name: 'lookup', input: {q: 'x'}}}],
+      });
+    });
+
     it('calls client.send with the command alone when no signal is given', async () => {
       mockSend.mockResolvedValue({});
 

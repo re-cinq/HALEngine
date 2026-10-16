@@ -359,6 +359,7 @@ Here is what the message handler does when a tool call comes through:
 
 ### Across rounds
 
+- A tool call's `signature`, an opaque token its provider needs back, is copied onto its `tool_use` block for the next round, and a call without one gets no `signature` key ([validated by: puts sig-1 on the signed call's tool_use block and no signature key on the unsigned one](../../src/orchestration/orchestratorHelpers.test.ts#L29)).
 - A call to a tool name the model invented is answered rather than raised, with a result naming it and the registered tools, and the turn goes on ([validated by: answers a call to a tool name the model invented, and the turn goes on to its answer](../../src/orchestration/chatOrchestrator.test.ts#L757)).
 - So is a call whose executor throws: it gets a result saying the call failed, its message reaches only the log, as [tool-executor-throw](../hal-engine-tool-executor-throw/spec.md) specifies, and the turn goes on ([validated by: answers a call whose executor threw, and the turn goes on to its answer with afterModelResponse and no onError](../../src/orchestration/chatOrchestrator.test.ts#L768)).
 - The loop ends as soon as a round stops with `end_turn`, and nothing further is asked of the provider ([validated by: stops after one round when nothing asked for a tool](../../src/orchestration/chatOrchestrator.test.ts#L501)).
