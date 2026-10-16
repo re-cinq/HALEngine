@@ -25,6 +25,7 @@ export function buildToolCallMessages(pendingToolCalls: ToolCall[]): Message {
       toolUseId: tc.id,
       name: tc.name,
       input: tc.input,
+      ...(tc.signature === undefined ? {} : {signature: tc.signature}),
     })),
   };
 }

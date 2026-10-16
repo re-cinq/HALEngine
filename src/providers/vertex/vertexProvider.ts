@@ -15,6 +15,7 @@ import type {
   SendMessageParams,
   StructuredOutputParams,
   ResponseSchema,
+  ToolCallContent,
   UsageMetadata,
 } from '../../types/ai.js';
 import {log} from '../../shared/logger.js';
@@ -149,6 +150,9 @@ function ignoreRejection(): undefined {
   return undefined;
 }
 
+// @google-cloud/vertexai 1.10.4 leaves it undeclared, though the API sends it beside functionCall and reads it back there.
+type SignedFunctionCallPart = FunctionCallPart & {thoughtSignature?: unknown};
+
 // A part can carry text and a function call at once, so it maps to 0, 1 or 2 chunks.
 function* partChunks(parts: Part[]): Generator<MessageChunk> {
   for (const part of parts) {
@@ -157,17 +161,25 @@ function* partChunks(parts: Part[]): Generator<MessageChunk> {
     }
 
     if ('functionCall' in part) {
-      const fc = (part as FunctionCallPart).functionCall;
+      const signed = part as SignedFunctionCallPart;
+      const fc = signed.functionCall;
       yield {
         type: 'tool_use',
         toolCall: {
           id: fc.name,
           name: fc.name,
           input: (fc.args ?? {}) as Record<string, unknown>,
+          ...signatureOf(signed),
         },
       };
     }
   }
+}
+
+// No key at all for a call that came unsigned, so nothing is invented on the way back.
+function signatureOf(part: SignedFunctionCallPart): {signature?: string} {
+  const {thoughtSignature} = part;
+  return typeof thoughtSignature === 'string' ? {signature: thoughtSignature} : {};
 }
 
 function buildRequest(params: SendMessageParams): GenerateContentRequest {
@@ -197,14 +209,7 @@ function mapMessage(m: Message): Content {
   }
 
   const parts = m.content.map(block => {
-    if (block.type === 'tool_use') {
-      return {
-        functionCall: {
-          name: block.name,
-          args: block.input,
-        },
-      };
-    }
+    if (block.type === 'tool_use') return functionCallPart(block);
     return {
       functionResponse: {
         name: block.toolUseId,
@@ -214,6 +219,14 @@ function mapMessage(m: Message): Content {
   });
 
   return {role: m.role === 'assistant' ? 'model' : 'user', parts};
+}
+
+// Gemini 3 refuses a turn's next request when a call it signed comes back without that signature.
+function functionCallPart(block: ToolCallContent): SignedFunctionCallPart {
+  return {
+    functionCall: {name: block.name, args: block.input},
+    ...(block.signature === undefined ? {} : {thoughtSignature: block.signature}),
+  };
 }
 
 function extractUsage(response: GenerateContentResponse): UsageMetadata | undefined {

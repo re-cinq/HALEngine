@@ -8,6 +8,14 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+### Added
+
+- `ToolCall.signature` and `ToolCallContent.signature`: an optional, opaque token a provider attached to a tool call and needs back in the turn's next request. The orchestrator copies it from the call onto that call's `tool_use` block. A custom provider that never sets it is unaffected, and its message mapper can ignore it.
+
+### Fixed
+
+- **Gemini 3 tool calls on Vertex.** Gemini 3 models attach a `thoughtSignature` to each function call, and Google documents that the turn's next request is refused with a `400` when a call comes back without it. The Vertex provider dropped it, so on a Gemini 3 model a turn that ran a tool could not reach its answer. The signature now rides on the `tool_use` chunk as `toolCall.signature` and goes back on that call's `functionCall` part exactly as it arrived; a call that came without one goes back without one. Calls from earlier turns are rebuilt from session history without a signature, which the API allows. Gemini 2.5 models, Bedrock and the mock are unaffected.
+
 ## [0.6.0] - 2026-10-08
 
 **Upgrading from 0.5.x.** Nothing is removed, and the new features are off until you turn them on. Two of them need an action on an existing MongoDB install, and three things an existing consumer observes change. Check these before you bump:

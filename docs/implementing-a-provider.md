@@ -34,6 +34,11 @@ tool. A vendor that marks tool calls structurally rather than through its finish
 reason, as Vertex does, needs the value derived from the `tool_use` chunks the
 provider yielded.
 
+A vendor that attaches a token to a tool call and needs it back in the turn's next
+request, as Gemini 3 does with `thoughtSignature`, puts it on `toolCall.signature`.
+The orchestrator returns it on that call's `tool_use` block, and the provider sends
+it back exactly as it came: nothing for a call that came without one.
+
 `generateStructured` is required, not optional — returning `null` or `undefined`
 silently breaks orchestration. Until it is implemented it must keep throwing
 `AIError` with a descriptive message.

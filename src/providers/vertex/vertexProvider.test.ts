@@ -108,6 +108,19 @@ describe('createVertexProvider', () => {
       ]);
     });
 
+    it("carries a function-call part's thoughtSignature sig-1 onto its tool_use chunk", async () => {
+      mockGenerateContentStream.mockResolvedValue(
+        streamResult([{candidates: [{content: {parts: [{...CALL, thoughtSignature: 'sig-1'}]}, finishReason: 'STOP'}]}])
+      );
+
+      const [first] = await collectChunks(createVertexProvider(defaultConfig).sendMessage(userMessage('look it up')));
+
+      expect(first).toStrictEqual({
+        type: 'tool_use',
+        toolCall: {id: 'lookup', name: 'lookup', input: {query: 'status'}, signature: 'sig-1'},
+      });
+    });
+
     it('maps MAX_TOKENS finish reason', async () => {
       mockGenerateContentStream.mockResolvedValue(
         streamResult([{candidates: [{content: {parts: [{text: 'truncated'}]}, finishReason: 'MAX_TOKENS'}]}])
