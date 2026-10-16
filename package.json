@@ -108,7 +108,7 @@
     "eslint": "^10.10.0",
     "jest": "^30.5.1",
     "jscpd": "^5.2.0",
-    "mongodb": "^6.21.0",
+    "mongodb": "^7.7.0",
     "mongodb-memory-server": "^10.4.3",
     "prettier": "^3.9.6",
     "supertest": "^7.0.0",
