@@ -8,13 +8,17 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-16
+
+**Upgrading from 0.6.0.** Nothing to do. If you run Vertex on a Gemini 3 model, this release is what lets a tool-using turn reach its answer: 0.6.0 sends each tool call back without its thought signature, and Gemini 3 refuses that request with a `400`.
+
 ### Added
 
 - `ToolCall.signature` and `ToolCallContent.signature`: an optional, opaque token a provider attached to a tool call and needs back in the turn's next request. The orchestrator copies it from the call onto that call's `tool_use` block. A custom provider that never sets it is unaffected, and its message mapper can ignore it.
 
 ### Fixed
 
-- **Gemini 3 tool calls on Vertex.** Gemini 3 models attach a `thoughtSignature` to each function call, and Google documents that the turn's next request is refused with a `400` when a call comes back without it. The Vertex provider dropped it, so on a Gemini 3 model a turn that ran a tool could not reach its answer. The signature now rides on the `tool_use` chunk as `toolCall.signature` and goes back on that call's `functionCall` part exactly as it arrived; a call that came without one goes back without one. Calls from earlier turns are rebuilt from session history without a signature, which the API allows. Gemini 2.5 models, Bedrock and the mock are unaffected.
+- **Gemini 3 tool calls on Vertex.** Gemini 3 models attach a `thoughtSignature` to each function call and refuse the turn's next request with a `400` when a call comes back without it, as measured on `gemini-3.1-flash-lite` (re-cinq/HALEngine#163). The Vertex provider dropped it, so on a Gemini 3 model a turn that ran a tool could not reach its answer. The signature now rides on the `tool_use` chunk as `toolCall.signature` and goes back on that call's `functionCall` part exactly as it arrived; a call that came without one goes back without one. Calls from earlier turns are rebuilt from session history without a signature, which the API allows. Gemini 2.5 models, Bedrock and the mock are unaffected.
 
 ## [0.6.0] - 2026-10-08
 
@@ -342,7 +346,9 @@ path from `0.1.0` on the registry — only from the git specifier.
 - Resolved a high-severity advisory in `ws`, a direct runtime dependency. The full dependency audit went
   from 18 advisories (1 critical, 6 high) to 3 (2 moderate, 1 low), none at high or above.
 
-[Unreleased]: https://github.com/re-cinq/HALEngine/compare/v0.5.0...main
+[Unreleased]: https://github.com/re-cinq/HALEngine/compare/v0.6.1...main
+[0.6.1]: https://github.com/re-cinq/HALEngine/releases/tag/v0.6.1
+[0.6.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.6.0
 [0.5.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.5.0
 [0.4.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.4.0
 [0.3.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.3.0
