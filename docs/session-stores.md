@@ -6,14 +6,14 @@ getting it wrong either destroys a customer's history or fails to honour their e
 
 ## Erases or evicts
 
-| Method                         | Cache             | Durable storage                                                          |
-| ------------------------------ | ----------------- | ------------------------------------------------------------------------ |
-| `delete(sessionId)`            | evicts            | **erases** — the consumer's erasure primitive; the engine never calls it |
-| `clear()`                      | evicts everything | untouched                                                                |
-| `evict(sessionId)`             | evicts            | **erases** — the engine's own call, for a session no client received     |
-| `eraseConversation(sessionId)` | evicts            | **erases that document, permanently**                                    |
-| `eraseOlderThan(cutoff)`       | evicts            | **erases every document created before `cutoff`**                        |
-| `eraseAll()`                   | evicts everything | **erases every document**                                                |
+| Method | Cache | Durable storage |
+|---|---|---|
+| `delete(sessionId)` | evicts | **erases** — the consumer's erasure primitive; the engine never calls it |
+| `clear()` | evicts everything | untouched |
+| `evict(sessionId)` | evicts | **erases** — the engine's own call, for a session no client received |
+| `eraseConversation(sessionId)` | evicts | **erases that document, permanently** |
+| `eraseOlderThan(cutoff)` | evicts | **erases every document created before `cutoff`** |
+| `eraseAll()` | evicts everything | **erases every document** |
 
 `delete` is the interface's own member and the engine never calls it, so `MongoSessionStore`
 implements it as a durable deletion — the same thing `eraseConversation` does, reachable by a
@@ -120,7 +120,6 @@ document that has the newest `updatedAt`, which each `save` moves forward, so cr
 where the collection lives; the store creates none itself:
 
 <!-- doc-block: none -- a mongo shell command run against the deployment, not code the package ships -->
-
 ```js
 db.hal_sessions.createIndex({userId: 1, updatedAt: -1, _id: -1});
 ```
@@ -194,10 +193,10 @@ conversations, not this user's, and there is no per-user total today.
 the entries away, so a page of summaries never carries a conversation out of the database.
 
 **Create the three-key index from § Latest session.** `{userId: 1, updatedAt: -1}` cannot satisfy a
-two-key sort, so Mongo answers with a blocking sort over _every_ conversation the user has and
+two-key sort, so Mongo answers with a blocking sort over *every* conversation the user has and
 applies the limit after it: measured on 300 conversations, a 50-row page examined all 300 documents,
 where the three-key index made the same page an indexed sort examining exactly the 50 it returns. The
-index does not _cover_ the query — `createdAt` and `entryCount` are not in it, so Mongo still fetches
+index does not *cover* the query — `createdAt` and `entryCount` are not in it, so Mongo still fetches
 each row it answers with — and that is the point: with it, the work is the page; without it, the work
 is the history, so paging a long history that way is quadratic. It crawls rather than fails: the sort
 carries a limit, so Mongo bounds it to the page rather than materialising the history — measured, 400
@@ -211,13 +210,12 @@ all; under the old two-key index it examines every conversation the user has to 
 Either way the session itself is then read by `_id`, through the store's cache, which is one document
 and no sort.
 
-It answers a `limit` of `0` without querying at all, because MongoDB reads `limit: 0` as _no_ limit
+It answers a `limit` of `0` without querying at all, because MongoDB reads `limit: 0` as *no* limit
 and would otherwise hand back everything the filter matches. It counts a conversation from an
 `entryCount` field each `save` writes beside the entries. A document saved before 0.6 has no such
 field and lists as a conversation of no entries until you backfill it:
 
 <!-- doc-block: none -- a mongo shell command run against the deployment, not code the package ships -->
-
 ```js
 db.hal_sessions.updateMany({entryCount: {$exists: false}}, [{$set: {entryCount: {$size: '$entries'}}}]);
 ```
