@@ -12,7 +12,6 @@ import type {ChatOrchestrator} from '../../orchestration/chatOrchestrator.js';
 import type {SessionStore} from '../../types/sessionStore.js';
 import type {AuthenticatedRequest, HttpAuthMiddleware} from '../../types/auth.js';
 import type {AuthenticatedUser} from '../../types/session.js';
-import {AIError} from '../../types/ai.js';
 import {log} from '../../shared/logger.js';
 import type {ChatSession, SessionEntry} from '../../types/session.js';
 
@@ -94,36 +93,28 @@ export function createChatRoutes(
     };
     chat.messages.push(userMessage);
 
-    try {
-      const session: ChatSession = {
-        sessionId: chat.id,
-        userId: chat.userId,
-        workspaceId: chat.workspaceId,
-        authHeaders: {
-          cookie: req.headers.cookie,
-          authorization: req.headers.authorization,
-          host: (req.headers['x-forwarded-host'] as string) || req.headers.host,
-        },
-        entries: chatMessagesToEntries(chat.messages),
-      };
+    const session: ChatSession = {
+      sessionId: chat.id,
+      userId: chat.userId,
+      workspaceId: chat.workspaceId,
+      authHeaders: {
+        cookie: req.headers.cookie,
+        authorization: req.headers.authorization,
+        host: (req.headers['x-forwarded-host'] as string) || req.headers.host,
+      },
+      entries: chatMessagesToEntries(chat.messages),
+    };
 
-      const aiContent = await orchestrator.processMessage(session);
-      const assistantMessage: ChatMessage = {
-        id: randomUUID(),
-        role: 'assistant',
-        content: aiContent,
-        timestamp: new Date().toISOString(),
-      };
-      chat.messages.push(assistantMessage);
+    const aiContent = await orchestrator.processMessage(session);
+    const assistantMessage: ChatMessage = {
+      id: randomUUID(),
+      role: 'assistant',
+      content: aiContent,
+      timestamp: new Date().toISOString(),
+    };
+    chat.messages.push(assistantMessage);
 
-      res.status(201).json({userMessage, assistantMessage});
-    } catch (error) {
-      if (error instanceof AIError) {
-        res.status(502).json({error: 'AI service temporarily unavailable'});
-        return;
-      }
-      throw error;
-    }
+    res.status(201).json({userMessage, assistantMessage});
   });
 
   return router;
