@@ -8,6 +8,7 @@ import {setLogger} from '../../shared/logger.js';
 import type {ChatOrchestrator} from '../../orchestration/chatOrchestrator.js';
 import type {SessionStore} from '../../types/sessionStore.js';
 import type {ChatSession} from '../../types/session.js';
+import {InMemorySessionStore} from '../../infrastructure/stores/inMemorySessionStore.js';
 
 // Pins the ownership guard, including that a rejected request stops before the route's work.
 
@@ -22,12 +23,13 @@ const harness = () => {
   let user: TestUser | undefined;
   const processMessage = jest.fn<(...args: unknown[]) => Promise<string>>().mockResolvedValue('assistant reply');
   const orchestrator = {processMessage} as unknown as ChatOrchestrator;
+  const sessionStore = new InMemorySessionStore();
 
   const app = express();
   app.use(express.json());
   app.use(
     '/chats',
-    createChatRoutes(orchestrator, {} as SessionStore, (req, _res, next) => {
+    createChatRoutes(orchestrator, sessionStore, (req, _res, next) => {
       if (user) (req as AuthenticatedRequest).user = user;
       next();
     })
@@ -134,6 +136,28 @@ describe('chat routes ownership guard', () => {
       await as(owner).post(`/chats/${id}/messages`).send({content: 'hi'});
 
       expect(seen[0]?.workspaceId).toBe('w-9');
+    });
+
+    it('calls sessionStore.create with the new chat id and user id', async () => {
+      const store = new InMemorySessionStore();
+      const app = express();
+      app.use(express.json());
+      app.use(
+        '/chats',
+        createChatRoutes({} as unknown as ChatOrchestrator, store, (req, _res, next) => {
+          (req as AuthenticatedRequest).user = ALICE;
+          next();
+        })
+      );
+
+      const response = await request(app).post('/chats').send({});
+      const {id} = response.body as {id: string};
+      const stored = store.get(id) as ChatSession | undefined;
+
+      expect({status: response.status, stored: {sessionId: stored?.sessionId, userId: stored?.userId}}).toEqual({
+        status: 201,
+        stored: {sessionId: id, userId: ALICE.id},
+      });
     });
   });
 

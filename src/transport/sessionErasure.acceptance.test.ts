@@ -1,24 +1,21 @@
-import {jest} from '@jest/globals';
 import express from 'express';
 import request from 'supertest';
-import type {WebSocket} from 'ws';
 import {MongoSessionStore} from '../infrastructure/stores/mongo/mongoSessionStore.js';
 import {
-  mongoCollection,
   freshCollection,
+  fakeCollection,
   startMongo,
   MONGO_START_MS,
+  type MongoHarness,
 } from '../infrastructure/stores/mongo/mongoTestSupport.js';
 import {createChatRoutes} from './routes/chats.js';
 import {startEngineWith, askOnOpen, announcedId, stopEngines, deferred} from './wsTestSupport.js';
 import {createChatOrchestrator} from '../orchestration/chatOrchestrator.js';
-import type {ChatSession, AuthenticatedUser, SessionEntry} from '../types/session.js';
-import type {ChatOrchestrator} from '../orchestration/chatOrchestrator.js';
-import {fakeCollection} from '../infrastructure/stores/mongo/mongoTestSupport.js';
+import type {ChatSession, SessionEntry} from '../types/session.js';
 
 describe('conversation erasure', () => {
-  let harness: any;
-  let collection: any;
+  let harness: MongoHarness;
+  let collection: ReturnType<typeof freshCollection>;
 
   beforeAll(async () => {
     harness = await startMongo();
@@ -45,11 +42,8 @@ describe('conversation erasure', () => {
     session.entries.push({role: 'user', content: 'hello', timestamp: new Date().toISOString()});
     await store.save(session);
 
-    const count = await store.count();
-    expect(count).toBe(0);
-
-    const doc = await store.get('session1');
-    expect(doc).toBeUndefined();
+    const [count, doc] = await Promise.all([store.count(), store.get('session1')]);
+    expect({count, doc}).toEqual({count: 0, doc: undefined});
   });
 
   it('create with createdAt back-dated past a cutoff, eraseOlderThan(cutoff), then save of the held session: no document is written', async () => {
@@ -136,18 +130,20 @@ describe('conversation erasure', () => {
     );
 
     const res = await request(app).post('/chats').send({});
-    expect(res.status).toBe(201);
-    const chatId = res.body.id;
+    const chatId = (res.body as {id: string}).id;
 
     await request(app).post(`/chats/${chatId}/messages`).send({content: 'hello'});
-
-    expect(await store.count()).toBe(1);
+    const countAfterFirst = await store.count();
 
     await store.eraseConversation(chatId);
-
     await request(app).post(`/chats/${chatId}/messages`).send({content: 'hello 2'});
+    const countAfterErase = await store.count();
 
-    expect(await store.count()).toBe(0);
+    expect({status: res.status, countAfterFirst, countAfterErase}).toEqual({
+      status: 201,
+      countAfterFirst: 1,
+      countAfterErase: 0,
+    });
   });
 
   it('A live session created after the cutoff is the same object from get before and after eraseOlderThan', async () => {
@@ -175,10 +171,18 @@ describe('conversation erasure', () => {
     const session = {sessionId: 's1'} as ChatSession;
     store['cache'].set('s1', session);
 
-    await expect(store.eraseOlderThan(new Date())).rejects.toThrow('db failure');
+    let thrownMessage: string | undefined;
+    try {
+      await store.eraseOlderThan(new Date());
+    } catch (e) {
+      thrownMessage = (e as Error).message;
+    }
 
-    expect(store['cache'].get('s1')).toBe(session);
-    expect(callCount).toBe(1);
+    expect({thrownMessage, cached: store['cache'].get('s1'), callCount}).toEqual({
+      thrownMessage: 'db failure',
+      cached: session,
+      callCount: 1,
+    });
   });
 
   it('A get racing an erasure of the same id never leaves the erased session cached', async () => {

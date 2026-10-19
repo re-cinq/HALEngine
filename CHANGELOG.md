@@ -8,6 +8,10 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Erased conversations no longer resurrect.** `MongoSessionStore.save` is now an update rather than an upsert: it writes to an existing document and does nothing when the document is gone. A `ChatSession` a live socket holds after `eraseConversation` or `eraseOlderThan` can no longer re-insert itself on the next turn. **Migration note:** a caller that invokes `save` for a session id it never called `create` for will find that `save` now writes nothing where it previously inserted.
+
 ## [0.6.1] - 2026-10-16
 
 **Upgrading from 0.6.0.** Nothing to do. If you run Vertex on a Gemini 3 model, this release is what lets a tool-using turn reach its answer: 0.6.0 sends each tool call back without its thought signature, and Gemini 3 refuses that request with a `400`.
