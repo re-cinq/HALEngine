@@ -8,13 +8,15 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
-**Upgrading.** Two HTTP behaviours change; nothing on the WebSocket does:
+**Upgrading.** Three behaviours change, two on HTTP and one in `ToolRegistry`; nothing on the WebSocket does:
 
 - **Error responses are JSON, never HTML.** An error a route throws, with no `errorHandler` of yours answering it, used to reach Express's default page: `text/html` with the stack trace unless `NODE_ENV=production`. It now answers `{"error": "<fixed sentence>"}`. A client that parsed the HTML page gets JSON instead.
+- **`ToolRegistry.register` refuses a name already registered.** A second `register` under a taken name used to replace the first tool silently; it now throws `Duplicate tool name: <name>` and keeps the first. Code that re-registered a name on purpose must give the tools distinct names; there is no replacement API.
 - **`POST {basePath}/chats/:id/messages` answers provider conditions with their own status.** `RATE_LIMITED` moves from 502 to 429, `SERVICE_UNAVAILABLE` to 503 and `TIMEOUT` to 504. Every other `AIError` code still answers 502 with the same body.
 
 ### Changed
 
+- `ToolRegistry.register` throws `Duplicate tool name: <name>` for a name already registered, checked against the name a definition resolves to at registration, and leaves the first tool as it was. See `specs/hal-engine-duplicate-tool-name/spec.md`.
 - `createApp` always registers a default error handler, after your `errorHandler` if you supply one. It answers by the first rule that applies: an explicit `status` or `statusCode` in 400–599 with a standard phrase answers that status with Node's phrase; an `AIError` answers 429, 503 or 504 for `RATE_LIMITED`, `SERVICE_UNAVAILABLE` or `TIMEOUT` and 502 for any other code; anything else answers 500 `Internal Server Error`. No body carries the error's message or stack.
 - Every error it handles is logged once at `error` level as `{method, path, status, code, message, stack}`, with `path` taken without its query string. A provider's message can echo request content, so treat that line like any log of request data.
 - A response your own `errorHandler` writes is never overridden. One that calls `next(err)` or throws lands on the default. After a route has written part of a response, nothing more is written and Express destroys the socket, as before.

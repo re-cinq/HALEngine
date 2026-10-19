@@ -313,3 +313,40 @@ function recordLog(): {info: LoggedLine[]; warn: LoggedLine[]; error: LoggedLine
   setLogger({debug: into(), info: into('info'), warn: into('warn'), error: into('error')});
   return lines;
 }
+
+describe('ToolRegistry.register — a name already registered', () => {
+  const weather = {name: 'get_weather', description: 'Returns the weather.', inputSchema: {type: 'object'}};
+
+  it('throws Duplicate tool name: get_weather on the second register and keeps the first tool and its executor', async () => {
+    const registry = new ToolRegistry();
+    registry.register(weather, async () => 'first');
+
+    const thrown = (() => {
+      try {
+        registry.register({...weather, description: 'A second weather tool.'}, async () => 'second');
+        return undefined;
+      } catch (error) {
+        return error;
+      }
+    })();
+    const answer = await registry.execute('get_weather', {});
+
+    expect({thrown, definitions: registry.getDefinitions(), result: answer.result}).toEqual({
+      thrown: new Error('Duplicate tool name: get_weather'),
+      definitions: [weather],
+      result: 'first',
+    });
+  });
+
+  it('throws for a definition function that resolves to get_weather once a plain definition holds that name', () => {
+    const registry = new ToolRegistry();
+    registry.register(weather, async () => 'first');
+
+    expect(() =>
+      registry.register(
+        () => ({...weather}),
+        async () => 'second'
+      )
+    ).toThrow(new Error('Duplicate tool name: get_weather'));
+  });
+});
