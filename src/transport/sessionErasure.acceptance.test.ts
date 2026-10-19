@@ -9,12 +9,24 @@ import {
   type MongoHarness,
 } from '../infrastructure/stores/mongo/mongoTestSupport.js';
 import {createChatRoutes} from './routes/chats.js';
-import {startEngineWith, askOnOpen, announcedId, stopEngines, deferred} from './wsTestSupport.js';
+import {startEngineWith, askOnOpen, announcedId, stopEngines} from './wsTestSupport.js';
+import type {WebSocket} from 'ws';
 import {createChatOrchestrator} from '../orchestration/chatOrchestrator.js';
+import {answering, writeSignalPromptBuilder} from '../infrastructure/writeSignalTestSupport.js';
 import type {ChatSession, SessionEntry} from '../types/session.js';
-import type {AIProvider} from '../types/ai.js';
-import type {PromptBuilder} from '../infrastructure/builders/promptBuilder.js';
 import type {AuthenticatedRequest} from '../types/auth.js';
+
+// The first frame or event that ends the client's next turn, so a turn that failed cannot pass for one that ran.
+function nextTurnEnd(client: WebSocket): Promise<string> {
+  return new Promise(resolve => {
+    client.on('message', raw => {
+      const {type} = JSON.parse(raw.toString()) as {type: string};
+      if (type === 'stream_end' || type === 'error') resolve(type);
+    });
+    client.on('close', () => resolve('close'));
+    client.on('error', () => resolve('socket error'));
+  });
+}
 
 describe('conversation erasure', () => {
   let harness: MongoHarness;
@@ -67,60 +79,35 @@ describe('conversation erasure', () => {
 
   it('GDPR. Over a real socket: a turn, an erasure, a second turn, and the conversation stays erased', async () => {
     const sessionStore = getStore();
-    const provider = {
-      complete: async () => 'hello back',
-      completeStream: async function* () {
-        yield {type: 'text', text: 'hello back'};
-        yield {type: 'stop', stopReason: 'end_turn'};
-      },
-    };
-    const orchestrator = createChatOrchestrator(
-      provider as unknown as AIProvider,
-      {build: (sess: ChatSession) => sess.entries} as unknown as PromptBuilder,
-      undefined,
-      {sessionStore}
-    );
-    const {url, hal: _hal} = await startEngineWith({sessionStore, orchestrator});
+    const orchestrator = createChatOrchestrator(answering('hello back'), writeSignalPromptBuilder, undefined, {
+      sessionStore,
+    });
+    const {url} = await startEngineWith({sessionStore, orchestrator});
 
     const {client, finished} = askOnOpen(url, {until: 'stream_end', token: 'token1'});
     const id = announcedId(client);
     await finished;
     const sessionId = id();
+    const storedAfterFirstTurn = (await sessionStore.get(sessionId))?.entries.length;
 
-    // Erasure
     await sessionStore.eraseConversation(sessionId);
 
-    // Second turn
-    const turn2 = deferred();
-    client.on('message', rawMsg => {
-      const msg = JSON.parse(rawMsg.toString());
-      if (msg.type === 'stream_end' || msg.type === 'error') {
-        turn2.release();
-      }
-    });
-    client.on('close', () => turn2.release());
-    client.on('error', () => turn2.release());
+    const secondTurn = nextTurnEnd(client);
     client.send(JSON.stringify({type: 'user_message', content: 'second message'}));
-    await turn2.until;
+    const secondTurnEndedWith = await secondTurn;
 
-    const count = await sessionStore.count();
-    expect(count).toBe(0);
+    expect({storedAfterFirstTurn, secondTurnEndedWith, count: await sessionStore.count()}).toEqual({
+      storedAfterFirstTurn: 2,
+      secondTurnEndedWith: 'stream_end',
+      count: 0,
+    });
   });
 
   it('POST /chats then POST /chats/:id/messages stores the chat in the session store, and after its erasure a further message writes nothing', async () => {
     const store = getStore();
-    const provider = {
-      complete: async () => 'assistant reply',
-      completeStream: async function* () {
-        yield {type: 'text', text: 'assistant reply'};
-      },
-    };
-    const orchestrator = createChatOrchestrator(
-      provider as unknown as AIProvider,
-      {build: (sess: ChatSession) => sess.entries} as unknown as PromptBuilder,
-      undefined,
-      {sessionStore: store}
-    );
+    const orchestrator = createChatOrchestrator(answering('assistant reply'), writeSignalPromptBuilder, undefined, {
+      sessionStore: store,
+    });
 
     const app = express();
     app.use(express.json());
@@ -139,18 +126,21 @@ describe('conversation erasure', () => {
     const res = await request(app).post('/chats').send({});
     const chatId = (res.body as {id: string}).id;
 
-    await request(app).post(`/chats/${chatId}/messages`).send({content: 'hello'});
-    const countAfterFirst = await store.count();
+    const first = await request(app).post(`/chats/${chatId}/messages`).send({content: 'hello'});
+    const storedAfterFirst = (await store.get(chatId))?.entries.length;
 
     await store.eraseConversation(chatId);
-    await request(app).post(`/chats/${chatId}/messages`).send({content: 'hello 2'});
+    const second = await request(app).post(`/chats/${chatId}/messages`).send({content: 'hello 2'});
     const countAfterErase = await store.count();
 
-    expect({status: res.status, countAfterFirst, countAfterErase}).toEqual({
-      status: 201,
-      countAfterFirst: 1,
-      countAfterErase: 0,
-    });
+    // One entry, the user's: the REST router keeps the assistant reply in its own map rather than the session.
+    expect({
+      created: res.status,
+      first: first.status,
+      storedAfterFirst,
+      second: second.status,
+      countAfterErase,
+    }).toEqual({created: 201, first: 201, storedAfterFirst: 1, second: 201, countAfterErase: 0});
   });
 
   it('A live session created after the cutoff is the same object from get before and after eraseOlderThan', async () => {
@@ -174,9 +164,7 @@ describe('conversation erasure', () => {
       },
     });
     const store = new MongoSessionStore({collection: fakeColl});
-
-    const session = {sessionId: 's1'} as ChatSession;
-    store['cache'].set('s1', session);
+    const session = await store.create('s1', 'u1');
 
     let thrownMessage: string | undefined;
     try {
@@ -185,9 +173,11 @@ describe('conversation erasure', () => {
       thrownMessage = (e as Error).message;
     }
 
-    expect({thrownMessage, cached: store['cache'].get('s1'), callCount}).toEqual({
+    // The fake findOne answers null, so only a session still cached comes back from get.
+    const cached = await store.get('s1');
+    expect({thrownMessage, stillCached: cached === session, callCount}).toEqual({
       thrownMessage: 'db failure',
-      cached: session,
+      stillCached: true,
       callCount: 1,
     });
   });
