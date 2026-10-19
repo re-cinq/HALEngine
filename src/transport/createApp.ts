@@ -5,6 +5,7 @@ import type {HttpAuthMiddleware} from '../types/auth.js';
 import type {ChatOrchestrator} from '../orchestration/chatOrchestrator.js';
 import type {SessionStore} from '../types/sessionStore.js';
 import {createChatRoutes} from './routes/chats.js';
+import {httpErrorHandler} from './httpErrorHandler.js';
 
 export interface HalAppOptions {
   corsOrigin?: string | string[];
@@ -64,6 +65,9 @@ export function createApp(options: HalAppOptions = {}) {
   if (options.errorHandler) {
     app.use(options.errorHandler);
   }
+
+  // Always last: it answers whatever a consumer's handler passes on, and never Express's HTML page with a stack.
+  app.use(httpErrorHandler);
 
   return app;
 }
