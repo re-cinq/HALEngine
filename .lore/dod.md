@@ -16,11 +16,11 @@
 
 ## Facets
 
-- [ ] Make `MongoSessionStore.save` an update, never an insert: `updateOne(..., {upsert: false})`
+- [x] Make `MongoSessionStore.save` an update, never an insert: `updateOne(..., {upsert: false})`
 - [ ] The REST router (`src/transport/routes/chats.ts`) calls `sessionStore.create` when it creates a chat
-- [ ] Let a consumer tell that a save found nothing
+- [x] Let a consumer tell that a save found nothing
 - [ ] Have `eraseOlderThan` evict only what it erased
-- [ ] Say in the store's doc-block that REST router's next message after an erasure writes nothing
+- [x] Say in the store's doc-block that REST router's next message after an erasure writes nothing
 - [ ] `CHANGELOG.md` carries an entry
 
 ## Out of scope

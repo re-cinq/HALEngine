@@ -11,6 +11,7 @@ import type {CollectionLike, MongoClientLike} from './mongoDriverTypes.js';
 import type {MongoSessionDocument} from './mongoSessionDocument.js';
 import {persistedFields, toChatSession, toLabelledSummary, toSessionSummary} from './mongoSessionDocument.js';
 import {cappedLimit, cursorAt} from '../sessionListWindow.js';
+import {log} from '../../../shared/logger.js';
 
 const DEFAULT_COLLECTION_NAME = 'hal_sessions';
 // Entries are left out so a page of summaries never carries a conversation out of the database.
@@ -108,13 +109,17 @@ export class MongoSessionStore implements SessionStore {
     this.cache.clear();
   }
 
+  // After an erasure the REST router's own Map still answers GET requests; its next message writes nothing here.
   async save(session: ChatSession): Promise<void> {
     const collection = await this.collection();
-    await collection.updateOne(
+    const result = (await collection.updateOne(
       {_id: session.sessionId},
-      {$set: {...persistedFields(session), updatedAt: this.now()}, $setOnInsert: {createdAt: this.now()}},
-      {upsert: true}
-    );
+      {$set: {...persistedFields(session), updatedAt: this.now()}},
+      {upsert: false}
+    )) as {matchedCount?: number} | undefined;
+    if ((result?.matchedCount ?? 0) === 0) {
+      log.warn('session', 'save found no document', {sessionId: session.sessionId});
+    }
   }
 
   /** One query, filtered on the user in the database and sorted on the index `latestFor` already needs. */
