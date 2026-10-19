@@ -8,7 +8,9 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
-**Upgrading.** If you use the Vertex provider, install `@google/genai` (`^2.26.0`) in place of `@google-cloud/vertexai`, which you can uninstall. Nothing in `VertexConfig` changes. Google deprecated `@google-cloud/vertexai` on 2025-06-24 and said it would be unavailable after 2026-06-24; it gets no fixes.
+## [0.8.0] - 2026-10-19
+
+**Upgrading from 0.7.x.** If you use the Vertex provider, install `@google/genai` (`^2.26.0`) in place of `@google-cloud/vertexai`, which you can uninstall. Nothing in `VertexConfig` changes. Google deprecated `@google-cloud/vertexai` on 2025-06-24 and said it would be unavailable after 2026-06-24; it gets no fixes.
 
 ### Changed
 
@@ -385,7 +387,8 @@ path from `0.1.0` on the registry — only from the git specifier.
 - Resolved a high-severity advisory in `ws`, a direct runtime dependency. The full dependency audit went
   from 18 advisories (1 critical, 6 high) to 3 (2 moderate, 1 low), none at high or above.
 
-[Unreleased]: https://github.com/re-cinq/HALEngine/compare/v0.7.0...main
+[Unreleased]: https://github.com/re-cinq/HALEngine/compare/v0.8.0...main
+[0.8.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.8.0
 [0.7.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.7.0
 [0.6.1]: https://github.com/re-cinq/HALEngine/releases/tag/v0.6.1
 [0.6.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.6.0
