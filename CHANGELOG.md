@@ -8,7 +8,9 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
-**Upgrading.** Seven behaviours change: two on HTTP, one in `ToolRegistry` and four on the WebSocket.
+## [0.7.0] - 2026-10-19
+
+**Upgrading from 0.6.x.** Seven behaviours change: two on HTTP, one in `ToolRegistry` and four on the WebSocket. Two `MongoSessionStore` fixes under **Fixed** carry migration notes of their own.
 
 - **Error responses are JSON, never HTML.** An error a route throws, with no `errorHandler` of yours answering it, used to reach Express's default page: `text/html` with the stack trace unless `NODE_ENV=production`. It now answers `{"error": "<fixed sentence>"}`. A client that parsed the HTML page gets JSON instead.
 - **AI provider failures get their own WebSocket error codes.** A provider failure other than rate limiting used to arrive as `SERVER_ERROR`. It now arrives as `SERVICE_UNAVAILABLE`, `TIMEOUT` or `UPSTREAM_ERROR`, matching the HTTP 503, 504 and 502, and `SERVER_ERROR` means only a defect in the engine or your own code. A client keyed on `SERVER_ERROR` for provider handling must re-key; one that treats an unknown code as `SERVER_ERROR`, as the protocol now requires, keeps working.
@@ -374,7 +376,8 @@ path from `0.1.0` on the registry — only from the git specifier.
 - Resolved a high-severity advisory in `ws`, a direct runtime dependency. The full dependency audit went
   from 18 advisories (1 critical, 6 high) to 3 (2 moderate, 1 low), none at high or above.
 
-[Unreleased]: https://github.com/re-cinq/HALEngine/compare/v0.6.1...main
+[Unreleased]: https://github.com/re-cinq/HALEngine/compare/v0.7.0...main
+[0.7.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.7.0
 [0.6.1]: https://github.com/re-cinq/HALEngine/releases/tag/v0.6.1
 [0.6.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.6.0
 [0.5.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.5.0
