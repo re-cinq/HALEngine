@@ -8,6 +8,10 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+### Added
+
+- **`AssistantEntry.persona` and `ChatSession.activePersona`.** Set `session.activePersona` before or during `beforeModelResponse`, and every assistant entry created for that turn carries it as `persona`, on its first `entry_upsert` and in the stored session. It is your own opaque identifier: the engine never resolves or validates it. It must not carry personal data, since it is persisted, replayed and logged wherever the session is, and a named persona does not replace the AI disclosure. Leave `activePersona` unset and assistant entries are exactly as before, with no `persona` key. Thinking and tool entries are never stamped, and an entry a tool supplies keeps what the tool set. See `specs/hal-engine-websocket-protocol/spec.md` § 6.2.
+
 ## [0.8.0] - 2026-10-19
 
 **Upgrading from 0.7.x.** If you use the Vertex provider, install `@google/genai` (`^2.26.0`) in place of `@google-cloud/vertexai`, which you can uninstall. Nothing in `VertexConfig` changes. Google deprecated `@google-cloud/vertexai` on 2025-06-24 and said it would be unavailable after 2026-06-24; it gets no fixes.

@@ -224,6 +224,7 @@ beforeSession → beforeUserInput → afterUserInput → beforeModelResponse →
 - `beforeUserInput` can modify that message by returning a different string ([validated by: modifies user message when returning different value](../../src/orchestration/chatOrchestrator.test.ts#L214)).
 - `afterUserInput` receives the message as `beforeUserInput` left it, not as the client sent it ([validated by: receives user message after any beforeUserInput modification](../../src/orchestration/chatOrchestrator.test.ts#L229)).
 - `beforeModelResponse` can replace the system prompt, for example loading it from a `PromptStore` ([validated by: replaces system prompt with returned value](../../src/orchestration/chatOrchestrator.test.ts#L246)).
+- `beforeModelResponse` can also set `session.activePersona`, and every assistant entry created for that turn carries it, since the hook runs before the first one exists ([validated by: stamps 'p-two' when beforeModelResponse changes the session's activePersona from 'p-one' mid-turn](../../src/transport/ws/assistantPersona.test.ts#L99)).
 - `afterModelResponse` receives the collected response text and the usage the provider reported ([validated by: receives collected response text and usage](../../src/orchestration/chatOrchestrator.test.ts#L261)).
 - `afterModelResponse` does not run when the stream throws, so it never reports a response that was not delivered ([validated by: not called when stream throws](../../src/orchestration/chatOrchestrator.test.ts#L281)).
 - `onError` receives the session and the error ([validated by: called with session and error when stream fails](../../src/orchestration/chatOrchestrator.test.ts#L303)).
@@ -389,7 +390,7 @@ The parser is stateful and handles partial tags at chunk boundaries. For example
 The message handler routes these segments to different entries:
 
 - `thinking` segments go into a `ThinkingEntry` (collapsible in the UI)
-- `text` segments go into an `AssistantEntry` (rendered as markdown)
+- `text` segments go into an `AssistantEntry` (rendered as markdown), stamped with the session's `activePersona` as its `persona` when one is set ([validated by: sends the assistant entry_upsert with persona 'support' when the session's activePersona is support](../../src/transport/ws/assistantPersona.test.ts#L85)).
 
 When a thinking block closes, the handler commits the `ThinkingEntry` before starting (or continuing) the `AssistantEntry`.
 

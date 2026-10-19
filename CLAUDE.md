@@ -179,6 +179,8 @@ interface ChatSession {
     host?: string;
   };
   workspaceId?: string | number;
+  /** Set by the consumer before or during beforeModelResponse; every assistant entry created for that turn carries it as its persona. */
+  activePersona?: string;
 }
 ```
 
