@@ -12,7 +12,7 @@ import {
 import {createChatRoutes} from './routes/chats.js';
 import {startEngineWith, askOnOpen, announcedId, stopEngines, deferred} from './wsTestSupport.js';
 import {createChatOrchestrator} from '../orchestration/chatOrchestrator.js';
-import type {ChatSession, AuthenticatedUser} from '../types/session.js';
+import type {ChatSession, AuthenticatedUser, SessionEntry} from '../types/session.js';
 import type {ChatOrchestrator} from '../orchestration/chatOrchestrator.js';
 import {fakeCollection} from '../infrastructure/stores/mongo/mongoTestSupport.js';
 
@@ -191,7 +191,7 @@ describe('conversation erasure', () => {
       findOne: async () => {
         getResolves();
         await new Promise(r => setTimeout(r, 50));
-        return {_id: 's1', entries: []};
+        return {_id: 's1', entries: [] as SessionEntry[], userId: 'u1', createdAt: new Date(), updatedAt: new Date()};
       },
       deleteOne: async () => {
         return {deletedCount: 1, acknowledged: true};
