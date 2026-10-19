@@ -199,11 +199,9 @@ db.hal_sessions.updateMany({entryCount: {$exists: false}}, [{$set: {entryCount: 
 ```
 
 `InMemorySessionStore` goes by a session's newest entry, or its creation for a session with none,
-and never lists one that has aged out. One divergence to know about, in that store only: where two
-of a user's conversations are last active in the same millisecond, the list puts the larger session
-id first while `latestFor` takes the one created later, so for tied conversations the head of the
-list and the session a resume rejoins can differ. `MongoSessionStore` breaks that tie the same way
-in both members, so the two agree there.
+and never lists one that has aged out. Where two of a user's conversations are last active in the
+same millisecond, both stores put the larger session id first, in `listFor` and in `latestFor` alike,
+so the head of the list is always the session a resume rejoins.
 
 A store you write yourself can leave `listFor` out, in which case it has no conversation list to
 offer. One built on an injected collection needs that collection to implement `find`: without it,

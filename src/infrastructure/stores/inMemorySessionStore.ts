@@ -95,8 +95,8 @@ export class InMemorySessionStore implements SessionStore {
 
   /** The user's most recently active session that has not aged out: its newest entry decides, or its creation if it has none. */
   latestFor(userId: string | number): ChatSession | undefined {
-    // Ascending and stable, so of two sessions last active at the same moment, the one created later wins.
-    return this.ownedBy(userId).sort(byActivity).at(-1)?.session;
+    // The list's own order, ties broken by session id, so a resume rejoins the conversation the list shows first.
+    return this.ownedBy(userId).map(rowOf).sort(byNewestRow)[0]?.held.session;
   }
 
   // Their own array, so a caller's sort never reorders the map's insertion order, which the sweep depends on.
@@ -148,10 +148,6 @@ function labelled(row: ListRow): SessionSummary {
 }
 
 // Ascending and stable, so latestFor's `.at(-1)` takes the session created later when two are last active together.
-function byActivity(first: HeldSession, second: HeldSession): number {
-  return lastActivity(first) - lastActivity(second);
-}
-
 function summaryOf(held: HeldSession): SessionSummary {
   const {session} = held;
   return {

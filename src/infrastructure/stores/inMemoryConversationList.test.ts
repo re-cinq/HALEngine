@@ -39,14 +39,14 @@ describe('the in-memory store conversation list', () => {
     }).toEqual({order: ['newer', 'older'], heads: true});
   });
 
-  it('breaks a tie on activity by session id, where latestFor takes the session created later', () => {
+  it('breaks a tie on activity by session id in both members, so latestFor names the head of the list', () => {
     const store = new InMemorySessionStore();
     store.create('zeta', 'u1');
     store.create('alpha', 'u1');
 
     expect({listed: store.listFor('u1').map(row => row.sessionId), latest: store.latestFor('u1')?.sessionId}).toEqual({
       listed: ['zeta', 'alpha'],
-      latest: 'alpha',
+      latest: 'zeta',
     });
   });
 
