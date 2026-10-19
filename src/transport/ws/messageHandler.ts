@@ -11,6 +11,7 @@ import type {ValidationFailure, ValidationResult} from './validation.js';
 import {PerSessionLock} from '../../shared/perSessionLock.js';
 import type {ChatOrchestrator} from '../../orchestration/chatOrchestrator.js';
 import {AIError} from '../../types/ai.js';
+import {clientErrorFor} from '../errorMapping.js';
 import type {MessageChunk} from '../../types/ai.js';
 import {
   createUserEntry,
@@ -139,10 +140,12 @@ async function wsErrorHandler(ws: WebSocket, action: () => Promise<void>): Promi
     const message = error instanceof Error ? error.message : 'Unknown error';
     const code = error instanceof AIError ? error.code : 'UNKNOWN';
     log.error('message', 'handling error', {error: message, code});
-    if (error instanceof AIError && error.code === 'RATE_LIMITED') {
-      sendError(ws, ErrorCodes.RATE_LIMITED, 'AI service is busy, please try again');
+    if (error instanceof AIError) {
+      const {code: clientCode, message: sentence} = clientErrorFor(error);
+      sendError(ws, clientCode, sentence);
       return;
     }
+    // Only a throw that is no AIError is the engine's own defect, the one condition a provider never produces.
     sendError(ws, ErrorCodes.SERVER_ERROR, 'Failed to process message');
   }
 }

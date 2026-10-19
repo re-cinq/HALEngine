@@ -8,15 +8,17 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
-**Upgrading.** Four behaviours change: two on HTTP, one in `ToolRegistry` and one on the WebSocket.
+**Upgrading.** Five behaviours change: two on HTTP, one in `ToolRegistry` and two on the WebSocket.
 
 - **Error responses are JSON, never HTML.** An error a route throws, with no `errorHandler` of yours answering it, used to reach Express's default page: `text/html` with the stack trace unless `NODE_ENV=production`. It now answers `{"error": "<fixed sentence>"}`. A client that parsed the HTML page gets JSON instead.
+- **AI provider failures get their own WebSocket error codes.** A provider failure other than rate limiting used to arrive as `SERVER_ERROR`. It now arrives as `SERVICE_UNAVAILABLE`, `TIMEOUT` or `UPSTREAM_ERROR`, matching the HTTP 503, 504 and 502, and `SERVER_ERROR` means only a defect in the engine or your own code. A client keyed on `SERVER_ERROR` for provider handling must re-key; one that treats an unknown code as `SERVER_ERROR`, as the protocol now requires, keeps working.
 - **A connection that fails after the WebSocket handshake closes with `1011`.** The server used to answer such a failure with an HTTP `500` written into the open socket, which a client saw as a frame error and an unexplained `1006` close. It now sends a close frame with `1011`, so a client that reconnects on `1006` should treat `1011` as a server fault too.
 - **`ToolRegistry.register` refuses a name already registered.** A second `register` under a taken name used to replace the first tool silently; it now throws `Duplicate tool name: <name>` and keeps the first. Code that re-registered a name on purpose must give the tools distinct names; there is no replacement API.
 - **`POST {basePath}/chats/:id/messages` answers provider conditions with their own status.** `RATE_LIMITED` moves from 502 to 429, `SERVICE_UNAVAILABLE` to 503 and `TIMEOUT` to 504. Every other `AIError` code still answers 502 with the same body.
 
 ### Changed
 
+- `ErrorCodes` gains `SERVICE_UNAVAILABLE`, `TIMEOUT` and `UPSTREAM_ERROR`. One table maps every `AIError` code to the WebSocket code, the HTTP status and a fixed sentence for both transports, so the two can no longer drift; an `AIError`'s own message still reaches only the log. See `specs/hal-engine-websocket-protocol/spec.md` § 5.6.
 - `InMemorySessionStore.latestFor` breaks a tie between two conversations last active in the same millisecond by the larger session id, as `listFor` and `MongoSessionStore` already do, instead of by creation order. The head of a conversation list is now always the session a resume rejoins. Which of two such tied conversations a reconnect lands on can change; nothing else does.
 - A failure after the WebSocket handshake completed, such as a `connection` listener that throws, now closes the socket with `1011` and logs `connection failed after the handshake` at `error` under `ws`, instead of writing an HTTP status line into the upgraded socket. Failures before the handshake still answer in HTTP (`401`, `500`). See `specs/hal-engine-websocket-protocol/spec.md` § 11.4.
 - `ToolRegistry.register` throws `Duplicate tool name: <name>` for a name already registered, checked against the name a definition resolves to at registration, and leaves the first tool as it was. See `specs/hal-engine-duplicate-tool-name/spec.md`.
