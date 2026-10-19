@@ -176,6 +176,34 @@ jobs:
       - name: Action pins
         run: npm run check:action-pins
 
+  # The peer range admits driver 6 and 7 but devDependencies pins 7, so without
+  # this job nothing would notice the store breaking on 6.
+  mongo-driver-6:
+    name: Mongo driver 6
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install (no build)
+        run: npm ci --ignore-scripts
+
+      - name: Swap in driver 6
+        run: npm install --no-save --ignore-scripts mongodb@6
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Test the Mongo store
+        run: npm test -- src/infrastructure/stores/mongo
+
   # Its own job because it is the only check that exercises the package as a
   # consumer receives it - packed, installed outside this tree, with no optional
   # peer present. Everything else here tests the source in place, where every

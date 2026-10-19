@@ -2,7 +2,6 @@ import {MongoClient} from 'mongodb';
 import {MongoSessionStore, createMongoSessionStore} from './mongoSessionStore.js';
 import {MONGO_START_MS, startMongo} from './mongoTestSupport.js';
 import type {MongoHarness} from './mongoTestSupport.js';
-import type {MongoClientLike} from './mongoDriverTypes.js';
 import type {ChatSession} from '../../../types/session.js';
 
 // The connection string is the consumer's to supply: nothing here reads the environment or assumes a host.
@@ -30,7 +29,7 @@ describe('how the store reaches MongoDB', () => {
     const client = new MongoClient(harness.uri);
     await client.connect();
     const store = new MongoSessionStore({
-      client: client as unknown as MongoClientLike,
+      client,
       dbName: harness.dbName,
       collectionName: 'from_client',
     });
@@ -46,7 +45,7 @@ describe('how the store reaches MongoDB', () => {
   it('defaults the collection name when the consumer names none', async () => {
     const client = new MongoClient(harness.uri);
     await client.connect();
-    const store = new MongoSessionStore({client: client as unknown as MongoClientLike, dbName: harness.dbName});
+    const store = new MongoSessionStore({client, dbName: harness.dbName});
 
     const session = (await store.create('s1', 'u1')) as ChatSession;
     const named = await client.db(harness.dbName).collection('hal_sessions').countDocuments();
@@ -59,7 +58,7 @@ describe('how the store reaches MongoDB', () => {
     const client = new MongoClient(harness.uri);
     await client.connect();
     const store = createMongoSessionStore({
-      client: client as unknown as MongoClientLike,
+      client,
       dbName: harness.dbName,
       collectionName: 'from_factory',
     });
