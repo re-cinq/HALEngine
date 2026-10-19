@@ -8,14 +8,16 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
-**Upgrading.** Three behaviours change, two on HTTP and one in `ToolRegistry`; nothing on the WebSocket does:
+**Upgrading.** Four behaviours change: two on HTTP, one in `ToolRegistry` and one on the WebSocket.
 
 - **Error responses are JSON, never HTML.** An error a route throws, with no `errorHandler` of yours answering it, used to reach Express's default page: `text/html` with the stack trace unless `NODE_ENV=production`. It now answers `{"error": "<fixed sentence>"}`. A client that parsed the HTML page gets JSON instead.
+- **A connection that fails after the WebSocket handshake closes with `1011`.** The server used to answer such a failure with an HTTP `500` written into the open socket, which a client saw as a frame error and an unexplained `1006` close. It now sends a close frame with `1011`, so a client that reconnects on `1006` should treat `1011` as a server fault too.
 - **`ToolRegistry.register` refuses a name already registered.** A second `register` under a taken name used to replace the first tool silently; it now throws `Duplicate tool name: <name>` and keeps the first. Code that re-registered a name on purpose must give the tools distinct names; there is no replacement API.
 - **`POST {basePath}/chats/:id/messages` answers provider conditions with their own status.** `RATE_LIMITED` moves from 502 to 429, `SERVICE_UNAVAILABLE` to 503 and `TIMEOUT` to 504. Every other `AIError` code still answers 502 with the same body.
 
 ### Changed
 
+- A failure after the WebSocket handshake completed, such as a `connection` listener that throws, now closes the socket with `1011` and logs `connection failed after the handshake` at `error` under `ws`, instead of writing an HTTP status line into the upgraded socket. Failures before the handshake still answer in HTTP (`401`, `500`). See `specs/hal-engine-websocket-protocol/spec.md` § 11.4.
 - `ToolRegistry.register` throws `Duplicate tool name: <name>` for a name already registered, checked against the name a definition resolves to at registration, and leaves the first tool as it was. See `specs/hal-engine-duplicate-tool-name/spec.md`.
 - `createApp` always registers a default error handler, after your `errorHandler` if you supply one. It answers by the first rule that applies: an explicit `status` or `statusCode` in 400–599 with a standard phrase answers that status with Node's phrase; an `AIError` answers 429, 503 or 504 for `RATE_LIMITED`, `SERVICE_UNAVAILABLE` or `TIMEOUT` and 502 for any other code; anything else answers 500 `Internal Server Error`. No body carries the error's message or stack.
 - Every error it handles is logged once at `error` level as `{method, path, status, code, message, stack}`, with `path` taken without its query string. A provider's message can echo request content, so treat that line like any log of request data.

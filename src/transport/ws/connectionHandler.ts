@@ -53,6 +53,9 @@ export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandl
       return;
     }
 
+    // Set as the upgrade callback's first statement: past it the socket speaks WebSocket, and an HTTP reply would corrupt it.
+    let upgraded: ExtWebSocket | undefined;
+
     authenticate(deps.wsAuth, request)
       .then(user => {
         if (!user) {
@@ -61,7 +64,8 @@ export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandl
         }
 
         wss.handleUpgrade(request, socket, head, ws => {
-          const extWs = ws as ExtWebSocket;
+          upgraded = ws as ExtWebSocket;
+          const extWs = upgraded;
           extWs.userId = user.id;
           extWs.workspaceId = user['workspaceId'] as string | number | undefined;
           extWs.authHeaders = {
@@ -83,11 +87,20 @@ export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandl
         });
       })
       .catch((error: unknown) => {
+        if (upgraded) return closeAfterUpgrade(upgraded, error);
         // The type alone: an authenticator's message can carry the credential it was checking.
         log.error('ws', 'authenticator failed', {errorType: error instanceof Error ? error.name : typeof error});
         rejectSocket(socket, '500 Internal Server Error');
       });
   };
+}
+
+// RFC 6455 § 7.4.1: 1011 is the server's own unexpected condition; close is a no-op on a socket the client already closed.
+function closeAfterUpgrade(ws: ExtWebSocket, error: unknown): void {
+  log.error('ws', 'connection failed after the handshake', {error: messageOf(error)});
+  // Resumed before closing: a paused socket never reads the close frame it would be waiting for.
+  ws.resume();
+  ws.close(1011, 'Internal server error');
 }
 
 // Async, so a synchronous throw becomes a rejection (answered 500) and a user returned without a promise still resolves.

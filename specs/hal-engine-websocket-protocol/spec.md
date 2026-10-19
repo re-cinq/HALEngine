@@ -705,6 +705,15 @@ If the connection drops unexpectedly, the client SHOULD reconnect using exponent
 
 After 5 failed attempts, the client MUST stop reconnecting and report a disconnected state.
 
+### 11.4 Server Failure After the Handshake
+
+Once the `101` is sent the socket speaks WebSocket, so the server never writes an HTTP status line into it again.
+
+- When something fails on the server after the handshake completed, the server closes the socket with code `1011`, "server encountered an unexpected condition" (RFC 6455 § 7.4.1). The client sees an orderly `close` event with `1011`, never a socket `error` followed by `1006`, and a failure on one connection leaves the next one unaffected ([validated by: closes with 1011 and no client error when a second connection listener throws, and the next client still connects](../../src/transport/upgradeFailure.test.ts#L52)).
+- A failure while the session opens, such as a session store whose `create` throws, is answered first with an `error` frame and then the same `1011` close ([validated by: sends an error frame and closes with 1011, with no client error, through createHalEngine when the session store create throws synchronously](../../src/sessionSetupFailure.test.ts#L15)).
+- The failure is logged once at `error` under `ws` as `connection failed after the handshake`, with the error's message; the upgrade request's `authorization` and `cookie` values reach no log line ([validated by: logs the failure at error under ws and keeps the authorization and cookie values out of every log line](../../src/transport/upgradeFailure.test.ts#L64)).
+- Before the handshake completes, the server still answers in HTTP: a `wsAuth` that rejects gets `500 Internal Server Error` and one that resolves `null` gets `401 Unauthorized`, with no `101` and no connection opened ([validated by: answers a rejecting wsAuth with 500 and a null one with 401, with no 101 and no connection event](../../src/transport/upgradeFailure.test.ts#L85)).
+
 ## 12. Security Considerations
 
 - Access tokens are transmitted in the `Sec-WebSocket-Protocol` request header, which keeps them out of the request line and so out of a URL-based access log. They are not hidden from logging in general: an ingress or proxy that captures request headers records them, as it records an `Authorization` header, so header capture must redact `Sec-WebSocket-Protocol` too.
