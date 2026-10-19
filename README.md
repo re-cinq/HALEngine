@@ -99,7 +99,7 @@ This is [`example/server.ts`](example/server.ts) apart from the import specifier
 | Provider           | `type`        | `sendMessage`                                       | `generateStructured`                                       | Package                           |
 | ------------------ | ------------- | --------------------------------------------------- | ---------------------------------------------------------- | --------------------------------- |
 | AWS Bedrock        | `'bedrock'`   | Implemented                                         | throws `Bedrock structured output is not yet implemented.` | `@aws-sdk/client-bedrock-runtime` |
-| Google Vertex AI   | `'vertex'`    | Implemented                                         | Implemented                                                | `@google-cloud/vertexai`          |
+| Google Vertex AI   | `'vertex'`    | Implemented                                         | Implemented                                                | `@google/genai`                   |
 | Mock               | `'mock'`      | Implemented                                         | Implemented                                                | (built-in)                        |
 | OpenAI / ChatGPT   | `'openai'`    | throws `OpenAI provider is not yet implemented.`    | throws `OpenAI provider is not yet implemented.`           | `openai`                          |
 | Anthropic / Claude | `'anthropic'` | throws `Anthropic provider is not yet implemented.` | throws `Anthropic provider is not yet implemented.`        | `@anthropic-ai/sdk`               |

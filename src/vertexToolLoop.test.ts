@@ -13,22 +13,18 @@ const generateContentStream = jest.fn<(request: VertexRequest) => Promise<unknow
 // The SDK is an optional peer the provider loads through this helper, so the helper is the seam.
 jest.unstable_mockModule('./providers/requireOptionalPeer.js', () => ({
   requireOptionalPeer: () => ({
-    VertexAI: class {
-      getGenerativeModel() {
-        return {generateContentStream};
-      }
+    GoogleGenAI: class {
+      models = {generateContentStream};
     },
   }),
 }));
 const {createVertexProvider} = await import('./providers/vertex/vertexProvider.js');
 
-// One SDK answer: its chunks, and the promise the SDK drains a copy of them into.
-const answer = (...chunks: Record<string, unknown>[]) => ({
-  stream: (async function* () {
+// One SDK answer: generateContentStream resolves to the stream of its chunks.
+const answer = (...chunks: Record<string, unknown>[]) =>
+  (async function* () {
     yield* chunks;
-  })(),
-  response: Promise.resolve({}),
-});
+  })();
 
 beforeEach(() => {
   generateContentStream.mockReset();

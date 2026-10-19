@@ -3,31 +3,29 @@ import type {MessageChunk, ResponseSchema} from '../../types/ai.js';
 import {collectAbortingAfter, collectChunks, userMessage} from '../providerTestSupport.js';
 
 // @jest/globals types a bare jest.fn() as taking no arguments; these name what the assertions read back.
-interface VertexRequest {
+interface GenaiRequest {
+  model: string;
   contents: {role: string}[];
+  config?: Record<string, unknown>;
 }
-interface VertexModelConfig {
-  generationConfig?: Record<string, unknown>;
-}
-interface VertexInit {
-  project: string;
-  location: string;
-  apiEndpoint?: string;
+interface GenaiInit {
+  vertexai?: boolean;
+  apiVersion?: string;
+  project?: string;
+  location?: string;
+  httpOptions?: {baseUrl?: string};
   googleAuthOptions?: Record<string, unknown>;
 }
 
-const mockGenerateContentStream = jest.fn<(request: VertexRequest) => Promise<unknown>>();
-const mockGenerateContent = jest.fn<(request: VertexRequest) => Promise<unknown>>();
-const mockGetGenerativeModel = jest.fn<(config: VertexModelConfig) => unknown>();
-const mockVertexAI = jest
-  .fn<(init: VertexInit) => unknown>()
-  .mockImplementation(() => ({getGenerativeModel: mockGetGenerativeModel}));
-
-const callMock = () => jest.fn<(request: VertexRequest) => Promise<unknown>>();
+const mockGenerateContentStream = jest.fn<(request: GenaiRequest) => Promise<unknown>>();
+const mockGenerateContent = jest.fn<(request: GenaiRequest) => Promise<unknown>>();
+const mockGoogleGenAI = jest.fn<(init: GenaiInit) => unknown>().mockImplementation(() => ({
+  models: {generateContentStream: mockGenerateContentStream, generateContent: mockGenerateContent},
+}));
 
 // createRequire never reaches jest's ESM registry, so the helper is the seam, not the package.
 jest.unstable_mockModule('../requireOptionalPeer.js', () => ({
-  requireOptionalPeer: () => ({VertexAI: mockVertexAI}),
+  requireOptionalPeer: () => ({GoogleGenAI: mockGoogleGenAI}),
 }));
 
 const {createVertexProvider} = await import('./vertexProvider.js');
@@ -41,10 +39,8 @@ const defaultConfig: VertexConfig = {
   maxTokens: 1024,
 };
 
-// The SDK's own shape: the stream, plus the promise it drains a copy of that stream into.
-function streamResult(responses: Record<string, unknown>[], response: Promise<unknown> = Promise.resolve({})) {
-  return {stream: streamFrom(responses), response};
-}
+// The SDK resolves generateContentStream to the stream itself.
+const streamResult = (responses: Record<string, unknown>[]) => streamFrom(responses);
 
 async function* streamFrom(responses: Record<string, unknown>[]): AsyncGenerator<Record<string, unknown>> {
   for (const r of responses) {
@@ -66,10 +62,6 @@ function abortAfterFirstChunk(result: Promise<unknown>): Promise<MessageChunk[]>
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockGetGenerativeModel.mockReturnValue({
-    generateContentStream: mockGenerateContentStream,
-    generateContent: mockGenerateContent,
-  });
 });
 
 describe('createVertexProvider', () => {
@@ -131,6 +123,38 @@ describe('createVertexProvider', () => {
 
       const stopChunk = chunks.find(c => c.type === 'stop');
       expect(stopChunk).toMatchObject({type: 'stop', stopReason: 'max_tokens'});
+    });
+
+    it('passes any other finish reason on lower-cased, SAFETY as safety', async () => {
+      mockGenerateContentStream.mockResolvedValue(
+        streamResult([{candidates: [{content: {parts: [{text: 'blocked'}]}, finishReason: 'SAFETY'}]}])
+      );
+
+      const chunks = await collectChunks(createVertexProvider(defaultConfig).sendMessage(userMessage('hi')));
+
+      expect(chunks.at(-1)).toEqual({type: 'stop', stopReason: 'safety', usage: undefined});
+    });
+
+    it('turns a function call that carries no arguments into a tool_use chunk with an empty input', async () => {
+      mockGenerateContentStream.mockResolvedValue(
+        streamResult([{candidates: [{content: {parts: [{functionCall: {name: 'ping'}}]}, finishReason: 'STOP'}]}])
+      );
+
+      const [first] = await collectChunks(createVertexProvider(defaultConfig).sendMessage(userMessage('ping it')));
+
+      expect(first).toStrictEqual({type: 'tool_use', toolCall: {id: 'ping', name: 'ping', input: {}}});
+    });
+
+    it("maps a rejection that is no Error, the string 'boom', to PROVIDER_ERROR naming an unknown Vertex AI error", async () => {
+      mockGenerateContentStream.mockRejectedValue('boom');
+
+      await expect(
+        collectChunks(createVertexProvider(defaultConfig).sendMessage(userMessage('hi')))
+      ).rejects.toMatchObject({
+        name: 'AIError',
+        message: 'Unknown Vertex AI error',
+        code: 'PROVIDER_ERROR',
+      });
     });
 
     it('throws AIError with RATE_LIMITED on 429', async () => {
@@ -219,9 +243,7 @@ describe('createVertexProvider', () => {
         throw new Error('socket hang up');
       }
 
-      const received = await abortAfterFirstChunk(
-        Promise.resolve({stream: failsAfterFirst(), response: Promise.resolve({})})
-      );
+      const received = await abortAfterFirstChunk(Promise.resolve(failsAfterFirst()));
 
       expect(received).toEqual([{type: 'text', text: 'one '}]);
     });
@@ -234,26 +256,80 @@ describe('createVertexProvider', () => {
       expect({chunks, requests: calls.length}).toEqual({chunks: [], requests: 0});
     });
 
-    it('observes the SDK response promise, so its rejection never becomes an unhandled rejection', async () => {
+    it('raises one PROVIDER_ERROR after the chunk already read when the stream fails mid-way, and no unhandled rejection', async () => {
       const unhandled: unknown[] = [];
       const record = (reason: unknown) => void unhandled.push(reason);
       process.on('unhandledRejection', record);
-      mockGenerateContentStream.mockImplementationOnce(async () =>
-        streamResult([textChunk('partial')], Promise.reject(new Error('the drained copy failed')))
-      );
+      async function* failsMidway(): AsyncGenerator<Record<string, unknown>> {
+        yield textChunk('partial');
+        throw Object.assign(new Error('{"error":{"code":500,"status":"INTERNAL"}}'), {status: 500});
+      }
+      mockGenerateContentStream.mockResolvedValueOnce(failsMidway());
 
-      const provider = createVertexProvider(defaultConfig);
-      const chunks = await collectChunks(provider.sendMessage(userMessage('hi')));
+      const received: MessageChunk[] = [];
+      let raised: unknown;
+      try {
+        for await (const chunk of createVertexProvider(defaultConfig).sendMessage(userMessage('hi')))
+          received.push(chunk);
+      } catch (error) {
+        raised = error;
+      }
       await new Promise(resolve => setTimeout(resolve, 20));
       process.off('unhandledRejection', record);
 
-      expect({chunks, unhandled: unhandled.length}).toEqual({
-        chunks: [
-          {type: 'text', text: 'partial'},
-          {type: 'stop', stopReason: 'end_turn', usage: undefined},
-        ],
+      expect({received, raised, unhandled: unhandled.length}).toMatchObject({
+        received: [{type: 'text', text: 'partial'}],
+        raised: {name: 'AIError', code: 'PROVIDER_ERROR'},
         unhandled: 0,
       });
+    });
+
+    it('hands its abort signal to the SDK, so an abort closes the request rather than only the read', async () => {
+      mockGenerateContentStream.mockResolvedValue(streamResult([textChunk('ok')]));
+      const controller = new AbortController();
+
+      await collectChunks(
+        createVertexProvider(defaultConfig).sendMessage({...userMessage('hi'), signal: controller.signal})
+      );
+
+      const [[request]] = mockGenerateContentStream.mock.calls;
+      expect(request.config?.abortSignal).toBe(controller.signal);
+    });
+
+    it('sends the model, the system prompt, the tools and the configured max tokens in one request', async () => {
+      mockGenerateContentStream.mockResolvedValue(streamResult([textChunk('ok')]));
+      const tool = {name: 'lookup', description: 'Looks it up.', inputSchema: {type: 'object', properties: {}}};
+
+      await collectChunks(createVertexProvider(defaultConfig).sendMessage({...userMessage('hi'), tools: [tool]}));
+
+      const [[request]] = mockGenerateContentStream.mock.calls;
+      expect(request).toEqual({
+        model: 'gemini-2.5-flash',
+        contents: [{role: 'user', parts: [{text: 'hi'}]}],
+        config: {
+          systemInstruction: 'You are helpful.',
+          maxOutputTokens: 1024,
+          tools: [
+            {functionDeclarations: [{name: 'lookup', description: 'Looks it up.', parameters: tool.inputSchema}]},
+          ],
+        },
+      });
+    });
+
+    it('maps a failure by its HTTP status when its message names no code: 429 to RATE_LIMITED, 403 to AUTH_ERROR', async () => {
+      mockGenerateContentStream
+        .mockRejectedValueOnce(Object.assign(new Error('quota'), {status: 429}))
+        .mockRejectedValueOnce(Object.assign(new Error('denied'), {status: 403}));
+      const provider = createVertexProvider(defaultConfig);
+
+      const codes = [];
+      for (const _ of [1, 2]) {
+        codes.push(
+          await collectChunks(provider.sendMessage(userMessage('hi'))).catch((error: {code: string}) => error.code)
+        );
+      }
+
+      expect(codes).toEqual(['RATE_LIMITED', 'AUTH_ERROR']);
     });
 
     it('ends a truncated function-call turn max_tokens, so the loop never runs its call', async () => {
@@ -318,13 +394,7 @@ describe('createVertexProvider', () => {
 
     it('returns parsed JSON from Vertex response', async () => {
       const expected = {followUpQuestion: 'Tell me more?', confidenceScore: 85};
-      mockGetGenerativeModel.mockReturnValue({
-        generateContent: callMock().mockResolvedValue({
-          response: {
-            candidates: [{content: {parts: [{text: JSON.stringify(expected)}]}}],
-          },
-        }),
-      });
+      mockGenerateContent.mockResolvedValue({candidates: [{content: {parts: [{text: JSON.stringify(expected)}]}}]});
 
       const provider = createVertexProvider(defaultConfig);
       const result = await provider.generateStructured<typeof expected>({
@@ -336,12 +406,8 @@ describe('createVertexProvider', () => {
       expect(result).toEqual(expected);
     });
 
-    it('configures model with responseMimeType and responseSchema', async () => {
-      mockGetGenerativeModel.mockReturnValue({
-        generateContent: callMock().mockResolvedValue({
-          response: {candidates: [{content: {parts: [{text: '{}'}]}}]},
-        }),
-      });
+    it('configures the request with responseMimeType and responseSchema', async () => {
+      mockGenerateContent.mockResolvedValue({candidates: [{content: {parts: [{text: '{}'}]}}]});
 
       const provider = createVertexProvider(defaultConfig);
       await provider.generateStructured({
@@ -350,8 +416,8 @@ describe('createVertexProvider', () => {
         responseSchema: evaluationSchema,
       });
 
-      const [, [modelConfig]] = mockGetGenerativeModel.mock.calls;
-      expect(modelConfig.generationConfig).toMatchObject({
+      const [[request]] = mockGenerateContent.mock.calls;
+      expect(request.config).toMatchObject({
         responseMimeType: 'application/json',
         responseSchema: {
           type: 'OBJECT',
@@ -372,11 +438,7 @@ describe('createVertexProvider', () => {
       });
 
     it('throws AIError with PARSE_ERROR on invalid JSON', async () => {
-      mockGetGenerativeModel.mockReturnValue({
-        generateContent: callMock().mockResolvedValue({
-          response: {candidates: [{content: {parts: [{text: 'not json'}]}}]},
-        }),
-      });
+      mockGenerateContent.mockResolvedValue({candidates: [{content: {parts: [{text: 'not json'}]}}]});
 
       await expect(requestEvaluation()).rejects.toMatchObject({
         name: 'AIError',
@@ -385,10 +447,39 @@ describe('createVertexProvider', () => {
       });
     });
 
-    it('throws mapped AIError on Vertex API failure', async () => {
-      mockGetGenerativeModel.mockReturnValue({
-        generateContent: callMock().mockRejectedValue(new Error('RESOURCE_EXHAUSTED')),
+    it('raises PARSE_ERROR for a structured response with no candidates, which carries no JSON', async () => {
+      mockGenerateContent.mockResolvedValue({});
+
+      await expect(requestEvaluation()).rejects.toMatchObject({name: 'AIError', code: 'PARSE_ERROR'});
+    });
+
+    it('passes an enum and an array of items through the response schema, upper-casing the item type', async () => {
+      mockGenerateContent.mockResolvedValue({candidates: [{content: {parts: [{text: '{}'}]}}]});
+
+      await createVertexProvider(defaultConfig).generateStructured({
+        messages: [{role: 'user', content: 'test'}],
+        systemPrompt: 'test',
+        responseSchema: {
+          type: 'object',
+          properties: {
+            verdict: {type: 'string', enum: ['yes', 'no']},
+            tags: {type: 'array', items: {type: 'string'}},
+          },
+        },
       });
+
+      const [[request]] = mockGenerateContent.mock.calls;
+      expect(request.config?.responseSchema).toEqual({
+        type: 'OBJECT',
+        properties: {
+          verdict: {type: 'STRING', enum: ['yes', 'no']},
+          tags: {type: 'ARRAY', items: {type: 'STRING'}},
+        },
+      });
+    });
+
+    it('throws mapped AIError on Vertex API failure', async () => {
+      mockGenerateContent.mockRejectedValue(new Error('RESOURCE_EXHAUSTED'));
 
       await expect(requestEvaluation()).rejects.toMatchObject({
         name: 'AIError',
@@ -400,7 +491,19 @@ describe('createVertexProvider', () => {
   });
 
   describe('endpoint selection', () => {
-    it('forwards apiEndpoint to the VertexAI constructor for the eu multi-region', () => {
+    it('creates the client in Vertex mode on the v1 API with the configured project, location and auth options', () => {
+      createVertexProvider({...defaultConfig, googleAuthOptions: {keyFilename: 'key.json'}});
+      const [[init]] = mockGoogleGenAI.mock.calls;
+      expect(init).toEqual({
+        vertexai: true,
+        project: 'test-project',
+        location: 'europe-west4',
+        apiVersion: 'v1',
+        googleAuthOptions: {keyFilename: 'key.json'},
+      });
+    });
+
+    it('forwards apiEndpoint to the client as its base URL for the eu multi-region', () => {
       createVertexProvider({
         type: 'vertex',
         projectId: 'test-project',
@@ -408,14 +511,17 @@ describe('createVertexProvider', () => {
         apiEndpoint: 'aiplatform.eu.rep.googleapis.com',
         modelId: 'gemini-3-pro',
       });
-      const [[euInit]] = mockVertexAI.mock.calls;
-      expect(euInit).toMatchObject({location: 'eu', apiEndpoint: 'aiplatform.eu.rep.googleapis.com'});
+      const [[euInit]] = mockGoogleGenAI.mock.calls;
+      expect(euInit).toMatchObject({
+        location: 'eu',
+        httpOptions: {baseUrl: 'https://aiplatform.eu.rep.googleapis.com/'},
+      });
     });
 
     it('omits apiEndpoint when unset so single-region deployments are unchanged', () => {
       createVertexProvider(defaultConfig);
-      const [[defaultInit]] = mockVertexAI.mock.calls;
-      expect(defaultInit).not.toHaveProperty('apiEndpoint');
+      const [[defaultInit]] = mockGoogleGenAI.mock.calls;
+      expect(defaultInit).not.toHaveProperty('httpOptions');
     });
   });
 });
