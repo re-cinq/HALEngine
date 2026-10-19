@@ -1,5 +1,4 @@
 import {MongoSessionStore} from './mongoSessionStore.js';
-import type {ChatSession} from '../../../types/session.js';
 import {fakeCollection} from './mongoFakeCollection.js';
 
 // eraseOlderThan must evict only the sessions it deleted, never a live session it never touched.
@@ -19,11 +18,11 @@ describe('eraseOlderThan selective cache eviction', () => {
     });
     const store = new MongoSessionStore({collection: coll});
 
-    const live: ChatSession = {sessionId: 'live1', userId: 'u', entries: []};
-    store['cache'].set('live1', live);
+    const live = await store.create('live1', 'u');
 
     await store.eraseOlderThan(new Date('2021-01-01'));
 
-    expect({live: store['cache'].get('live1'), erased: store['cache'].has('old1')}).toEqual({live, erased: false});
+    // The fake findOne answers null, so only a session still cached comes back from get.
+    expect(await store.get('live1')).toBe(live);
   });
 });

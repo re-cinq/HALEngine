@@ -1,8 +1,10 @@
+import {jest} from '@jest/globals';
 import {MongoSessionStore} from './mongoSessionStore.js';
 import {fakeCollection} from './mongoTestSupport.js';
 import type {CollectionLike} from './mongoDriverTypes.js';
 import type {MongoSessionDocument} from './mongoSessionDocument.js';
 import type {ChatSession} from '../../../types/session.js';
+import {log} from '../../../shared/logger.js';
 
 // A store that caches before it writes keeps what it failed to save, credentials and all, until the process ends.
 
@@ -23,26 +25,28 @@ describe('a create whose write fails', () => {
   });
 });
 
+const session: ChatSession = {sessionId: 's1', userId: 'u1', entries: []};
+
 describe('a save whose write returns no result', () => {
-  it('completes without error when updateOne returns no result', async () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('completes without error or warning when updateOne returns no result', async () => {
+    const warn = jest.spyOn(log, 'warn').mockImplementation(() => undefined);
     const store = new MongoSessionStore({collection: fakeCollection()});
-    const session: ChatSession = {sessionId: 's1', userId: 'u1', entries: []};
 
-    await expect(store.save(session)).resolves.toBeUndefined();
+    const outcome = await outcomeOf(store.save(session));
+
+    expect({outcome, warnings: warn.mock.calls}).toEqual({outcome: 'resolved', warnings: []});
   });
-});
 
-describe('a get from a cache entry with no recorded time', () => {
-  it('returns the cached session without querying the collection', async () => {
-    const reads = {findOne: 0};
+  it('warns without naming the session when no document matched', async () => {
+    const warn = jest.spyOn(log, 'warn').mockImplementation(() => undefined);
     const store = new MongoSessionStore({
-      collection: fakeCollection({findOne: () => (reads.findOne++, Promise.resolve(null))}),
+      collection: fakeCollection({updateOne: () => Promise.resolve({matchedCount: 0})}),
     });
-    const session: ChatSession = {sessionId: 's1', userId: 'u1', entries: []};
-    store['cache'].set('s1', session);
 
-    const result = await store.get('s1');
+    await store.save(session);
 
-    expect({result, reads: reads.findOne}).toEqual({result: session, reads: 0});
+    expect(warn.mock.calls).toEqual([['session', 'save found no document']]);
   });
 });

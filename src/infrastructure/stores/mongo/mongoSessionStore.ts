@@ -34,10 +34,15 @@ export type MongoSessionStoreOptions = SharedOptions &
     | {url: string; dbName: string}
   );
 
+interface CachedSession {
+  session: ChatSession;
+  cachedAt: number;
+}
+
 export class MongoSessionStore implements SessionStore {
-  private readonly cache = new Map<string, ChatSession>();
-  private readonly cacheTime = new Map<string, number>();
-  private readonly erased = new Set<string>();
+  private readonly cache = new Map<string, CachedSession>();
+  // Only reads still waiting on the collection, so it is bounded by concurrency rather than by every erasure ever made.
+  private readonly inFlightGets = new Map<symbol, string>();
   private readonly options: MongoSessionStoreOptions;
   private readonly now: () => Date;
   private readonly maxAgeMs: number;
@@ -67,25 +72,30 @@ export class MongoSessionStore implements SessionStore {
     );
 
     // Cached only once the write landed: a failing database would otherwise fill memory with sessions it never stored.
-    this.erased.delete(sessionId);
     this.remember(sessionId, session);
     return session;
   }
 
   async get(sessionId: string): Promise<ChatSession | undefined> {
     const cached = this.cache.get(sessionId);
-    if (cached !== undefined && !this.hasAged(sessionId)) return cached;
+    if (cached !== undefined && !this.hasAged(cached)) return cached.session;
     // Dropped on a stale read too: a document erased elsewhere would otherwise leave its entry cached for good.
     this.cache.delete(sessionId);
-    this.cacheTime.delete(sessionId);
 
-    const collection = await this.collection();
-    const document = await collection.findOne({_id: sessionId});
-    if (document === null) return undefined;
+    const read = Symbol(sessionId);
+    this.inFlightGets.set(read, sessionId);
+    try {
+      const collection = await this.collection();
+      const document = await collection.findOne({_id: sessionId});
+      if (document === null) return undefined;
 
-    const session = toChatSession(document);
-    this.remember(sessionId, session);
-    return session;
+      const session = toChatSession(document);
+      // An erasure that landed while this read was waiting withdrew it, so what it read is returned but never cached.
+      if (this.inFlightGets.has(read)) this.remember(sessionId, session);
+      return session;
+    } finally {
+      this.inFlightGets.delete(read);
+    }
   }
 
   // The consumer's erasure primitive, which the engine never calls: it removes the document, not just the cache.
@@ -106,7 +116,6 @@ export class MongoSessionStore implements SessionStore {
   // Empties the cache alone; eraseAll is the durable wipe, so neither can be reached by accident.
   clear(): void {
     this.cache.clear();
-    this.cacheTime.clear();
   }
 
   // After an erasure the REST router's own Map still answers GET requests; its next message writes nothing here.
@@ -117,8 +126,11 @@ export class MongoSessionStore implements SessionStore {
       {$set: {...persistedFields(session), updatedAt: this.now()}},
       {upsert: false}
     )) as {matchedCount?: number} | undefined;
-    if ((result?.matchedCount ?? 0) === 0) {
-      log.warn('session', 'save found no document', {sessionId: session.sessionId});
+    // A caller saving its own copy, as the REST router does, leaves the cached object behind what was just written.
+    if (this.cache.get(session.sessionId)?.session !== session) this.forget([session.sessionId]);
+    // No id in the line: the conversation it names may be one an erasure request just removed.
+    if (result?.matchedCount === 0) {
+      log.warn('session', 'save found no document');
     }
   }
 
@@ -153,11 +165,10 @@ export class MongoSessionStore implements SessionStore {
 
   /** Erases one conversation permanently and drops it from the cache. */
   async eraseConversation(sessionId: string): Promise<boolean> {
-    this.erased.add(sessionId);
-    this.cache.delete(sessionId);
-    this.cacheTime.delete(sessionId);
     const collection = await this.collection();
     const {deletedCount} = await collection.deleteOne({_id: sessionId});
+    // After the delete, not before: a read that began while it was pending would otherwise cache the doomed document.
+    this.forget([sessionId]);
     return deletedCount > 0;
   }
 
@@ -167,27 +178,22 @@ export class MongoSessionStore implements SessionStore {
     const older = (await collection.find?.({createdAt: {$lt: cutoff}}, {projection: {_id: 1}})?.toArray()) ?? [];
     const ids = older.map(d => d._id);
     const {deletedCount} = await collection.deleteMany({createdAt: {$lt: cutoff}});
-    for (const id of ids) {
-      this.erased.add(id);
-      this.cache.delete(id);
-      this.cacheTime.delete(id);
-    }
+    this.forget(ids);
     return deletedCount;
   }
 
   /** Erases every conversation this store can see. */
   async eraseAll(): Promise<number> {
-    this.cache.clear();
-    this.cacheTime.clear();
     const collection = await this.collection();
     const {deletedCount} = await collection.deleteMany({});
+    this.cache.clear();
+    this.inFlightGets.clear();
     return deletedCount;
   }
 
   /** Closes the driver only when this store opened it; a supplied client stays the caller's to close. */
   async close(): Promise<void> {
     this.cache.clear();
-    this.cacheTime.clear();
     if (this.owned === undefined) return;
 
     await this.owned.close();
@@ -197,23 +203,26 @@ export class MongoSessionStore implements SessionStore {
 
   // Dropping a stale entry erases nothing: the collection is the truth and the next get reloads from it.
   private remember(sessionId: string, session: ChatSession): void {
-    if (this.erased.has(sessionId)) return;
-    for (const cachedId of this.cache.keys()) {
-      if (!this.hasAged(cachedId)) break;
+    for (const [cachedId, cached] of this.cache) {
+      if (!this.hasAged(cached)) break;
       this.cache.delete(cachedId);
-      this.cacheTime.delete(cachedId);
     }
     // Deleted first: `set` on an existing key keeps its old position, which would break the sweep's age order.
     this.cache.delete(sessionId);
-    this.cacheTime.delete(sessionId);
-    this.cache.set(sessionId, session);
-    this.cacheTime.set(sessionId, this.now().getTime());
+    this.cache.set(sessionId, {session, cachedAt: this.now().getTime()});
   }
 
-  private hasAged(sessionId: string): boolean {
-    const cachedAt = this.cacheTime.get(sessionId);
-    if (cachedAt === undefined) return false;
-    return this.now().getTime() - cachedAt > this.maxAgeMs;
+  // Drops the cache entries and withdraws every read still waiting on them, so none can re-cache an erased session.
+  private forget(sessionIds: string[]): void {
+    const erased = new Set(sessionIds);
+    for (const id of erased) this.cache.delete(id);
+    for (const [read, id] of this.inFlightGets) {
+      if (erased.has(id)) this.inFlightGets.delete(read);
+    }
+  }
+
+  private hasAged(cached: CachedSession): boolean {
+    return this.now().getTime() - cached.cachedAt > this.maxAgeMs;
   }
 
   private collection(): Promise<CollectionLike<MongoSessionDocument>> {
