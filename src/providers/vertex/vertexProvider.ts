@@ -222,7 +222,7 @@ function mapVertexError(error: unknown): AIError {
     // eslint-disable-next-line re-lint/no-flag-params -- AIError's retryable flag; see adrs/ADR-006-lint-suppressions.md
     return new AIError(message, 'RATE_LIMITED', true);
   }
-  if (status === 401 || status === 403 || message.includes('PERMISSION_DENIED')) {
+  if (status === 401 || status === 403 || /401|403|PERMISSION_DENIED/.test(message)) {
     return new AIError(message, 'AUTH_ERROR');
   }
   return new AIError(message, 'PROVIDER_ERROR');

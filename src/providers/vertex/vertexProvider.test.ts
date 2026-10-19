@@ -181,6 +181,17 @@ describe('createVertexProvider', () => {
       });
     });
 
+    it('still maps a failure carrying no status by its message, 403 Forbidden to AUTH_ERROR', async () => {
+      mockGenerateContentStream.mockRejectedValue(new Error('403 Forbidden'));
+
+      await expect(
+        collectChunks(createVertexProvider(defaultConfig).sendMessage(userMessage('hi')))
+      ).rejects.toMatchObject({
+        name: 'AIError',
+        code: 'AUTH_ERROR',
+      });
+    });
+
     it('falls back to PROVIDER_ERROR for a failure it cannot classify', async () => {
       mockGenerateContentStream.mockRejectedValue(new Error('something else went wrong'));
 
