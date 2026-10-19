@@ -16,6 +16,9 @@
     "src/infrastructure/writeSignalTestSupport.ts",
     "src/infrastructure/stores/mongo/mongoTestSupport.ts",
     "src/shared/logCaptureTestSupport.ts",
-    "src/transport/wsTestSupport.ts"
+    "src/transport/wsTestSupport.ts",
+    "src/transport/ws/recordingSocketTestSupport.ts",
+    "src/testing/recordFrames.ts",
+    "src/testing/writeFrames.ts"
   ]
 }

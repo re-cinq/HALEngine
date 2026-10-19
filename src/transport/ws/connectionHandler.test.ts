@@ -3,6 +3,7 @@ import {createConnectionHandler, type ConnectionHandlerDeps, type ExtWebSocket} 
 import type {ChatSession} from '../../types/session.js';
 import type {SessionStore} from '../../types/sessionStore.js';
 import {captureErrors} from '../../shared/logCaptureTestSupport.js';
+import {recordingSocket} from './recordingSocketTestSupport.js';
 
 // Pins the lifecycle hooks: that onConnect is called at all, when, and that neither hook can kill a connection.
 
@@ -12,19 +13,8 @@ const settle = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 type HarnessOptions = Partial<Pick<ConnectionHandlerDeps, 'onConnect' | 'onDisconnect' | 'sessionStore'>>;
 
 const harness = (options: HarnessOptions = {}) => {
-  const sent: string[] = [];
-  const listeners = new Map<string, (arg?: unknown) => void>();
-
-  const ws = {
-    userId: 'u1',
-    isAlive: true,
-    send: (raw: string) => sent.push(raw),
-    on: (event: string, fn: (arg?: unknown) => void) => listeners.set(event, fn),
-    // The handler pauses the socket across an awaited create and resumes once its listeners are attached.
-    pause: () => undefined,
-    resume: () => undefined,
-    close: () => undefined,
-  } as unknown as ExtWebSocket;
+  const socket = recordingSocket({userId: 'u1', isAlive: true});
+  const ws = socket.ws as ExtWebSocket;
 
   const deleted: string[] = [];
   const sessionStore = {
@@ -44,11 +34,11 @@ const harness = (options: HarnessOptions = {}) => {
 
   return {
     connect,
-    sent,
+    sent: socket.sent,
     deleted,
     handleMessage: deps.handleMessage as jest.Mock,
-    close: () => listeners.get('close')?.(),
-    receive: (frame: string) => listeners.get('message')?.(frame),
+    close: socket.close,
+    receive: socket.receive,
   };
 };
 
@@ -61,7 +51,7 @@ describe('the websocket connection handler', () => {
       connect();
       await settle();
 
-      const frame = JSON.parse(sent[0]) as {type: string; sessionId: string};
+      const frame = sent[0] as {type: string; sessionId: string};
       expect({calls: seen.length, sessionId: seen[0]?.sessionId}).toEqual({calls: 1, sessionId: frame.sessionId});
     });
 
@@ -74,14 +64,14 @@ describe('the websocket connection handler', () => {
       second.connect();
       await settle();
 
-      const id = (raw: string) => (JSON.parse(raw) as {sessionId: string}).sessionId;
+      const id = (frame: unknown) => (frame as {sessionId: string}).sessionId;
       expect(id(first.sent[0]) === id(second.sent[0])).toBe(false);
     });
 
     // Counted inside the hook: the connected frame is sent after an awaited create, so no synchronous read sees it.
     it('runs after the connected frame is sent, not before it', async () => {
       const framesAtHook: number[] = [];
-      let frames: string[] = [];
+      let frames: unknown[] = [];
       const {connect, sent} = harness({onConnect: () => void framesAtHook.push(frames.length)});
       frames = sent;
 
@@ -138,7 +128,7 @@ describe('the websocket connection handler', () => {
 
       connect();
       await settle();
-      const {sessionId} = JSON.parse(sent[0]) as {sessionId: string};
+      const {sessionId} = sent[0] as {sessionId: string};
       close();
       await settle();
 
@@ -216,7 +206,7 @@ describe('the websocket connection handler', () => {
 
       receive('{"type": "user_message", "content": ');
 
-      const types = sent.slice(1).map(raw => (JSON.parse(raw) as {type: string; code?: string}).code ?? 'no code');
+      const types = sent.slice(1).map(frame => ('code' in frame ? frame.code : undefined) ?? 'no code');
       const {calls} = handleMessage.mock;
       expect({afterConnected: types, dispatched: calls.length}).toEqual({
         afterConnected: ['INVALID_FORMAT'],

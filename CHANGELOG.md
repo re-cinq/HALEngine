@@ -11,6 +11,7 @@ package, not for somebody reading this repository's commit log.
 ### Added
 
 - **`AssistantEntry.persona` and `ChatSession.activePersona`.** Set `session.activePersona` before or during `beforeModelResponse`, and every assistant entry created for that turn carries it as `persona`, on its first `entry_upsert` and in the stored session. It is your own opaque identifier: the engine never resolves or validates it. It must not carry personal data, since it is persisted, replayed and logged wherever the session is, and a named persona does not replace the AI disclosure. Leave `activePersona` unset and assistant entries are exactly as before, with no `persona` key. Thinking and tool entries are never stamped, and an entry a tool supplies keeps what the tool set. See `specs/hal-engine-websocket-protocol/spec.md` § 6.2.
+- **`recordedFrames`, the server's real frame sequences as a typed constant.** Import it from the package root to test a client against what the server actually sends: five scenarios (`connectionOpened`, `simpleAnswer`, `thinkingThenTool`, `multiRoundSuppressed` and `rateLimited`), recorded through the real connection handler, orchestrator and message handler with synthetic text. Every `timestamp` is `"<ts>"` and the session id `"<session-id>"`. The constant is checked against a fresh recording on every test run, so it cannot drift from the server. See `specs/hal-engine-websocket-protocol/spec.md` § 8.5.
 
 ## [0.8.0] - 2026-10-19
 

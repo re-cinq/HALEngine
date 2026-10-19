@@ -7,6 +7,7 @@ export {createServer} from './transport/createServer.js';
 export type {HalServerOptions, HalServer} from './transport/createServer.js';
 export {createChatRoutes} from './transport/routes/chats.js';
 export {HAL_WS_SUBPROTOCOL, credentialFromSubprotocol} from './transport/ws/subprotocol.js';
+export {recordedFrames} from './testing/frames.js';
 export type {ConnectInfo, SessionResumeOptions} from './transport/ws/sessionResume.js';
 export type {ConversationHistoryOptions} from './transport/ws/conversationList.js';
 

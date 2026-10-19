@@ -3,6 +3,8 @@ import {join} from 'node:path';
 import {HAL_WS_SUBPROTOCOL, credentialFromSubprotocol} from './index.js';
 import * as root from './index.js';
 import * as subprotocol from './transport/ws/subprotocol.js';
+import {recordedFrames as fromRoot} from './index.js';
+import {recordedFrames} from './testing/frames.js';
 
 describe('the package root', () => {
   it('exports the hal.v1 marker with the reader a WsAuthenticator uses', () => {
@@ -18,6 +20,13 @@ describe('the package root', () => {
     expect({exported: 'presentedCredential' in root, imported: source.includes('ws/credential')}).toEqual({
       exported: false,
       imported: false,
+    });
+  });
+
+  it('exports recordedFrames as the constant src/testing/frames.ts holds, its simpleAnswer an array', () => {
+    expect({same: fromRoot === recordedFrames, array: Array.isArray(fromRoot.simpleAnswer)}).toEqual({
+      same: true,
+      array: true,
     });
   });
 });
