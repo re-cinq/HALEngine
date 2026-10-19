@@ -12,6 +12,9 @@ import {createChatRoutes} from './routes/chats.js';
 import {startEngineWith, askOnOpen, announcedId, stopEngines, deferred} from './wsTestSupport.js';
 import {createChatOrchestrator} from '../orchestration/chatOrchestrator.js';
 import type {ChatSession, SessionEntry} from '../types/session.js';
+import type {AIProvider} from '../types/ai.js';
+import type {PromptBuilder} from '../infrastructure/builders/promptBuilder.js';
+import type {AuthenticatedRequest} from '../types/auth.js';
 
 describe('conversation erasure', () => {
   let harness: MongoHarness;
@@ -39,7 +42,7 @@ describe('conversation erasure', () => {
     await store.eraseConversation('session1');
 
     // Simulate socket holding session and saving it back
-    session.entries.push({role: 'user', content: 'hello', timestamp: new Date().toISOString()});
+    session.entries.push({role: 'user', content: 'hello', timestamp: '2024-01-01T00:00:00.000Z'});
     await store.save(session);
 
     const [count, doc] = await Promise.all([store.count(), store.get('session1')]);
@@ -72,12 +75,12 @@ describe('conversation erasure', () => {
       },
     };
     const orchestrator = createChatOrchestrator(
-      provider as any,
-      {build: (session: ChatSession) => session.entries} as any,
+      provider as unknown as AIProvider,
+      {build: (sess: ChatSession) => sess.entries} as unknown as PromptBuilder,
       undefined,
       {sessionStore}
     );
-    const {url, hal} = await startEngineWith({sessionStore, orchestrator});
+    const {url, hal: _hal} = await startEngineWith({sessionStore, orchestrator});
 
     const {client, finished} = askOnOpen(url, {until: 'stream_end', token: 'token1'});
     const id = announcedId(client);
@@ -89,8 +92,8 @@ describe('conversation erasure', () => {
 
     // Second turn
     const turn2 = deferred();
-    client.on('message', data => {
-      const msg = JSON.parse(data.toString());
+    client.on('message', rawMsg => {
+      const msg = JSON.parse(rawMsg.toString());
       if (msg.type === 'stream_end' || msg.type === 'error') {
         turn2.release();
       }
@@ -113,8 +116,8 @@ describe('conversation erasure', () => {
       },
     };
     const orchestrator = createChatOrchestrator(
-      provider as any,
-      {build: (session: ChatSession) => session.entries} as any,
+      provider as unknown as AIProvider,
+      {build: (sess: ChatSession) => sess.entries} as unknown as PromptBuilder,
       undefined,
       {sessionStore: store}
     );
@@ -123,10 +126,14 @@ describe('conversation erasure', () => {
     app.use(express.json());
     app.use(
       '/chats',
-      createChatRoutes(orchestrator, store, (req: any, _res, next) => {
-        req.user = {id: 'user1'};
-        next();
-      })
+      createChatRoutes(
+        orchestrator,
+        store,
+        (req: AuthenticatedRequest, _res: express.Response, next: express.NextFunction) => {
+          req.user = {id: 'user1'};
+          next();
+        }
+      )
     );
 
     const res = await request(app).post('/chats').send({});
@@ -148,7 +155,7 @@ describe('conversation erasure', () => {
 
   it('A live session created after the cutoff is the same object from get before and after eraseOlderThan', async () => {
     const store = getStore();
-    const session = (await store.create('session3', 'user1')) as ChatSession;
+    await store.create('session3', 'user1');
     const fromGet = await store.get('session3');
 
     const cutoff = new Date('2020-01-01T00:00:00.000Z');
@@ -166,7 +173,7 @@ describe('conversation erasure', () => {
         return Promise.reject(new Error('db failure'));
       },
     });
-    const store = new MongoSessionStore({collection: fakeColl as any});
+    const store = new MongoSessionStore({collection: fakeColl});
 
     const session = {sessionId: 's1'} as ChatSession;
     store['cache'].set('s1', session);
@@ -202,7 +209,7 @@ describe('conversation erasure', () => {
       },
     });
 
-    const store = new MongoSessionStore({collection: mockCollection as any});
+    const store = new MongoSessionStore({collection: mockCollection});
 
     const getPromise = store.get('s1');
     await getStarted;
