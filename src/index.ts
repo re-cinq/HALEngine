@@ -27,6 +27,8 @@ export {createProvider} from './providers/providerFactory.js';
 export type {ProviderConfig, ProviderType} from './providers/providerFactory.js';
 export {withRetry} from './providers/withRetry.js';
 export type {RetryPolicy} from './providers/withRetry.js';
+export {withFallback} from './providers/withFallback.js';
+export type {FallbackPolicy} from './providers/withFallback.js';
 export {createBedrockProvider} from './providers/bedrock/index.js';
 export type {BedrockConfig} from './providers/bedrock/index.js';
 export {createVertexProvider} from './providers/vertex/index.js';

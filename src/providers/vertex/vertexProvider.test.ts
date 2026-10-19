@@ -192,6 +192,55 @@ describe('createVertexProvider', () => {
       });
     });
 
+    it('maps an HTTP 503 to SERVICE_UNAVAILABLE, marked retryable', async () => {
+      mockGenerateContentStream.mockRejectedValue(Object.assign(new Error('{"error":{"code":503}}'), {status: 503}));
+
+      await expect(
+        collectChunks(createVertexProvider(defaultConfig).sendMessage(userMessage('hi')))
+      ).rejects.toMatchObject({
+        name: 'AIError',
+        code: 'SERVICE_UNAVAILABLE',
+        retryable: true,
+      });
+    });
+
+    it('maps a stream error whose status is UNAVAILABLE and carries no HTTP status to SERVICE_UNAVAILABLE, retryable', async () => {
+      mockGenerateContentStream.mockRejectedValue(
+        new Error('got status: UNAVAILABLE. {"error":{"status":"UNAVAILABLE"}}')
+      );
+
+      await expect(
+        collectChunks(createVertexProvider(defaultConfig).sendMessage(userMessage('hi')))
+      ).rejects.toMatchObject({
+        code: 'SERVICE_UNAVAILABLE',
+        retryable: true,
+      });
+    });
+
+    it("maps a 504, a DEADLINE_EXCEEDED body and fetch's TimeoutError each to TIMEOUT, retryable", async () => {
+      const timedOut = Object.assign(new Error('The operation was aborted due to timeout'), {name: 'TimeoutError'});
+      const failures = [
+        Object.assign(new Error('gateway'), {status: 504}),
+        new Error('{"error":{"status":"DEADLINE_EXCEEDED"}}'),
+        timedOut,
+      ];
+      const mapped = [];
+      for (const failure of failures) {
+        mockGenerateContentStream.mockRejectedValueOnce(failure);
+        mapped.push(
+          await collectChunks(createVertexProvider(defaultConfig).sendMessage(userMessage('hi'))).catch(
+            (error: {code: string; retryable: boolean}) => [error.code, error.retryable]
+          )
+        );
+      }
+
+      expect(mapped).toEqual([
+        ['TIMEOUT', true],
+        ['TIMEOUT', true],
+        ['TIMEOUT', true],
+      ]);
+    });
+
     it('falls back to PROVIDER_ERROR for a failure it cannot classify', async () => {
       mockGenerateContentStream.mockRejectedValue(new Error('something else went wrong'));
 
