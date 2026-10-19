@@ -9,7 +9,7 @@ import type {AuthenticatedUser, ChatSession} from '../../types/session.js';
 import {ErrorCodes} from '../../types/session.js';
 import {sendError} from './sender.js';
 import {isValidWsPath, rejectSocket, parseWsData, sessionIdFromUpgrade, newSessionRequested} from './helpers.js';
-import {credentialFromSubprotocol} from './subprotocol.js';
+import {presentedCredential} from './credential.js';
 import {replayEntries, resumableSession, resumeFields} from './sessionResume.js';
 import type {ConnectInfo, SessionResumeOptions} from './sessionResume.js';
 import {log} from '../../shared/logger.js';
@@ -53,6 +53,16 @@ export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandl
       return;
     }
 
+    // Before wsAuth: two different credentials would let one be authenticated and the other forwarded to every tool.
+    const credential = presentedCredential(request);
+    if (!credential.ok) {
+      // Neither value: either may be somebody's live token.
+      log.warn('ws', 'upgrade refused: the Authorization header and the subprotocol carry different credentials');
+      rejectSocket(socket, '400 Bad Request');
+      return;
+    }
+    const authorization = credential.value;
+
     // Set as the upgrade callback's first statement: past it the socket speaks WebSocket, and an HTTP reply would corrupt it.
     let upgraded: ExtWebSocket | undefined;
 
@@ -70,7 +80,7 @@ export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandl
           extWs.workspaceId = user['workspaceId'] as string | number | undefined;
           extWs.authHeaders = {
             cookie: request.headers.cookie,
-            authorization: request.headers.authorization || bearerFromWebSocketProtocol(request),
+            authorization,
             host: (request.headers['x-forwarded-host'] as string | undefined) ?? request.headers.host,
           };
           extWs.isAlive = true;
@@ -106,11 +116,6 @@ function closeAfterUpgrade(ws: ExtWebSocket, error: unknown): void {
 // Async, so a synchronous throw becomes a rejection (answered 500) and a user returned without a promise still resolves.
 async function authenticate(wsAuth: WsAuthenticator, request: IncomingMessage): Promise<AuthenticatedUser | null> {
   return wsAuth(request);
-}
-
-function bearerFromWebSocketProtocol(req: IncomingMessage): string | undefined {
-  const token = credentialFromSubprotocol(req.headers['sec-websocket-protocol']);
-  return token ? `Bearer ${token}` : undefined;
 }
 
 export function createConnectionHandler(deps: ConnectionHandlerDeps, examplePrompts: string[]) {

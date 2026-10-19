@@ -32,7 +32,7 @@ const engine = createHalEngine({
 await engine.start();
 ```
 
-`ws` receives the WebSocket upgrade request, not a token, so pull whatever you authenticate with off `req.headers` yourself. A browser cannot set `Authorization` on a WebSocket, so it offers its token beside `hal.v1` in `Sec-WebSocket-Protocol`; `credentialFromSubprotocol` reads it the way the engine does, skipping the marker. Return an `AuthenticatedUser` — `id` is the only required field, and anything else you put on it reaches tools through `ToolContext`. Returning `null` rejects the upgrade with `401`.
+`ws` receives the WebSocket upgrade request, not a token, so pull whatever you authenticate with off `req.headers` yourself. A browser cannot set `Authorization` on a WebSocket, so it offers its token beside `hal.v1` in `Sec-WebSocket-Protocol`; `credentialFromSubprotocol` reads it the way the engine does, skipping the marker. An upgrade that sends both carriers must send the same credential in each; two different ones are refused with `400` before your function runs, so the credential you validate is the one the engine forwards to tools. Return an `AuthenticatedUser` — `id` is the only required field, and anything else you put on it reaches tools through `ToolContext`. Returning `null` rejects the upgrade with `401`.
 
 This starts a server with:
 
