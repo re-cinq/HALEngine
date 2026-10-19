@@ -21,7 +21,7 @@ export interface ThinkingEntry {
   isStreaming: boolean;
   /** Present only when the run ended before this entry finished (a provider failure or a round with no stop), or on a resume's replay of an entry still streaming. */
   truncated?: true;
-  /** Present only when a tool suppressed the response and the client was never sent this entry. */
+  /** Present only when a tool suppressed the response and the client was shown this entry blank or not at all. */
   suppressed?: true;
 }
 

@@ -342,13 +342,13 @@ describe('the websocket message handler', () => {
     });
 
     describe('the blanking log line', () => {
-      const lines: Array<{category: string; message: string; fields?: Record<string, unknown>}> = [];
-      const into = (category: string, message: string, fields?: Record<string, unknown>) =>
-        void lines.push({category, message, fields});
+      const lines: Array<{level: string; category: string; message: string; fields?: Record<string, unknown>}> = [];
+      const into = (level: string) => (category: string, message: string, fields?: Record<string, unknown>) =>
+        void lines.push({level, category, message, fields});
 
       beforeEach(() => {
         lines.length = 0;
-        setLogger({debug: into, info: into, warn: into, error: into});
+        setLogger({debug: into('debug'), info: into('info'), warn: into('warn'), error: into('error')});
       });
       afterEach(() => setLogger());
 
@@ -359,7 +359,9 @@ describe('the websocket message handler', () => {
           blanking: lines.filter(line => line.message === 'suppression activated'),
           leaked: /private|said|hello/.test(JSON.stringify(lines)),
         }).toEqual({
-          blanking: [{category: 'stream', message: 'suppression activated', fields: {blankingEntries: [1, 2]}}],
+          blanking: [
+            {level: 'info', category: 'stream', message: 'suppression activated', fields: {blankingEntries: [1, 2]}},
+          ],
           leaked: false,
         });
       });
