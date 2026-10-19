@@ -63,6 +63,28 @@ session saved by one store instance is readable by another built on the same col
 is not coherent across instances until a `save` — two processes serving the same conversation at
 once is not something this store supports.
 
+Erasure relies on reads seeing the writes before them. Each erasure withdraws the reads still
+waiting on the collection once its delete resolves, so that none of them re-caches what was erased.
+A `get` issued afterwards must therefore read from the primary. Build the store on a client or
+collection whose read preference is `primary`, which is the driver's default: on `secondaryPreferred`
+or `nearest`, a `get` can reach a secondary that has not yet applied the delete, and it then caches
+and returns the erased conversation.
+
+`eraseOlderThan` reads the ids older than the cutoff in pages of a thousand, sorted by `_id`, and
+deletes each page by id, so no single command outgrows MongoDB's 16 MiB limit however large the
+backlog. Each page leaves the cache as its delete completes. A page whose delete rejects still
+leaves the cache, because a write-concern timeout can follow a delete the server applied. The sweep
+then stops and the rejection reaches the caller. Pages already deleted stay deleted, and a later
+sweep resumes with what is left.
+
+The sweep reads only string ids, which are the only ids this store writes. A document another tool
+put in the same collection under a numeric or ObjectId `_id` is left alone. Each page is read with
+`hint: {_id: 1}`, so the sweep walks the `_id` index once from start to finish whatever other
+indexes exist. That pass reads every document in the collection, not only the backlog, so it needs
+no `createdAt` index, and adding one does not change the plan. A collection adapter that implements
+no `find` cannot sweep at all, and `eraseOlderThan` rejects with `StoreCannotList` before deleting
+anything.
+
 `count()` reports documents, not cache entries, so `delete` does not change it. It counts **every**
 user's, not one user's: it is an operational figure, and putting it in front of a user would both
 misreport their history and disclose the size of everyone else's. There is no per-user count — see

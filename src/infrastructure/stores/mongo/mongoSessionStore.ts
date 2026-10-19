@@ -11,6 +11,7 @@ import type {CollectionLike, MongoClientLike} from './mongoDriverTypes.js';
 import type {MongoSessionDocument} from './mongoSessionDocument.js';
 import {persistedFields, toChatSession, toLabelledSummary, toSessionSummary} from './mongoSessionDocument.js';
 import {cappedLimit, cursorAt} from '../sessionListWindow.js';
+import {log} from '../../../shared/logger.js';
 
 const DEFAULT_COLLECTION_NAME = 'hal_sessions';
 // Entries are left out so a page of summaries never carries a conversation out of the database.
@@ -19,11 +20,8 @@ const SUMMARY_FIELDS = {_id: 1, createdAt: 1, updatedAt: 1, entryCount: 1} as co
 const LABELLED_FIELDS = {...SUMMARY_FIELDS, entries: {$slice: 1}} as const;
 // Eight hours, matching InMemorySessionStore: a bound on the cache in front of the collection, not a retention period.
 const DEFAULT_MAX_AGE_MS = 8 * 60 * 60 * 1000;
-
-interface CachedSession {
-  session: ChatSession;
-  cachedAt: number;
-}
+// Ids per delete in a sweep: one `$in` over a whole backlog can pass the 16 MiB command limit and delete nothing.
+const ERASE_BATCH_SIZE = 1000;
 
 interface SharedOptions {
   collectionName?: string;
@@ -38,8 +36,15 @@ export type MongoSessionStoreOptions = SharedOptions &
     | {url: string; dbName: string}
   );
 
+interface CachedSession {
+  session: ChatSession;
+  cachedAt: number;
+}
+
 export class MongoSessionStore implements SessionStore {
   private readonly cache = new Map<string, CachedSession>();
+  // Only reads still waiting on the collection, so it is bounded by concurrency rather than by every erasure ever made.
+  private readonly inFlightGets = new Map<symbol, string>();
   private readonly options: MongoSessionStoreOptions;
   private readonly now: () => Date;
   private readonly maxAgeMs: number;
@@ -79,13 +84,20 @@ export class MongoSessionStore implements SessionStore {
     // Dropped on a stale read too: a document erased elsewhere would otherwise leave its entry cached for good.
     this.cache.delete(sessionId);
 
-    const collection = await this.collection();
-    const document = await collection.findOne({_id: sessionId});
-    if (document === null) return undefined;
+    const read = Symbol(sessionId);
+    this.inFlightGets.set(read, sessionId);
+    try {
+      const collection = await this.collection();
+      const document = await collection.findOne({_id: sessionId});
+      if (document === null) return undefined;
 
-    const session = toChatSession(document);
-    this.remember(sessionId, session);
-    return session;
+      const session = toChatSession(document);
+      // An erasure that landed while this read was waiting withdrew it, so what it read is returned but never cached.
+      if (this.inFlightGets.has(read)) this.remember(sessionId, session);
+      return session;
+    } finally {
+      this.inFlightGets.delete(read);
+    }
   }
 
   // The consumer's erasure primitive, which the engine never calls: it removes the document, not just the cache.
@@ -108,13 +120,20 @@ export class MongoSessionStore implements SessionStore {
     this.cache.clear();
   }
 
+  // After an erasure the REST router's own Map still answers GET requests; its next message writes nothing here.
   async save(session: ChatSession): Promise<void> {
     const collection = await this.collection();
-    await collection.updateOne(
+    const result = (await collection.updateOne(
       {_id: session.sessionId},
-      {$set: {...persistedFields(session), updatedAt: this.now()}, $setOnInsert: {createdAt: this.now()}},
-      {upsert: true}
-    );
+      {$set: {...persistedFields(session), updatedAt: this.now()}},
+      {upsert: false}
+    )) as {matchedCount?: number} | undefined;
+    // A caller saving its own copy, as the REST router does, leaves the cached object behind what was just written.
+    if (this.cache.get(session.sessionId)?.session !== session) this.forget([session.sessionId]);
+    // No id in the line: the conversation it names may be one an erasure request just removed.
+    if (result?.matchedCount === 0) {
+      log.warn('session', 'save found no document');
+    }
   }
 
   /** One query, filtered on the user in the database and sorted on the index `latestFor` already needs. */
@@ -148,26 +167,63 @@ export class MongoSessionStore implements SessionStore {
 
   /** Erases one conversation permanently and drops it from the cache. */
   async eraseConversation(sessionId: string): Promise<boolean> {
-    this.cache.delete(sessionId);
     const collection = await this.collection();
-    const {deletedCount} = await collection.deleteOne({_id: sessionId});
-    return deletedCount > 0;
+    // After the delete, so a read begun while it was pending is withdrawn; in finally, since a rejection may follow a delete.
+    try {
+      const {deletedCount} = await collection.deleteOne({_id: sessionId});
+      return deletedCount > 0;
+    } finally {
+      this.forget([sessionId]);
+    }
   }
 
   /** Erases every conversation created strictly before `cutoff`, and returns how many went. */
   async eraseOlderThan(cutoff: Date): Promise<number> {
-    this.cache.clear();
     const collection = await this.collection();
-    const {deletedCount} = await collection.deleteMany({createdAt: {$lt: cutoff}});
-    return deletedCount;
+    // Refused rather than swept by date: without ids it could only empty the cache, and do so on every retry.
+    if (collection.find === undefined) {
+      throw new StoreCannotList('eraseOlderThan needs a collection that implements find');
+    }
+
+    let erased = 0;
+    let after: string | undefined;
+    for (;;) {
+      // Keyset paging on string ids alone: `$gt` compares within one BSON type, so a foreign id would end the sweep early.
+      const ids = after === undefined ? {$type: 'string'} : {$type: 'string', $gt: after};
+      const page = await collection
+        .find(
+          {createdAt: {$lt: cutoff}, _id: ids},
+          {projection: {_id: 1}, sort: {_id: 1}, limit: ERASE_BATCH_SIZE, hint: {_id: 1}}
+        )
+        .toArray();
+      if (page.length === 0) return erased;
+
+      const batch = page.map(d => d._id);
+      after = batch[batch.length - 1];
+      erased += await this.eraseBatch(collection, batch);
+      if (page.length < ERASE_BATCH_SIZE) return erased;
+    }
+  }
+
+  // By id, not by date, so what goes and what leaves the cache agree; in finally, since a rejection may follow a delete.
+  private async eraseBatch(collection: CollectionLike<MongoSessionDocument>, ids: string[]): Promise<number> {
+    try {
+      const {deletedCount} = await collection.deleteMany({_id: {$in: ids}});
+      return deletedCount;
+    } finally {
+      this.forget(ids);
+    }
   }
 
   /** Erases every conversation this store can see. */
   async eraseAll(): Promise<number> {
-    this.cache.clear();
     const collection = await this.collection();
-    const {deletedCount} = await collection.deleteMany({});
-    return deletedCount;
+    try {
+      const {deletedCount} = await collection.deleteMany({});
+      return deletedCount;
+    } finally {
+      this.forgetAll();
+    }
   }
 
   /** Closes the driver only when this store opened it; a supplied client stays the caller's to close. */
@@ -191,8 +247,22 @@ export class MongoSessionStore implements SessionStore {
     this.cache.set(sessionId, {session, cachedAt: this.now().getTime()});
   }
 
+  // Drops the cache entries and withdraws every read still waiting on them, so none can re-cache an erased session.
+  private forget(sessionIds: string[]): void {
+    const erased = new Set(sessionIds);
+    for (const id of erased) this.cache.delete(id);
+    for (const [read, id] of this.inFlightGets) {
+      if (erased.has(id)) this.inFlightGets.delete(read);
+    }
+  }
+
+  private forgetAll(): void {
+    this.cache.clear();
+    this.inFlightGets.clear();
+  }
+
   private hasAged(cached: CachedSession): boolean {
-    return Number.isFinite(cached.cachedAt) && this.now().getTime() - cached.cachedAt > this.maxAgeMs;
+    return this.now().getTime() - cached.cachedAt > this.maxAgeMs;
   }
 
   private collection(): Promise<CollectionLike<MongoSessionDocument>> {

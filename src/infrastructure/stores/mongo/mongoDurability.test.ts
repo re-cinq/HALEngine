@@ -91,6 +91,16 @@ describe('a session written to MongoDB', () => {
     }).toEqual({created: '2026-01-01T00:00:00.000Z', moved: true});
   });
 
+  it('save after eraseConversation writes no document back', async () => {
+    const store = new MongoSessionStore({collection: collectionFor()});
+    const session = (await store.create('s1', 'u1')) as ChatSession;
+
+    await store.eraseConversation('s1');
+    await store.save(session);
+
+    expect(await store.count()).toBe(0);
+  });
+
   it('empties the cache on clear while every document survives', async () => {
     const store = new MongoSessionStore({collection: collectionFor()});
     await store.create('s1', 'u1');

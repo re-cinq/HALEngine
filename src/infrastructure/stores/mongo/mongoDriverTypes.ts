@@ -13,6 +13,8 @@ export interface FindOneOptions {
 /** `sort` and `limit` ride on the options rather than a chained cursor, so the port stays one method wide. */
 export interface FindManyOptions extends FindOneOptions {
   limit?: number;
+  /** Pins the index a query walks, so a sweep's plan cannot change with whatever indexes an operator adds. */
+  hint?: Record<string, 1 | -1>;
 }
 
 export interface CursorLike<T> {

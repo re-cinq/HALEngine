@@ -8,6 +8,7 @@ import {setLogger} from '../../shared/logger.js';
 import type {ChatOrchestrator} from '../../orchestration/chatOrchestrator.js';
 import type {SessionStore} from '../../types/sessionStore.js';
 import type {ChatSession} from '../../types/session.js';
+import {InMemorySessionStore} from '../../infrastructure/stores/inMemorySessionStore.js';
 
 // Pins the ownership guard, including that a rejected request stops before the route's work.
 
@@ -22,12 +23,13 @@ const harness = () => {
   let user: TestUser | undefined;
   const processMessage = jest.fn<(...args: unknown[]) => Promise<string>>().mockResolvedValue('assistant reply');
   const orchestrator = {processMessage} as unknown as ChatOrchestrator;
+  const sessionStore = new InMemorySessionStore();
 
   const app = express();
   app.use(express.json());
   app.use(
     '/chats',
-    createChatRoutes(orchestrator, {} as SessionStore, (req, _res, next) => {
+    createChatRoutes(orchestrator, sessionStore, (req, _res, next) => {
       if (user) (req as AuthenticatedRequest).user = user;
       next();
     })
@@ -52,6 +54,20 @@ const harness = () => {
   };
 
   return {as, chatOwnedBy, processMessage};
+};
+
+// A router whose every request is Alice's and whose orchestrator is never reached, for tests about the store alone.
+const aliceAppOn = (store: SessionStore): express.Express => {
+  const app = express();
+  app.use(express.json());
+  app.use(
+    '/chats',
+    createChatRoutes({} as unknown as ChatOrchestrator, store, (req, _res, next) => {
+      (req as AuthenticatedRequest).user = ALICE;
+      next();
+    })
+  );
+  return app;
 };
 
 describe('chat routes ownership guard', () => {
@@ -134,6 +150,39 @@ describe('chat routes ownership guard', () => {
       await as(owner).post(`/chats/${id}/messages`).send({content: 'hi'});
 
       expect(seen[0]?.workspaceId).toBe('w-9');
+    });
+
+    it('calls sessionStore.create with the new chat id and user id', async () => {
+      const store = new InMemorySessionStore();
+      const app = aliceAppOn(store);
+
+      const response = await request(app).post('/chats').send({});
+      const {id} = response.body as {id: string};
+      const stored = store.get(id) as ChatSession | undefined;
+
+      expect({status: response.status, stored: {sessionId: stored?.sessionId, userId: stored?.userId}}).toEqual({
+        status: 201,
+        stored: {sessionId: id, userId: ALICE.id},
+      });
+    });
+
+    it('lists no chat when sessionStore.create rejects, so a later GET answers 404', async () => {
+      const store = new InMemorySessionStore();
+      const minted: string[] = [];
+      const app = aliceAppOn(store);
+      jest.spyOn(store, 'create').mockImplementation(id => {
+        minted.push(id);
+        throw new Error('database unreachable');
+      });
+
+      const response = await request(app).post('/chats').send({});
+      const lookup = await request(app).get(`/chats/${minted[0]}`);
+
+      expect({created: response.status, calls: minted.length, lookup: lookup.status}).toEqual({
+        created: 500,
+        calls: 1,
+        lookup: 404,
+      });
     });
   });
 

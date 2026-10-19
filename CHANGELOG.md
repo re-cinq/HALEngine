@@ -8,6 +8,12 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Erased conversations no longer resurrect.** `MongoSessionStore.save` is now an update rather than an upsert: it writes to an existing document and does nothing when the document is gone, logging a `save found no document` warning that names no session. A `ChatSession` a live socket holds after `eraseConversation` or `eraseOlderThan` can no longer re-insert itself on the next turn. `POST /chats` on the REST routes now calls `sessionStore.create`, so a chat's document exists from the moment it is opened; a store whose `create` rejects now makes `POST /chats` answer `500`, with no chat opened. **Migration note:** a caller that invokes `save` for a session id it never called `create` for will find that `save` now writes nothing where it previously inserted.
+- **Erasure keeps the cache honest.** On `MongoSessionStore`, a `get` still waiting on the collection when `eraseConversation`, `eraseOlderThan` or `eraseAll` ran no longer re-caches the conversation it erased, and an erasure whose delete rejects still drops what it targeted from the cache, since a write-concern timeout can follow a delete the server applied. `eraseOlderThan` no longer empties the whole cache: it evicts exactly the sessions it deleted, so a live conversation it never touched keeps its one cached object. Reads must go to the primary for this to hold; see `docs/session-stores.md`.
+- **`eraseOlderThan` deletes in pages of a thousand ids.** It reads the ids older than the cutoff and deletes them by id, page by page, so no single command can outgrow MongoDB's 16 MiB limit. A conversation created while a sweep runs may be left for the next one, and a sweep whose delete rejects stops with the pages before it already erased. The sweep reads string ids alone, the only ids this store writes, and walks the `_id` index by hint, so it needs no `createdAt` index. **Migration note:** a custom collection adapter that implements no `find` can no longer sweep: `eraseOlderThan` now rejects with `StoreCannotList` before deleting anything, where it used to delete by date and empty the whole cache. Implement `find`, which listing conversations already needs.
+
 ## [0.6.1] - 2026-10-16
 
 **Upgrading from 0.6.0.** Nothing to do. If you run Vertex on a Gemini 3 model, this release is what lets a tool-using turn reach its answer: 0.6.0 sends each tool call back without its thought signature, and Gemini 3 refuses that request with a `400`.

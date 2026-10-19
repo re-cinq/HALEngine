@@ -1,6 +1,6 @@
 // The demo REST chat API: its whole state is the `chats` Map below, one per router and lost on restart.
 
-// `_sessionStore` is unused by design - this router keeps that Map and builds each ChatSession inline.
+// POST /chats calls sessionStore.create so a save after erasure of the conversation writes nothing back.
 
 // A chat id from POST /chats is not a WebSocket session id: the socket mints its own and stores that.
 
@@ -32,7 +32,7 @@ interface Chat {
 }
 export function createChatRoutes(
   orchestrator: ChatOrchestrator,
-  _sessionStore: SessionStore,
+  sessionStore: SessionStore,
   authMiddleware?: HttpAuthMiddleware
 ): Router {
   const router = Router();
@@ -45,17 +45,21 @@ export function createChatRoutes(
       deny(res, 'no auth middleware is configured');
     });
 
-  router.post('/', auth, (req: AuthenticatedRequest, res: Response) => {
+  router.post('/', auth, async (req: AuthenticatedRequest, res: Response) => {
     const user = requireUser(req, res);
     if (!user) return;
 
     const chatId = randomUUID();
     const createdAt = new Date().toISOString();
 
+    const workspaceId = optionalId(user.workspaceId);
+    // Stored before it is listed, so a store that refuses the write leaves no chat behind that it never held.
+    await sessionStore.create(chatId, user.id, {workspaceId});
+
     chats.set(chatId, {
       id: chatId,
       userId: user.id,
-      workspaceId: optionalId(user.workspaceId),
+      workspaceId,
       messages: [],
       createdAt,
     });
