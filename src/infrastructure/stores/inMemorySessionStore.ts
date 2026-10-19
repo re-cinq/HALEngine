@@ -147,7 +147,6 @@ function labelled(row: ListRow): SessionSummary {
   return {...row.summary, preview};
 }
 
-// Ascending and stable, so latestFor's `.at(-1)` takes the session created later when two are last active together.
 function summaryOf(held: HeldSession): SessionSummary {
   const {session} = held;
   return {
