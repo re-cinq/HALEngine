@@ -62,7 +62,7 @@ export function mongoCollection(): () => Collection<MongoSessionDocument> {
 
 /** A collection that answers nothing, for the suites that need one member to misbehave; override just that member. */
 export function fakeCollection(
-  overrides: Partial<CollectionLike<MongoSessionDocument>> = {}
+  overrides: {[K in keyof CollectionLike<MongoSessionDocument>]?: (...args: any[]) => any} = {}
 ): CollectionLike<MongoSessionDocument> {
   return {
     findOne: () => Promise.resolve(null),

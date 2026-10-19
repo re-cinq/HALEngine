@@ -21,11 +21,6 @@ const LABELLED_FIELDS = {...SUMMARY_FIELDS, entries: {$slice: 1}} as const;
 // Eight hours, matching InMemorySessionStore: a bound on the cache in front of the collection, not a retention period.
 const DEFAULT_MAX_AGE_MS = 8 * 60 * 60 * 1000;
 
-interface CachedSession {
-  session: ChatSession;
-  cachedAt: number;
-}
-
 interface SharedOptions {
   collectionName?: string;
   now?: () => Date;
@@ -40,7 +35,9 @@ export type MongoSessionStoreOptions = SharedOptions &
   );
 
 export class MongoSessionStore implements SessionStore {
-  private readonly cache = new Map<string, CachedSession>();
+  private readonly cache = new Map<string, ChatSession>();
+  private readonly cacheTime = new Map<string, number>();
+  private readonly erased = new Set<string>();
   private readonly options: MongoSessionStoreOptions;
   private readonly now: () => Date;
   private readonly maxAgeMs: number;
@@ -70,15 +67,17 @@ export class MongoSessionStore implements SessionStore {
     );
 
     // Cached only once the write landed: a failing database would otherwise fill memory with sessions it never stored.
+    this.erased.delete(sessionId);
     this.remember(sessionId, session);
     return session;
   }
 
   async get(sessionId: string): Promise<ChatSession | undefined> {
     const cached = this.cache.get(sessionId);
-    if (cached !== undefined && !this.hasAged(cached)) return cached.session;
+    if (cached !== undefined && !this.hasAged(sessionId)) return cached;
     // Dropped on a stale read too: a document erased elsewhere would otherwise leave its entry cached for good.
     this.cache.delete(sessionId);
+    this.cacheTime.delete(sessionId);
 
     const collection = await this.collection();
     const document = await collection.findOne({_id: sessionId});
@@ -107,6 +106,7 @@ export class MongoSessionStore implements SessionStore {
   // Empties the cache alone; eraseAll is the durable wipe, so neither can be reached by accident.
   clear(): void {
     this.cache.clear();
+    this.cacheTime.clear();
   }
 
   // After an erasure the REST router's own Map still answers GET requests; its next message writes nothing here.
@@ -153,7 +153,9 @@ export class MongoSessionStore implements SessionStore {
 
   /** Erases one conversation permanently and drops it from the cache. */
   async eraseConversation(sessionId: string): Promise<boolean> {
+    this.erased.add(sessionId);
     this.cache.delete(sessionId);
+    this.cacheTime.delete(sessionId);
     const collection = await this.collection();
     const {deletedCount} = await collection.deleteOne({_id: sessionId});
     return deletedCount > 0;
@@ -161,15 +163,22 @@ export class MongoSessionStore implements SessionStore {
 
   /** Erases every conversation created strictly before `cutoff`, and returns how many went. */
   async eraseOlderThan(cutoff: Date): Promise<number> {
-    this.cache.clear();
     const collection = await this.collection();
+    const older = (await collection.find?.({createdAt: {$lt: cutoff}}, {projection: {_id: 1}})?.toArray()) ?? [];
+    const ids = older.map(d => d._id);
     const {deletedCount} = await collection.deleteMany({createdAt: {$lt: cutoff}});
+    for (const id of ids) {
+      this.erased.add(id);
+      this.cache.delete(id);
+      this.cacheTime.delete(id);
+    }
     return deletedCount;
   }
 
   /** Erases every conversation this store can see. */
   async eraseAll(): Promise<number> {
     this.cache.clear();
+    this.cacheTime.clear();
     const collection = await this.collection();
     const {deletedCount} = await collection.deleteMany({});
     return deletedCount;
@@ -178,6 +187,7 @@ export class MongoSessionStore implements SessionStore {
   /** Closes the driver only when this store opened it; a supplied client stays the caller's to close. */
   async close(): Promise<void> {
     this.cache.clear();
+    this.cacheTime.clear();
     if (this.owned === undefined) return;
 
     await this.owned.close();
@@ -187,17 +197,23 @@ export class MongoSessionStore implements SessionStore {
 
   // Dropping a stale entry erases nothing: the collection is the truth and the next get reloads from it.
   private remember(sessionId: string, session: ChatSession): void {
-    for (const [cachedId, cached] of this.cache) {
-      if (!this.hasAged(cached)) break;
+    if (this.erased.has(sessionId)) return;
+    for (const cachedId of this.cache.keys()) {
+      if (!this.hasAged(cachedId)) break;
       this.cache.delete(cachedId);
+      this.cacheTime.delete(cachedId);
     }
     // Deleted first: `set` on an existing key keeps its old position, which would break the sweep's age order.
     this.cache.delete(sessionId);
-    this.cache.set(sessionId, {session, cachedAt: this.now().getTime()});
+    this.cacheTime.delete(sessionId);
+    this.cache.set(sessionId, session);
+    this.cacheTime.set(sessionId, this.now().getTime());
   }
 
-  private hasAged(cached: CachedSession): boolean {
-    return Number.isFinite(cached.cachedAt) && this.now().getTime() - cached.cachedAt > this.maxAgeMs;
+  private hasAged(sessionId: string): boolean {
+    const cachedAt = this.cacheTime.get(sessionId);
+    if (cachedAt === undefined) return false;
+    return this.now().getTime() - cachedAt > this.maxAgeMs;
   }
 
   private collection(): Promise<CollectionLike<MongoSessionDocument>> {
