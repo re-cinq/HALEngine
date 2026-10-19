@@ -11,6 +11,8 @@ package, not for somebody reading this repository's commit log.
 ### Fixed
 
 - **Erased conversations no longer resurrect.** `MongoSessionStore.save` is now an update rather than an upsert: it writes to an existing document and does nothing when the document is gone. A `ChatSession` a live socket holds after `eraseConversation` or `eraseOlderThan` can no longer re-insert itself on the next turn. **Migration note:** a caller that invokes `save` for a session id it never called `create` for will find that `save` now writes nothing where it previously inserted.
+- **A read in flight during an erasure no longer re-caches the erased conversation.** `MongoSessionStore` withdraws every `get` still waiting on the collection when `eraseConversation`, `eraseOlderThan` or `eraseAll` removes its document, and keeps no record of erased ids afterwards, so its memory no longer grows with each erasure. A `save` of a copy other than the cached session, as the REST chat routes make, now drops the stale cached one, and the warning a `save` that matched no document logs no longer names the session.
+- **`POST /chats` no longer lists a chat the session store refused.** The route now awaits `sessionStore.create` before adding the chat to its map, so a failed write answers `500` and leaves no chat behind.
 
 ## [0.6.1] - 2026-10-16
 
