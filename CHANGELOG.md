@@ -17,6 +17,7 @@ package, not for somebody reading this repository's commit log.
 
 ### Changed
 
+- `InMemorySessionStore.latestFor` breaks a tie between two conversations last active in the same millisecond by the larger session id, as `listFor` and `MongoSessionStore` already do, instead of by creation order. The head of a conversation list is now always the session a resume rejoins. Which of two such tied conversations a reconnect lands on can change; nothing else does.
 - A failure after the WebSocket handshake completed, such as a `connection` listener that throws, now closes the socket with `1011` and logs `connection failed after the handshake` at `error` under `ws`, instead of writing an HTTP status line into the upgraded socket. Failures before the handshake still answer in HTTP (`401`, `500`). See `specs/hal-engine-websocket-protocol/spec.md` § 11.4.
 - `ToolRegistry.register` throws `Duplicate tool name: <name>` for a name already registered, checked against the name a definition resolves to at registration, and leaves the first tool as it was. See `specs/hal-engine-duplicate-tool-name/spec.md`.
 - `createApp` always registers a default error handler, after your `errorHandler` if you supply one. It answers by the first rule that applies: an explicit `status` or `statusCode` in 400–599 with a standard phrase answers that status with Node's phrase; an `AIError` answers 429, 503 or 504 for `RATE_LIMITED`, `SERVICE_UNAVAILABLE` or `TIMEOUT` and 502 for any other code; anything else answers 500 `Internal Server Error`. No body carries the error's message or stack.

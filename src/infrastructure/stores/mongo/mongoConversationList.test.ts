@@ -316,15 +316,14 @@ describe('the MongoDB store conversation list', () => {
 
   it('heads the list with the session latestFor returns even when every conversation shares an updatedAt', async () => {
     const store = new MongoSessionStore({collection: collectionFor(), now: () => new Date(START)});
-    await store.create('s1', 'u1');
-    await store.create('s2', 'u1');
-    await store.create('s3', 'u1');
+    await store.create('zeta', 'u1');
+    await store.create('alpha', 'u1');
 
     const listed = await store.listFor('u1');
 
-    expect({head: listed[0]?.sessionId, latest: (await store.latestFor('u1'))?.sessionId}).toEqual({
-      head: 's3',
-      latest: 's3',
+    expect({listed: listed.map(row => row.sessionId), latest: (await store.latestFor('u1'))?.sessionId}).toEqual({
+      listed: ['zeta', 'alpha'],
+      latest: 'zeta',
     });
   });
 
