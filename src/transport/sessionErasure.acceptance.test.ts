@@ -180,7 +180,7 @@ describe('conversation erasure', () => {
 
     let thrownMessage: string | undefined;
     try {
-      await store.eraseOlderThan(new Date());
+      await store.eraseOlderThan(new Date('2021-01-01T00:00:00.000Z'));
     } catch (e) {
       thrownMessage = (e as Error).message;
     }
@@ -202,7 +202,13 @@ describe('conversation erasure', () => {
       findOne: async () => {
         getResolves();
         await new Promise(r => setTimeout(r, 50));
-        return {_id: 's1', entries: [] as SessionEntry[], userId: 'u1', createdAt: new Date(), updatedAt: new Date()};
+        return {
+          _id: 's1',
+          entries: [] as SessionEntry[],
+          userId: 'u1',
+          createdAt: new Date('2020-01-01T00:00:00.000Z'),
+          updatedAt: new Date('2020-01-01T00:00:00.000Z'),
+        };
       },
       deleteOne: async () => {
         return {deletedCount: 1, acknowledged: true};
