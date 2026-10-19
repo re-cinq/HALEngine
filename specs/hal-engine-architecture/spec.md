@@ -123,7 +123,7 @@ interface AuthenticatedUser {
 }
 ```
 
-The connection handler takes `id` as the session's `userId` and picks up `workspaceId` when the returned user carries one. Separately, and regardless of what this function reads, the engine forwards the first `Sec-WebSocket-Protocol` value that is not the `hal.v1` marker as `Bearer <token>` in the session's `authHeaders.authorization`, so a tool can proxy the caller's credentials upstream. The client offers two values, `hal.v1, <access-token>`, and the server answers only `hal.v1`.
+The connection handler takes `id` as the session's `userId` and picks up `workspaceId` when the returned user carries one. The request it receives has already been checked for a credential conflict: an upgrade whose `Authorization` header and subprotocol carry different credentials is refused with `400` before this function runs, so whichever carrier it reads, the credential it validates is the one the engine forwards in the session's `authHeaders.authorization`, the header or the first `Sec-WebSocket-Protocol` value that is not the `hal.v1` marker as `Bearer <token>`, for a tool to proxy the caller's credentials upstream ([validated by: refuses Bearer attacker-token beside a victim-token subprotocol with 400 before wsAuth runs, and neither value reaches the response or a log line](../../src/transport/handshake.test.ts#L180)). The client offers two values, `hal.v1, <access-token>`, and the server answers only `hal.v1`.
 
 ### AIProvider
 
