@@ -2,6 +2,7 @@ import {MongoSessionStore} from './mongoSessionStore.js';
 import {fakeCollection} from './mongoTestSupport.js';
 import type {CollectionLike} from './mongoDriverTypes.js';
 import type {MongoSessionDocument} from './mongoSessionDocument.js';
+import type {ChatSession} from '../../../types/session.js';
 
 // A store that caches before it writes keeps what it failed to save, credentials and all, until the process ends.
 
@@ -19,5 +20,29 @@ describe('a create whose write fails', () => {
     const cached = await store.get('s1');
 
     expect({outcome, cached}).toEqual({outcome: 'database unreachable', cached: undefined});
+  });
+});
+
+describe('a save whose write returns no result', () => {
+  it('completes without error when updateOne returns no result', async () => {
+    const store = new MongoSessionStore({collection: fakeCollection()});
+    const session: ChatSession = {sessionId: 's1', userId: 'u1', entries: []};
+
+    await expect(store.save(session)).resolves.toBeUndefined();
+  });
+});
+
+describe('a get from a cache entry with no recorded time', () => {
+  it('returns the cached session without querying the collection', async () => {
+    const reads = {findOne: 0};
+    const store = new MongoSessionStore({
+      collection: fakeCollection({findOne: () => (reads.findOne++, Promise.resolve(null))}),
+    });
+    const session: ChatSession = {sessionId: 's1', userId: 'u1', entries: []};
+    store['cache'].set('s1', session);
+
+    const result = await store.get('s1');
+
+    expect({result, reads: reads.findOne}).toEqual({result: session, reads: 0});
   });
 });

@@ -22,6 +22,7 @@
 - [x] Have `eraseOlderThan` evict only what it erased (spec link added, lint fixed)
 - [x] Say in the store's doc-block that REST router's next message after an erasure writes nothing
 - [x] `CHANGELOG.md` carries an entry
+- [x] 100% branch coverage for `src/infrastructure/stores/` (tests for `save` with undefined result and `get` with no cacheTime)
 
 ## Out of scope
 
