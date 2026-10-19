@@ -42,6 +42,7 @@ describe('what a persisted session may not contain', () => {
 
   it('holds no credential key at any depth of the stored document', async () => {
     const store = new MongoSessionStore({collection: collectionFor()});
+    await store.create('s1', 'u1');
 
     await store.save(sessionCarryingCredentials());
     const stored = await collectionFor().findOne({_id: 's1'});
@@ -52,6 +53,7 @@ describe('what a persisted session may not contain', () => {
 
   it('keeps everything that is not a credential, so the redaction is not simply emptying the document', async () => {
     const store = new MongoSessionStore({collection: collectionFor()});
+    await store.create('s1', 'u1');
 
     await store.save(sessionCarryingCredentials());
     const stored = await collectionFor().findOne({_id: 's1'});
