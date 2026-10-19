@@ -56,6 +56,20 @@ const harness = () => {
   return {as, chatOwnedBy, processMessage};
 };
 
+// A router whose every request is Alice's and whose orchestrator is never reached, for tests about the store alone.
+const aliceAppOn = (store: SessionStore): express.Express => {
+  const app = express();
+  app.use(express.json());
+  app.use(
+    '/chats',
+    createChatRoutes({} as unknown as ChatOrchestrator, store, (req, _res, next) => {
+      (req as AuthenticatedRequest).user = ALICE;
+      next();
+    })
+  );
+  return app;
+};
+
 describe('chat routes ownership guard', () => {
   describe('GET /chats/:id', () => {
     it('serves the chat to the user who created it', async () => {
@@ -140,15 +154,7 @@ describe('chat routes ownership guard', () => {
 
     it('calls sessionStore.create with the new chat id and user id', async () => {
       const store = new InMemorySessionStore();
-      const app = express();
-      app.use(express.json());
-      app.use(
-        '/chats',
-        createChatRoutes({} as unknown as ChatOrchestrator, store, (req, _res, next) => {
-          (req as AuthenticatedRequest).user = ALICE;
-          next();
-        })
-      );
+      const app = aliceAppOn(store);
 
       const response = await request(app).post('/chats').send({});
       const {id} = response.body as {id: string};
@@ -157,6 +163,25 @@ describe('chat routes ownership guard', () => {
       expect({status: response.status, stored: {sessionId: stored?.sessionId, userId: stored?.userId}}).toEqual({
         status: 201,
         stored: {sessionId: id, userId: ALICE.id},
+      });
+    });
+
+    it('lists no chat when sessionStore.create rejects, so a later GET answers 404', async () => {
+      const store = new InMemorySessionStore();
+      const minted: string[] = [];
+      const app = aliceAppOn(store);
+      jest.spyOn(store, 'create').mockImplementation(id => {
+        minted.push(id);
+        throw new Error('database unreachable');
+      });
+
+      const response = await request(app).post('/chats').send({});
+      const lookup = await request(app).get(`/chats/${minted[0]}`);
+
+      expect({created: response.status, calls: minted.length, lookup: lookup.status}).toEqual({
+        created: 500,
+        calls: 1,
+        lookup: 404,
       });
     });
   });

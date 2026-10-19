@@ -52,15 +52,17 @@ export function createChatRoutes(
     const chatId = randomUUID();
     const createdAt = new Date().toISOString();
 
+    const workspaceId = optionalId(user.workspaceId);
+    // Stored before it is listed, so a store that refuses the write leaves no chat behind that it never held.
+    await sessionStore.create(chatId, user.id, {workspaceId});
+
     chats.set(chatId, {
       id: chatId,
       userId: user.id,
-      workspaceId: optionalId(user.workspaceId),
+      workspaceId,
       messages: [],
       createdAt,
     });
-
-    await sessionStore.create(chatId, user.id, {workspaceId: optionalId(user.workspaceId)});
 
     res.status(201).json({id: chatId, createdAt});
   });
