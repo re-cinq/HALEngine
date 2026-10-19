@@ -180,31 +180,27 @@ export class MongoSessionStore implements SessionStore {
   /** Erases every conversation created strictly before `cutoff`, and returns how many went. */
   async eraseOlderThan(cutoff: Date): Promise<number> {
     const collection = await this.collection();
+    // Refused rather than swept by date: without ids it could only empty the cache, and do so on every retry.
     if (collection.find === undefined) {
-      // No way to learn which ids go, so the whole cache does, in finally since a rejected delete may have applied.
-      try {
-        const {deletedCount} = await collection.deleteMany({createdAt: {$lt: cutoff}});
-        return deletedCount;
-      } finally {
-        this.forgetAll();
-      }
+      throw new StoreCannotList('eraseOlderThan needs a collection that implements find');
     }
 
     let erased = 0;
     let after: string | undefined;
     for (;;) {
-      // Keyset paging on `_id`, so a document a delete somehow left behind cannot hold the sweep in a loop.
+      // Keyset paging on string ids alone: `$gt` compares within one BSON type, so a foreign id would end the sweep early.
+      const ids = after === undefined ? {$type: 'string'} : {$type: 'string', $gt: after};
       const page = await collection
         .find(
-          {createdAt: {$lt: cutoff}, ...(after === undefined ? {} : {_id: {$gt: after}})},
-          {projection: {_id: 1}, sort: {_id: 1}, limit: ERASE_BATCH_SIZE}
+          {createdAt: {$lt: cutoff}, _id: ids},
+          {projection: {_id: 1}, sort: {_id: 1}, limit: ERASE_BATCH_SIZE, hint: {_id: 1}}
         )
         .toArray();
       if (page.length === 0) return erased;
 
-      const ids = page.map(d => d._id);
-      after = ids[ids.length - 1];
-      erased += await this.eraseBatch(collection, ids);
+      const batch = page.map(d => d._id);
+      after = batch[batch.length - 1];
+      erased += await this.eraseBatch(collection, batch);
       if (page.length < ERASE_BATCH_SIZE) return erased;
     }
   }

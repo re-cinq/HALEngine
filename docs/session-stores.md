@@ -77,6 +77,14 @@ leaves the cache, because a write-concern timeout can follow a delete the server
 then stops and the rejection reaches the caller. Pages already deleted stay deleted, and a later
 sweep resumes with what is left.
 
+The sweep reads only string ids, which are the only ids this store writes. A document another tool
+put in the same collection under a numeric or ObjectId `_id` is left alone. Each page is read with
+`hint: {_id: 1}`, so the sweep walks the `_id` index once from start to finish whatever other
+indexes exist. That pass reads every document in the collection, not only the backlog, so it needs
+no `createdAt` index, and adding one does not change the plan. A collection adapter that implements
+no `find` cannot sweep at all, and `eraseOlderThan` rejects with `StoreCannotList` before deleting
+anything.
+
 `count()` reports documents, not cache entries, so `delete` does not change it. It counts **every**
 user's, not one user's: it is an operational figure, and putting it in front of a user would both
 misreport their history and disclose the size of everyone else's. There is no per-user count — see

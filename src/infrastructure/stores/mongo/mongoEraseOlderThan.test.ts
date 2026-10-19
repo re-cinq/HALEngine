@@ -1,7 +1,8 @@
 import {MongoSessionStore} from './mongoSessionStore.js';
 import {fakeCollection} from './mongoFakeCollection.js';
 import {mongoCollection} from './mongoTestSupport.js';
-import type {CollectionLike} from './mongoDriverTypes.js';
+import type {CollectionLike, FindManyOptions} from './mongoDriverTypes.js';
+import type {Collection} from 'mongodb';
 import type {MongoSessionDocument} from './mongoSessionDocument.js';
 
 // eraseOlderThan must evict exactly the sessions it deleted, never a live session it never touched.
@@ -41,6 +42,25 @@ describe('eraseOlderThan selective cache eviction', () => {
     expect(await store.get('old1')).toBeUndefined();
   });
 
+  it('pages string ids along the _id index, so neither a foreign id type nor an added index changes the walk', async () => {
+    const reads: {filter: Record<string, unknown>; options?: FindManyOptions}[] = [];
+    const store = new MongoSessionStore({
+      collection: sweeping({
+        find: (filter, options) => (reads.push({filter, options}), {toArray: () => Promise.resolve([])}),
+      }),
+    });
+    const cutoff = new Date('2021-01-01');
+
+    await store.eraseOlderThan(cutoff);
+
+    expect(reads).toEqual([
+      {
+        filter: {createdAt: {$lt: cutoff}, _id: {$type: 'string'}},
+        options: {projection: {_id: 1}, sort: {_id: 1}, limit: 1000, hint: {_id: 1}},
+      },
+    ]);
+  });
+
   it('deletes exactly the ids it read, so what it deletes and what it evicts agree', async () => {
     const filters: Record<string, unknown>[] = [];
     const store = new MongoSessionStore({
@@ -54,29 +74,20 @@ describe('eraseOlderThan selective cache eviction', () => {
 });
 
 describe('eraseOlderThan on a collection that implements no find', () => {
-  it('empties the whole cache even when the delete rejects, since it may have applied', async () => {
+  it('refuses with StoreCannotList, deleting nothing and keeping every cached session', async () => {
+    let deletes = 0;
     const store = new MongoSessionStore({
-      collection: fakeCollection({deleteMany: () => Promise.reject(new Error('write concern timed out'))}),
+      collection: fakeCollection({deleteMany: () => (deletes++, Promise.resolve({deletedCount: 1}))}),
     });
-    await store.create('s1', 'u');
+    const live = await store.create('s1', 'u');
 
-    const outcome = await store.eraseOlderThan(new Date('2021-01-01')).catch((error: Error) => error.message);
+    const refusal = await store.eraseOlderThan(new Date('2021-01-01')).catch((error: Error) => error.name);
 
-    expect({outcome, afterwards: await store.get('s1')}).toEqual({
-      outcome: 'write concern timed out',
-      afterwards: undefined,
+    expect({refusal, deletes, kept: (await store.get('s1')) === live}).toEqual({
+      refusal: 'StoreCannotList',
+      deletes: 0,
+      kept: true,
     });
-  });
-
-  it('empties the whole cache once the delete succeeds, since it cannot tell which ids went', async () => {
-    const store = new MongoSessionStore({
-      collection: fakeCollection({deleteMany: () => Promise.resolve({deletedCount: 1})}),
-    });
-    await store.create('s1', 'u');
-
-    await store.eraseOlderThan(new Date('2021-01-01'));
-
-    expect(await store.get('s1')).toBeUndefined();
   });
 });
 
@@ -127,6 +138,33 @@ describe('eraseOlderThan against a real collection', () => {
     const removed = await store.eraseOlderThan(new Date('2021-01-01T00:00:00.000Z'));
 
     expect({removed, deletes}).toEqual({removed: 0, deletes: 2});
+  });
+
+  it('sweeps every string id past a full page of foreign ids, and leaves the foreign documents alone', async () => {
+    const real = collectionFor();
+    const at = new Date('2020-01-01T00:00:00.000Z');
+    const foreign = Array.from({length: 1000}, (_, n) => ({
+      _id: n,
+      userId: 'u',
+      entries: [],
+      createdAt: at,
+      updatedAt: at,
+    }));
+    await (real as unknown as Collection<{_id: number}>).insertMany(foreign);
+    await real.insertMany(['a', 'b'].map(id => ({_id: id, userId: 'u', entries: [], createdAt: at, updatedAt: at})));
+    const store = new MongoSessionStore({collection: real});
+
+    const removed = await store.eraseOlderThan(new Date('2021-01-01T00:00:00.000Z'));
+
+    expect({
+      removed,
+      ours: await real.countDocuments({_id: {$type: 'string'}}),
+      foreign: await real.countDocuments(),
+    }).toEqual({
+      removed: 2,
+      ours: 0,
+      foreign: 1000,
+    });
   });
 
   it('leaves a session created between its read and its delete both stored and cached', async () => {
