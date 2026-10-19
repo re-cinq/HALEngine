@@ -93,7 +93,7 @@ run_variant() {
   local peers=()
   if [ "$name" = "full" ]; then
     peers=(
-      "@google-cloud/vertexai@$(node -p "require('$repo/package.json').peerDependencies['@google-cloud/vertexai']")"
+      "@google/genai@$(node -p "require('$repo/package.json').peerDependencies['@google/genai']")"
       "@aws-sdk/client-bedrock-runtime@$(node -p "require('$repo/package.json').peerDependencies['@aws-sdk/client-bedrock-runtime']")"
     )
   fi
@@ -103,7 +103,7 @@ run_variant() {
   # under `set -u`, and AGENTS.md tells a maintainer to run this locally before a release.
   npm install --silent --save "./$tarball" "typescript@$typescript_version" ${peers[@]+"${peers[@]}"} >/dev/null
 
-  for peer in @google-cloud/vertexai @aws-sdk/client-bedrock-runtime; do
+  for peer in @google/genai @aws-sdk/client-bedrock-runtime; do
     if [ -d "node_modules/$peer" ] && [ "$name" = "bare" ]; then
       echo "smoke [$name]: FAILED - optional peer $peer was installed; it must not be" >&2
       exit 1

@@ -8,6 +8,15 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+**Upgrading.** If you use the Vertex provider, install `@google/genai` (`^2.26.0`) in place of `@google-cloud/vertexai`, which you can uninstall. Nothing in `VertexConfig` changes. Google deprecated `@google-cloud/vertexai` on 2025-06-24 and said it would be unavailable after 2026-06-24; it gets no fixes.
+
+### Changed
+
+- **The Vertex provider runs on `@google/genai`.** It is the optional peer in place of `@google-cloud/vertexai`, created in Vertex mode on the GA `v1` API, the one the old SDK called. Streaming, the tool loop, Gemini 3 thought signatures, structured output and the `eu` multi-region were re-verified live on `gemini-3.1-flash-lite`. See `specs/hal-engine-providers/spec.md` § Google Vertex AI.
+- **An abort now closes the Vertex request.** The signal reaches `fetch`, so a closed tab or an abandoned retry stops the vendor's answer reaching the engine, as Bedrock's already did; under the old SDK only the engine's reading stopped. Google documents that the service may still finish generating, and bill, the aborted request.
+- **`location: 'eu'` alone reaches the EU multi-region.** The new SDK maps `eu` and `us` to their `rep` hosts, so `apiEndpoint` is no longer needed for them; it still overrides the host when set.
+- **Vertex failures are classified by HTTP status as well as message.** A `429` is `RATE_LIMITED` and a `401` or `403` is `AUTH_ERROR` even when the message names no code.
+
 ## [0.7.0] - 2026-10-19
 
 **Upgrading from 0.6.x.** Seven behaviours change: two on HTTP, one in `ToolRegistry` and four on the WebSocket. Two `MongoSessionStore` fixes under **Fixed** carry migration notes of their own.
