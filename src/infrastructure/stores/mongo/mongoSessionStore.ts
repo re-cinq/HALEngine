@@ -20,6 +20,8 @@ const SUMMARY_FIELDS = {_id: 1, createdAt: 1, updatedAt: 1, entryCount: 1} as co
 const LABELLED_FIELDS = {...SUMMARY_FIELDS, entries: {$slice: 1}} as const;
 // Eight hours, matching InMemorySessionStore: a bound on the cache in front of the collection, not a retention period.
 const DEFAULT_MAX_AGE_MS = 8 * 60 * 60 * 1000;
+// Ids per delete in a sweep: one `$in` over a whole backlog can pass the 16 MiB command limit and delete nothing.
+const ERASE_BATCH_SIZE = 1000;
 
 interface SharedOptions {
   collectionName?: string;
@@ -179,17 +181,42 @@ export class MongoSessionStore implements SessionStore {
   async eraseOlderThan(cutoff: Date): Promise<number> {
     const collection = await this.collection();
     if (collection.find === undefined) {
-      // No way to learn which ids go, so the whole cache does, but only once the delete has succeeded.
-      const {deletedCount} = await collection.deleteMany({createdAt: {$lt: cutoff}});
-      this.forgetAll();
-      return deletedCount;
+      // No way to learn which ids go, so the whole cache does, in finally since a rejected delete may have applied.
+      try {
+        const {deletedCount} = await collection.deleteMany({createdAt: {$lt: cutoff}});
+        return deletedCount;
+      } finally {
+        this.forgetAll();
+      }
     }
-    const older = await collection.find({createdAt: {$lt: cutoff}}, {projection: {_id: 1}}).toArray();
-    const ids = older.map(d => d._id);
-    // By id, not by date: a document created between the read and the delete would otherwise go while staying cached.
-    const {deletedCount} = await collection.deleteMany({_id: {$in: ids}});
-    this.forget(ids);
-    return deletedCount;
+
+    let erased = 0;
+    let after: string | undefined;
+    for (;;) {
+      // Keyset paging on `_id`, so a document a delete somehow left behind cannot hold the sweep in a loop.
+      const page = await collection
+        .find(
+          {createdAt: {$lt: cutoff}, ...(after === undefined ? {} : {_id: {$gt: after}})},
+          {projection: {_id: 1}, sort: {_id: 1}, limit: ERASE_BATCH_SIZE}
+        )
+        .toArray();
+      if (page.length === 0) return erased;
+
+      const ids = page.map(d => d._id);
+      after = ids[ids.length - 1];
+      erased += await this.eraseBatch(collection, ids);
+      if (page.length < ERASE_BATCH_SIZE) return erased;
+    }
+  }
+
+  // By id, not by date, so what goes and what leaves the cache agree; in finally, since a rejection may follow a delete.
+  private async eraseBatch(collection: CollectionLike<MongoSessionDocument>, ids: string[]): Promise<number> {
+    try {
+      const {deletedCount} = await collection.deleteMany({_id: {$in: ids}});
+      return deletedCount;
+    } finally {
+      this.forget(ids);
+    }
   }
 
   /** Erases every conversation this store can see. */

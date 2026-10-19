@@ -155,30 +155,25 @@ describe('conversation erasure', () => {
     expect(afterErasure).toBe(fromGet);
   });
 
-  it('An eraseOlderThan whose delete rejects leaves every cached session cached, asserted with a fake collection whose deleteMany rejects', async () => {
-    let callCount = 0;
-    const fakeColl = fakeCollection({
-      deleteMany: () => {
-        callCount++;
-        return Promise.reject(new Error('db failure'));
+  it('An eraseOlderThan whose delete applies and then rejects drops the sessions it targeted and keeps every other cached session', async () => {
+    // A write-concern timeout: the documents are gone, but the driver reports failure.
+    const timingOut = Object.assign(Object.create(collection) as typeof collection, {
+      deleteMany: async (filter: Record<string, unknown>) => {
+        await collection.deleteMany(filter);
+        throw new Error('write concern timed out');
       },
     });
-    const store = new MongoSessionStore({collection: fakeColl});
-    const session = await store.create('s1', 'u1');
+    const store = new MongoSessionStore({collection: timingOut});
+    await store.create('old', 'u1');
+    const live = await store.create('live', 'u1');
+    await collection.updateOne({_id: 'old'}, {$set: {createdAt: new Date('2020-01-01T00:00:00.000Z')}});
 
-    let thrownMessage: string | undefined;
-    try {
-      await store.eraseOlderThan(new Date('2021-01-01T00:00:00.000Z'));
-    } catch (e) {
-      thrownMessage = (e as Error).message;
-    }
+    const outcome = await store.eraseOlderThan(new Date('2021-01-01T00:00:00.000Z')).catch((e: Error) => e.message);
 
-    // The fake findOne answers null, so only a session still cached comes back from get.
-    const cached = await store.get('s1');
-    expect({thrownMessage, stillCached: cached === session, callCount}).toEqual({
-      thrownMessage: 'db failure',
-      stillCached: true,
-      callCount: 1,
+    expect({outcome, old: await store.get('old'), liveKept: (await store.get('live')) === live}).toEqual({
+      outcome: 'write concern timed out',
+      old: undefined,
+      liveKept: true,
     });
   });
 

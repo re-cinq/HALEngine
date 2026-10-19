@@ -30,6 +30,32 @@ function countingReads(document: MongoSessionDocument | null): {
   return {reads: () => reads, findOne: () => (reads++, Promise.resolve(document))};
 }
 
+// Starts a read once the erasure's delete is pending, settles the delete and then the read, and reports what got cached.
+async function cachedAfterReadDuringDelete(
+  erase: (store: MongoSessionStore) => Promise<unknown>,
+  deleteMember: 'deleteOne' | 'deleteMany'
+): Promise<boolean> {
+  const deleting = gate<void>();
+  const deleted = gate<DeleteOutcome>();
+  const read = gate<MongoSessionDocument | null>();
+  const store = new MongoSessionStore({
+    collection: fakeCollection({
+      find: () => ({toArray: () => Promise.resolve([stored])}),
+      findOne: () => read.wait,
+      [deleteMember]: () => (deleting.open(), deleted.wait),
+    }),
+  });
+
+  const erasing = erase(store);
+  await deleting.wait;
+  const pending = store.get('s1');
+  deleted.open({deletedCount: 1});
+  await erasing;
+  read.open(stored);
+  await pending;
+  return store['cache'].has('s1');
+}
+
 describe('a get racing an erasure', () => {
   it('never re-caches a session eraseAll removed while the read was waiting', async () => {
     const read = gate<MongoSessionDocument | null>();
@@ -49,20 +75,7 @@ describe('a get racing an erasure', () => {
   });
 
   it('withdraws a read begun while the delete was pending and still waiting when the delete resolved', async () => {
-    const deleted = gate<DeleteOutcome>();
-    const read = gate<MongoSessionDocument | null>();
-    const store = new MongoSessionStore({
-      collection: fakeCollection({findOne: () => read.wait, deleteOne: () => deleted.wait}),
-    });
-
-    const erasing = store.eraseConversation('s1');
-    const pending = store.get('s1');
-    deleted.open({deletedCount: 1});
-    await erasing;
-    read.open(stored);
-    await pending;
-
-    expect(store['cache'].has('s1')).toBe(false);
+    expect(await cachedAfterReadDuringDelete(store => store.eraseConversation('s1'), 'deleteOne')).toBe(false);
   });
 
   it('drops a read begun while the delete was pending that finished before the delete resolved', async () => {
@@ -77,6 +90,11 @@ describe('a get racing an erasure', () => {
     await erasing;
 
     expect(store['cache'].has('s1')).toBe(false);
+  });
+
+  it('withdraws a read begun while an eraseOlderThan batch was deleting and still waiting when it resolved', async () => {
+    const sweep = (store: MongoSessionStore) => store.eraseOlderThan(new Date('2021-01-01T00:00:00.000Z'));
+    expect(await cachedAfterReadDuringDelete(sweep, 'deleteMany')).toBe(false);
   });
 
   it('leaves a pending read of another session to cache what it finds', async () => {
