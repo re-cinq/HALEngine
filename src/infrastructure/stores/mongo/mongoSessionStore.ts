@@ -166,18 +166,28 @@ export class MongoSessionStore implements SessionStore {
   /** Erases one conversation permanently and drops it from the cache. */
   async eraseConversation(sessionId: string): Promise<boolean> {
     const collection = await this.collection();
-    const {deletedCount} = await collection.deleteOne({_id: sessionId});
-    // After the delete, not before: a read that began while it was pending would otherwise cache the doomed document.
-    this.forget([sessionId]);
-    return deletedCount > 0;
+    // After the delete, so a read begun while it was pending is withdrawn; in finally, since a rejection may follow a delete.
+    try {
+      const {deletedCount} = await collection.deleteOne({_id: sessionId});
+      return deletedCount > 0;
+    } finally {
+      this.forget([sessionId]);
+    }
   }
 
   /** Erases every conversation created strictly before `cutoff`, and returns how many went. */
   async eraseOlderThan(cutoff: Date): Promise<number> {
     const collection = await this.collection();
-    const older = (await collection.find?.({createdAt: {$lt: cutoff}}, {projection: {_id: 1}})?.toArray()) ?? [];
+    if (collection.find === undefined) {
+      // No way to learn which ids go, so the whole cache does, but only once the delete has succeeded.
+      const {deletedCount} = await collection.deleteMany({createdAt: {$lt: cutoff}});
+      this.forgetAll();
+      return deletedCount;
+    }
+    const older = await collection.find({createdAt: {$lt: cutoff}}, {projection: {_id: 1}}).toArray();
     const ids = older.map(d => d._id);
-    const {deletedCount} = await collection.deleteMany({createdAt: {$lt: cutoff}});
+    // By id, not by date: a document created between the read and the delete would otherwise go while staying cached.
+    const {deletedCount} = await collection.deleteMany({_id: {$in: ids}});
     this.forget(ids);
     return deletedCount;
   }
@@ -185,10 +195,12 @@ export class MongoSessionStore implements SessionStore {
   /** Erases every conversation this store can see. */
   async eraseAll(): Promise<number> {
     const collection = await this.collection();
-    const {deletedCount} = await collection.deleteMany({});
-    this.cache.clear();
-    this.inFlightGets.clear();
-    return deletedCount;
+    try {
+      const {deletedCount} = await collection.deleteMany({});
+      return deletedCount;
+    } finally {
+      this.forgetAll();
+    }
   }
 
   /** Closes the driver only when this store opened it; a supplied client stays the caller's to close. */
@@ -219,6 +231,11 @@ export class MongoSessionStore implements SessionStore {
     for (const [read, id] of this.inFlightGets) {
       if (erased.has(id)) this.inFlightGets.delete(read);
     }
+  }
+
+  private forgetAll(): void {
+    this.cache.clear();
+    this.inFlightGets.clear();
   }
 
   private hasAged(cached: CachedSession): boolean {

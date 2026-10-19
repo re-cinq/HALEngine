@@ -21,6 +21,15 @@ function gate<T>(): {wait: Promise<T>; open: (value: T) => void} {
   return {wait, open};
 }
 
+// Counts reads, so a test can tell a session served from the cache from one fetched again.
+function countingReads(document: MongoSessionDocument | null): {
+  reads: () => number;
+  findOne: () => Promise<typeof document>;
+} {
+  let reads = 0;
+  return {reads: () => reads, findOne: () => (reads++, Promise.resolve(document))};
+}
+
 describe('a get racing an erasure', () => {
   it('never re-caches a session eraseAll removed while the read was waiting', async () => {
     const read = gate<MongoSessionDocument | null>();
@@ -39,13 +48,27 @@ describe('a get racing an erasure', () => {
     expect({returned: returned?.sessionId, cached: store['cache'].has('s1')}).toEqual({returned: 's1', cached: false});
   });
 
-  it('never caches a session read while its eraseConversation was still deleting it', async () => {
+  it('withdraws a read begun while the delete was pending and still waiting when the delete resolved', async () => {
+    const deleted = gate<DeleteOutcome>();
+    const read = gate<MongoSessionDocument | null>();
+    const store = new MongoSessionStore({
+      collection: fakeCollection({findOne: () => read.wait, deleteOne: () => deleted.wait}),
+    });
+
+    const erasing = store.eraseConversation('s1');
+    const pending = store.get('s1');
+    deleted.open({deletedCount: 1});
+    await erasing;
+    read.open(stored);
+    await pending;
+
+    expect(store['cache'].has('s1')).toBe(false);
+  });
+
+  it('drops a read begun while the delete was pending that finished before the delete resolved', async () => {
     const deleted = gate<DeleteOutcome>();
     const store = new MongoSessionStore({
-      collection: fakeCollection({
-        findOne: () => Promise.resolve(stored),
-        deleteOne: () => deleted.wait,
-      }),
+      collection: fakeCollection({findOne: () => Promise.resolve(stored), deleteOne: () => deleted.wait}),
     });
 
     const erasing = store.eraseConversation('s1');
@@ -56,11 +79,52 @@ describe('a get racing an erasure', () => {
     expect(store['cache'].has('s1')).toBe(false);
   });
 
-  it('keeps no record of an erasure once it completes, so memory does not grow with erasures', async () => {
-    const store = new MongoSessionStore({collection: fakeCollection()});
+  it('leaves a pending read of another session to cache what it finds', async () => {
+    const read = gate<MongoSessionDocument | null>();
+    const store = new MongoSessionStore({collection: fakeCollection({findOne: () => read.wait})});
 
-    await Promise.all(['a', 'b', 'c'].map(id => store.eraseConversation(id)));
+    const pending = store.get('s1');
+    await store.eraseConversation('other');
+    read.open(stored);
+    await pending;
 
-    expect({inFlight: store['inFlightGets'].size, cached: store['cache'].size}).toEqual({inFlight: 0, cached: 0});
+    expect(store['cache'].has('s1')).toBe(true);
+  });
+
+  it('lets a later read cache an id it erased, so it keeps no record of erasures', async () => {
+    const collection = countingReads(stored);
+    const store = new MongoSessionStore({collection: fakeCollection({findOne: collection.findOne})});
+
+    await store.eraseConversation('s1');
+    await store.get('s1');
+    await store.get('s1');
+
+    expect(collection.reads()).toBe(1);
+  });
+});
+
+describe('an erasure whose delete rejects', () => {
+  // Erases a cached session through a collection whose deletes all reject, then reads it back.
+  async function afterRejectedErasure(erase: (store: MongoSessionStore) => Promise<unknown>) {
+    const collection = countingReads(null);
+    const refused = () => Promise.reject(new Error('write concern timed out'));
+    const store = new MongoSessionStore({
+      collection: fakeCollection({findOne: collection.findOne, deleteOne: refused, deleteMany: refused}),
+    });
+    await store.create('s1', 'u1');
+
+    const outcome = await erase(store).catch((error: Error) => error.message);
+    const afterwards = await store.get('s1');
+    return {outcome, afterwards, reads: collection.reads()};
+  }
+
+  const refusedAndDropped = {outcome: 'write concern timed out', afterwards: undefined, reads: 1};
+
+  it('still drops the conversation from the cache on eraseConversation, since the delete may have landed', async () => {
+    expect(await afterRejectedErasure(store => store.eraseConversation('s1'))).toEqual(refusedAndDropped);
+  });
+
+  it('still empties the cache on eraseAll, since some documents may have gone', async () => {
+    expect(await afterRejectedErasure(store => store.eraseAll())).toEqual(refusedAndDropped);
   });
 });
