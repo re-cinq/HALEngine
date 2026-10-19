@@ -867,3 +867,62 @@ function outcomeOf(frames: string[]): {answered: boolean; last: string | undefin
     errors: frames.filter(frame => frame.startsWith('error')),
   };
 }
+
+describe('the websocket error frame, from the one AIError table', () => {
+  const errorFramesFor = async (failWith: Error) => {
+    const h = harness([], {failWith});
+    await h.send();
+    return h.sent.filter(frame => frame.type === 'error');
+  };
+
+  it('sends SERVICE_UNAVAILABLE and TIMEOUT error frames with their fixed sentences', async () => {
+    const frames = [
+      ...(await errorFramesFor(new AIError('x', 'SERVICE_UNAVAILABLE'))),
+      ...(await errorFramesFor(new AIError('x', 'TIMEOUT'))),
+    ];
+
+    expect(frames).toEqual([
+      {type: 'error', code: 'SERVICE_UNAVAILABLE', message: 'AI service temporarily unavailable'},
+      {type: 'error', code: 'TIMEOUT', message: 'AI service timed out'},
+    ]);
+  });
+
+  it('still sends RATE_LIMITED byte-identically, and SERVER_ERROR only for a throw that is no AIError', async () => {
+    const frames = [
+      ...(await errorFramesFor(new AIError('slow down', 'RATE_LIMITED'))),
+      ...(await errorFramesFor(new Error('boom'))),
+    ];
+
+    expect(frames).toEqual([
+      {type: 'error', code: 'RATE_LIMITED', message: 'AI service is busy, please try again'},
+      {type: 'error', code: 'SERVER_ERROR', message: 'Failed to process message'},
+    ]);
+  });
+
+  it('keeps the AIError message secret-detail-77 out of every frame it sends', async () => {
+    const h = harness([], {failWith: new AIError('secret-detail-77', 'BEDROCK_ERROR')});
+
+    await h.send();
+
+    expect({
+      error: h.sent.find(frame => frame.type === 'error'),
+      leaked: JSON.stringify(h.sent).includes('secret-detail-77'),
+    }).toEqual({
+      error: {type: 'error', code: 'UPSTREAM_ERROR', message: 'AI service temporarily unavailable'},
+      leaked: false,
+    });
+  });
+
+  it('ends a SERVICE_UNAVAILABLE turn with the same terminal frames as an engine defect', async () => {
+    const provider = harness([], {failWith: new AIError('x', 'SERVICE_UNAVAILABLE')});
+    const defect = harness([], {failWith: new Error('boom')});
+
+    await provider.send();
+    await defect.send();
+
+    expect({provider: provider.frames(), defect: defect.frames()}).toEqual({
+      provider: ['upsert 0 user "hello"', 'error SERVICE_UNAVAILABLE', 'stream_end'],
+      defect: ['upsert 0 user "hello"', 'error SERVER_ERROR', 'stream_end'],
+    });
+  });
+});

@@ -2,21 +2,12 @@ import {STATUS_CODES} from 'node:http';
 import type {ErrorRequestHandler} from 'express';
 import {AIError} from '../types/ai.js';
 import {log} from '../shared/logger.js';
+import {clientErrorFor} from './errorMapping.js';
 
 interface ErrorResponse {
   status: number;
   error: string;
 }
-
-const AI_UNAVAILABLE = 'AI service temporarily unavailable';
-
-// The three provider conditions a caller can wait out; every other AIError code is the vendor failing, so 502.
-const AI_ERROR_RESPONSES: Readonly<Record<string, ErrorResponse>> = {
-  RATE_LIMITED: {status: 429, error: 'AI service is busy, please try again'},
-  SERVICE_UNAVAILABLE: {status: 503, error: AI_UNAVAILABLE},
-  TIMEOUT: {status: 504, error: 'AI service timed out'},
-};
-const AI_ERROR_FALLBACK: ErrorResponse = {status: 502, error: AI_UNAVAILABLE};
 
 const LOWEST_ERROR_STATUS = 400;
 const PAST_HIGHEST_ERROR_STATUS = 600;
@@ -41,7 +32,10 @@ export const httpErrorHandler: ErrorRequestHandler = (err: unknown, req, res, ne
 function responseFor(err: unknown): ErrorResponse {
   const explicit = explicitStatus(err);
   if (explicit !== undefined) return explicit;
-  if (err instanceof AIError) return AI_ERROR_RESPONSES[err.code] ?? AI_ERROR_FALLBACK;
+  if (err instanceof AIError) {
+    const {status, message} = clientErrorFor(err);
+    return {status, error: message};
+  }
   return INTERNAL_SERVER_ERROR;
 }
 

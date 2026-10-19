@@ -328,25 +328,39 @@ Reports an error condition. The connection remains open unless the error is fata
 | `code`    | string | Machine-readable code    |
 | `message` | string | Human-readable detail    |
 
+`ErrorCodes` defines eight error codes ([validated by: defines eight ErrorCodes, the three provider conditions added beside the five the protocol already had](../../src/transport/errorMapping.test.ts#L54)).
+
 Defined error codes:
 
-| Code              | Description                                                       |
-| ----------------- | ----------------------------------------------------------------- |
-| `INVALID_MESSAGE` | Message failed validation (missing fields, empty content, length) |
-| `INVALID_FORMAT`  | Message body is not valid JSON                                    |
-| `RATE_LIMITED`    | AI provider returned a rate limit error                           |
-| `SERVER_ERROR`    | Unexpected server error during message processing                 |
-| `UNSUPPORTED`     | The server does not serve this frame: the feature is off, or its store cannot |
+| Code                  | Kind               | Description                                                                   | HTTP |
+| --------------------- | ------------------ | ----------------------------------------------------------------------------- | ---- |
+| `INVALID_MESSAGE`     | client             | Message failed validation (missing fields, empty content, length)             | —    |
+| `INVALID_FORMAT`      | client             | Message body is not valid JSON                                                | —    |
+| `RATE_LIMITED`        | provider condition | The AI provider is rate limiting                                              | 429  |
+| `SERVICE_UNAVAILABLE` | provider condition | The AI provider is unavailable                                                | 503  |
+| `TIMEOUT`             | provider condition | The AI provider timed out                                                     | 504  |
+| `UPSTREAM_ERROR`      | provider condition | Any other AI provider failure                                                 | 502  |
+| `SERVER_ERROR`        | engine defect      | An unexpected error that is no AI provider error                              | 500  |
+| `UNSUPPORTED`         | feature            | The server does not serve this frame: the feature is off, or its store cannot | —    |
+
+A client MUST treat a `code` it does not recognise as `SERVER_ERROR`.
+
+**NIS-2 (Art. 21), operational resilience.** A consumer's failover or resilience logic can tell a vendor outage from an engine defect on the `code` alone over the WebSocket, or on the status over HTTP, without parsing a message: `RATE_LIMITED`, `SERVICE_UNAVAILABLE`, `TIMEOUT` and `UPSTREAM_ERROR` are provider conditions, and `SERVER_ERROR` never is.
 
 Semantics:
 
+- Every `AIError` maps through one table, `src/transport/errorMapping.ts`, which both transports read, so the WebSocket `code` and the HTTP status always agree; no other transport file maps a provider code ([validated by: answers RATE_LIMITED, SERVICE_UNAVAILABLE and TIMEOUT with their own code, status and fixed sentence](../../src/transport/errorMapping.test.ts#L24), [validated by: answers nine other AIError codes and one named constructor from the one fallback row, UPSTREAM_ERROR and 502](../../src/transport/errorMapping.test.ts#L36), [validated by: is the only non-test file under src/transport that maps a provider error code, rateLimit.ts aside](../../src/transport/errorMapping.test.ts#L67)).
+- `SERVICE_UNAVAILABLE` and `TIMEOUT` frames carry fixed sentences, `AI service temporarily unavailable` and `AI service timed out` ([validated by: sends SERVICE_UNAVAILABLE and TIMEOUT error frames with their fixed sentences](../../src/transport/ws/messageHandler.test.ts#L878)).
+- `RATE_LIMITED` is unchanged, and `SERVER_ERROR` is sent only for a throw that is no `AIError` ([validated by: still sends RATE_LIMITED byte-identically, and SERVER_ERROR only for a throw that is no AIError](../../src/transport/ws/messageHandler.test.ts#L890)).
+- No frame carries an `AIError`'s own message, which can echo request content; it reaches only the log ([validated by: keeps the AIError message secret-detail-77 out of every frame it sends](../../src/transport/ws/messageHandler.test.ts#L902)).
+- A provider failure ends its turn with the same terminal frames as an engine defect: the `error` frame, then `stream_end` ([validated by: ends a SERVICE_UNAVAILABLE turn with the same terminal frames as an engine defect](../../src/transport/ws/messageHandler.test.ts#L916)).
 - The protocol takes additive changes only: every client frame that shipped before the conversation list is still read by the validator as the frame it was, field for field, and the same literals are typed as `IncomingMessage`, so a required field added to one of them fails `npm run typecheck` ([validated by: are each still read by the validator as the frame they were, field for field](../../src/transport/ws/protocolAdditive.test.ts#L28)).
 - Every server frame that shipped before it still goes out through the sender as the frame it was, `connected` with none of the optional fields resume added to it included ([validated by: are each still sent on the wire as the frame they were, field for field](../../src/transport/ws/protocolAdditive.test.ts#L34)).
 - A `list_conversations` the server does not serve is answered with `UNSUPPORTED`, whether because `transport.history` is off or because its store implements no `listFor`, and never with an empty list, which a client could not tell from a user who has no conversations ([validated by: refuses the frame when conversation history is not turned on](../../src/transport/conversationList.test.ts#L302), [validated by: refuses the frame when the store cannot list, rather than reporting no conversations](../../src/transport/conversationList.test.ts#L353)).
 - A store that fails while listing is answered `SERVER_ERROR` carrying none of the store's own words, and the server logs the session id, the user id and the error's type rather than its message, since a driver's message can hold a connection string and its password; the user id in that line is personal data, as it is in every log line the engine writes ([validated by: answers a failing store with a server error, keeps the socket open, and logs no word the store said](../../src/transport/conversationList.test.ts#L388)).
 - A message the server cannot parse into a known type is answered with `INVALID_MESSAGE`, and no message stream is started for it ([validated by: rejects an unparseable message and never starts a stream](../../src/transport/ws/messageHandler.test.ts#L71)).
 - A rate limit reported by the AI provider is surfaced as `RATE_LIMITED`, which tells the client the same request is worth retrying ([validated by: tells the client to retry when the provider is rate limited](../../src/transport/ws/messageHandler.test.ts#L311)).
-- Any other failure raised while processing a message is reported as `SERVER_ERROR` ([validated by: reports any other failure as a server error](../../src/transport/ws/messageHandler.test.ts#L320)).
+- Any other failure raised while processing a message that is no `AIError` is reported as `SERVER_ERROR` ([validated by: reports any other failure as a server error](../../src/transport/ws/messageHandler.test.ts#L320)).
 
 ### 5.7 pong
 
@@ -643,7 +657,7 @@ A provider fails after the answer has started. The partial answer is re-sent fla
 <-- {"type": "entry_delta",  "index": 1, "delta": "Your booking is "}
 <-- {"type": "entry_upsert", "index": 1, "entry": {"role": "assistant", "content": "Your booking is ", "isStreaming": true, "truncated": true, ...}}
 <-- {"type": "entry_commit", "index": 1}
-<-- {"type": "error",        "code": "SERVER_ERROR", "message": "Failed to process message"}
+<-- {"type": "error",        "code": "UPSTREAM_ERROR", "message": "AI service temporarily unavailable"}
 <-- {"type": "stream_end"}
 ```
 
