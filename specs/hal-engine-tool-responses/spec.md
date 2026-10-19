@@ -1,9 +1,9 @@
 # Tool Responses
 
-| Field  | Value |
-| ------ | ----- |
-| Issue  | n/a   |
-| Status | Draft |
+| Field  | Value       |
+| ------ | ----------- |
+| Issue  | n/a         |
+| Status | In Progress |
 
 By default, a tool executor returns a plain string that feeds back into the AI conversation. The client never sees the result -- it only sees the tool invocation (name and input parameters). This is fine for most tools, but sometimes a tool knows exactly what to show the user and does not need the AI to rephrase it.
 
@@ -190,9 +190,15 @@ Two new chunk types flow through `processChunk`:
 
 When suppression is active, `streamSegment` and `commitAndClear` still call `appendEntry`, `appendDelta`, and `commitEntry` (so the session accumulates entries for context), but skip `sendUpsert`, `sendDelta`, and `sendCommit` (so the client sees nothing).
 
-When a new entry is created under suppression, the server sends an `entry_skip` message with the server-side index. This tells the client "an entry exists here on the server, but you will never receive it." The client tracks these skipped indices and adjusts all subsequent incoming indices via the `adjustIndex` pure function. Without this, server indices would diverge from the client's entry array, causing deltas and commits to target the wrong positions.
+Three rules decide what the client receives once suppression is active:
 
-If the AI streamed text *before* the tool call (which happens when the model explains what it is about to do), that text was already sent to the client as an assistant entry. When suppression activates, the server retroactively blanks these entries by sending `entry_upsert` with empty content. The client already skips rendering empty assistant entries, so the pre-tool text disappears cleanly.
+- **A model entry already sent is blanked.** Every thinking or assistant entry the client was sent before suppression began, including text the model streamed before the tool call to explain what it was about to do, is re-sent as `entry_upsert` with empty content, and the stored entry keeps its text, marked `suppressed` ([validated by: blanks a thinking entry already sent beside the answer, and no frame after suppression carries its text](../../src/transport/ws/messageHandler.test.ts#L196), [validated by: marks a blanked thinking entry suppressed beside the blanked answer, keeping both texts](../../src/transport/ws/messageHandler.test.ts#L271)).
+- **A model entry not yet sent is skipped.** A thinking or assistant entry opened under suppression is announced with `entry_skip` carrying its server-side index: an entry exists here on the server, but the client will never receive it. The client tracks these skipped indices and adjusts every later incoming index with the `adjustIndex` pure function; without this, server indices would diverge from the client's entry array, and deltas and commits would target the wrong positions ([validated by: skips rather than upserts a segment opened after suppression](../../src/transport/ws/messageHandler.test.ts#L219), [validated by: skips a thinking entry opened after suppression rather than blanking it](../../src/transport/ws/messageHandler.test.ts#L325)).
+- **A tool entry is exempt from both.** It is no model response, and hiding it under sticky suppression would leave the client nothing between the tool's answer and `stream_end`, which the spinner logic below relies on, so it is sent as `entry_upsert` with its `toolName` and `toolInput` ([validated by: still sends a tool entry opened under suppression as an entry_upsert carrying its toolName and toolInput](../../src/transport/ws/messageHandler.test.ts#L333)).
+
+The blanking is logged once, at `info`, as `suppression activated` with the blanked indices and nothing else, since their text is exactly what suppression hides ([validated by: lists thinking index 1 and assistant index 2 at suppression, and no line carries their text](../../src/transport/ws/messageHandler.test.ts#L355)).
+
+Suppression is recorded on the stored entry, so a conversation resumed from a store replays a suppressed entry as `entry_skip`, never as its text ([validated by: replays a suppressed entry as a skip, so the client never sees text a tool suppressed](../../src/transport/sessionResume.test.ts#L335)).
 
 **Suppression is sticky for the entire stream.** Once a tool sets `suppressAssistantResponse: true` in any round, all subsequent AI responses in that stream are suppressed -- even if later tool rounds do not set the flag. This is intentional: suppression is a per-message property, not per-round. If the first tool already sent the definitive answer to the client, the AI's commentary in all following rounds is equally redundant. A new user message starts a fresh stream with `suppressOutput: false`.
 

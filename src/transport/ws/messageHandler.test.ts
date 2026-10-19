@@ -11,6 +11,7 @@ import type {ChatSession, SessionEntry} from '../../types/session.js';
 import type {OutgoingMessage} from '../../types/messages.js';
 import {PerSessionLock} from '../../shared/perSessionLock.js';
 import {deferred} from '../wsTestSupport.js';
+import {setLogger} from '../../shared/logger.js';
 
 // The frames, in order, are the contract - above all for suppression, which retracts.
 
@@ -192,12 +193,27 @@ describe('the websocket message handler', () => {
       ]);
     });
 
-    it('never blanks a thinking entry, only assistant ones', async () => {
+    it('blanks a thinking entry already sent beside the answer, and no frame after suppression carries its text', async () => {
       const h = harness([text('<thinking>private</thinking>said'), STOP, SUPPRESS]);
 
       await h.send();
 
-      expect(h.frames().filter(frame => frame.startsWith('upsert 1'))).toEqual(['upsert 1 thinking ""']);
+      const afterSuppression = h.sent.slice(h.frames().indexOf('commit 2') + 1);
+      expect({frames: h.frames(), leaked: /private|said/.test(JSON.stringify(afterSuppression))}).toEqual({
+        frames: [
+          'upsert 0 user "hello"',
+          'upsert 1 thinking ""',
+          'delta 1 "private"',
+          'commit 1',
+          'upsert 2 assistant ""',
+          'delta 2 "said"',
+          'commit 2',
+          'upsert 1 thinking ""',
+          'upsert 2 assistant ""',
+          'stream_end',
+        ],
+        leaked: false,
+      });
     });
 
     it('skips rather than upserts a segment opened after suppression', async () => {
@@ -252,14 +268,14 @@ describe('the websocket message handler', () => {
       expect(answer).toMatchObject({role: 'assistant', content: 'hidden', suppressed: true});
     });
 
-    it('leaves a thinking entry the client kept seeing unmarked, and marks the blanked answer', async () => {
+    it('marks a blanked thinking entry suppressed beside the blanked answer, keeping both texts', async () => {
       const h = harness([text('<thinking>private</thinking>said'), STOP, SUPPRESS]);
 
       await h.send();
 
       const [, thinking, answer] = h.session.entries;
-      expect({thinking: 'suppressed' in thinking, answer}).toMatchObject({
-        thinking: false,
+      expect({thinking, answer}).toMatchObject({
+        thinking: {role: 'thinking', content: 'private', suppressed: true},
         answer: {role: 'assistant', content: 'said', suppressed: true},
       });
     });
@@ -285,24 +301,69 @@ describe('the websocket message handler', () => {
       });
     });
 
-    it('commits a thought still open when suppression begins as the client saw it, and skips what follows', async () => {
+    it('commits and retracts a thought still open when suppression begins, and skips what follows as a new entry', async () => {
       const h = harness([text('<thinking>early'), SUPPRESS, text(' later</thinking>'), STOP]);
 
       await h.send();
 
       const [, thought, after] = h.session.entries;
-      expect({frames: h.frames(), thought, marked: 'suppressed' in thought, after}).toMatchObject({
+      expect({frames: h.frames(), thought, after}).toMatchObject({
         frames: [
           'upsert 0 user "hello"',
           'upsert 1 thinking ""',
           'delta 1 "early"',
           'commit 1',
+          'upsert 1 thinking ""',
           'skip 2',
           'stream_end',
         ],
-        thought: {role: 'thinking', content: 'early', isStreaming: false},
-        marked: false,
+        thought: {role: 'thinking', content: 'early', isStreaming: false, suppressed: true},
         after: {role: 'thinking', content: ' later', suppressed: true},
+      });
+    });
+
+    it('skips a thinking entry opened after suppression rather than blanking it', async () => {
+      const h = harness([SUPPRESS, text('<thinking>hidden</thinking>'), STOP]);
+
+      await h.send();
+
+      expect(h.frames()).toEqual(['upsert 0 user "hello"', 'skip 1', 'stream_end']);
+    });
+
+    it('still sends a tool entry opened under suppression as an entry_upsert carrying its toolName and toolInput', async () => {
+      const h = harness([SUPPRESS, {type: 'tool_use', toolCall: {id: 'c1', name: 'lookup', input: {q: 1}}}, STOP]);
+
+      await h.send();
+
+      expect({frames: h.frames(), tool: h.sent[1]}).toMatchObject({
+        frames: ['upsert 0 user "hello"', 'upsert 1 tool ""', 'stream_end'],
+        tool: {type: 'entry_upsert', index: 1, entry: {role: 'tool', toolName: 'lookup', toolInput: {q: 1}}},
+      });
+    });
+
+    describe('the blanking log line', () => {
+      const lines: Array<{level: string; category: string; message: string; fields?: Record<string, unknown>}> = [];
+      const into = (level: string) => (category: string, message: string, fields?: Record<string, unknown>) =>
+        void lines.push({level, category, message, fields});
+
+      beforeEach(() => {
+        lines.length = 0;
+        setLogger({debug: into('debug'), info: into('info'), warn: into('warn'), error: into('error')});
+      });
+      afterEach(() => setLogger());
+
+      it('lists thinking index 1 and assistant index 2 at suppression, and no line carries their text', async () => {
+        await harness([text('<thinking>private</thinking>said'), STOP, SUPPRESS]).send();
+
+        expect({
+          blanking: lines.filter(line => line.message === 'suppression activated'),
+          leaked: /private|said|hello/.test(JSON.stringify(lines)),
+        }).toEqual({
+          blanking: [
+            {level: 'info', category: 'stream', message: 'suppression activated', fields: {blankingEntries: [1, 2]}},
+          ],
+          leaked: false,
+        });
       });
     });
   });

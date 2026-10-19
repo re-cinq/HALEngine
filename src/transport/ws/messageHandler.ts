@@ -27,7 +27,8 @@ interface StreamState {
   thinkingIndex: number | null;
   assistantIndex: number | null;
   suppressOutput: boolean;
-  sentAssistantIndices: number[];
+  // Every model-authored entry the client was sent, thinking or assistant: what suppression must blank.
+  blankableIndices: number[];
 }
 
 type StateIndexKey = 'thinkingIndex' | 'assistantIndex';
@@ -168,7 +169,7 @@ async function handleUserMessage(
     thinkingIndex: null,
     assistantIndex: null,
     suppressOutput: false,
-    sentAssistantIndices: [],
+    blankableIndices: [],
   };
 
   let textChunkCount = 0;
@@ -288,11 +289,11 @@ function commitAndClear(ws: WebSocket, session: ChatSession, state: StreamState,
   commitEntry(session, index);
   state[key] = null;
 
-  // Only what the client received can be retracted, and only assistant entries.
+  // Only what the client received can be retracted; a thought as much as an answer, since both are the model's words.
   if (state.suppressOutput) return;
 
   sendCommit(ws, index);
-  if (key === 'assistantIndex') state.sentAssistantIndices.push(index);
+  state.blankableIndices.push(index);
 }
 
 function processToolUseChunk(
@@ -302,6 +303,7 @@ function processToolUseChunk(
 ): void {
   const toolEntry = createToolEntry(toolCall.name, toolCall.input);
   const toolIndex = appendEntry(session, toolEntry);
+  // Exempt from suppression by design: no model response, and without it nothing would show before stream_end.
   sendUpsert(ws, toolIndex, toolEntry);
 }
 
@@ -315,18 +317,19 @@ function processToolResultChunk(ws: WebSocket, clientMessages: OutgoingMessage[]
   }
 }
 
-// Retracts what the client saw: every assistant entry sent so far is re-sent blank.
+// Retracts what the client saw: every thinking and assistant entry sent so far is re-sent blank.
 function processSuppressChunk(ws: WebSocket, session: ChatSession, state: StreamState): void {
   // Closed as streamed so far: an open answer is then retracted like a sent one, and what follows opens new entries.
   commitOpenEntries(ws, session, state);
-  log.debug('stream', 'suppression activated', {blankingEntries: state.sentAssistantIndices});
+  // Indices only: the entries' text is what suppression hides, so it never reaches a log line either.
+  log.info('stream', 'suppression activated', {blankingEntries: state.blankableIndices});
 
-  for (const idx of state.sentAssistantIndices) {
+  for (const idx of state.blankableIndices) {
     sendUpsert(ws, idx, {...session.entries[idx], content: ''} as SessionEntry);
     markSuppressed(session, idx);
   }
 
-  state.sentAssistantIndices = [];
+  state.blankableIndices = [];
   state.suppressOutput = true;
 }
 

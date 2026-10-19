@@ -316,7 +316,7 @@ Four frame types, not three.
 | `entry_commit` | an entry is finalised                            | `applyCommit()`                       |
 | `entry_skip`   | an entry exists server-side but is not forwarded | none -- the client advances its index |
 
-`entry_skip` is what a suppressed assistant response produces. The entry stays in the session so the model's next turn sees it, and the client is told to move past that index without rendering anything. The WebSocket protocol spec covers the index arithmetic in its § 8.2.
+`entry_skip` is what a suppressed model response, thinking or assistant, produces. The entry stays in the session so the model's next turn sees it, and the client is told to move past that index without rendering anything. The WebSocket protocol spec covers the index arithmetic in its § 8.2.
 
 The client's `applyUpsert`/`applyDelta`/`applyCommit` return new arrays and never mutate. The server's three do the opposite. That asymmetry is deliberate: the server owns one session object for the life of a connection, while the client re-renders from a fresh array.
 
