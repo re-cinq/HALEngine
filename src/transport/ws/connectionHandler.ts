@@ -15,7 +15,6 @@ import type {ForwardableHeader} from '../authHeaders.js';
 import {replayEntries, resumableSession, resumeFields} from './sessionResume.js';
 import type {ConnectInfo, SessionResumeOptions} from './sessionResume.js';
 import {log} from '../../shared/logger.js';
-import {assertScalarUserId} from '../../infrastructure/stores/scalarUserId.js';
 
 export interface ExtWebSocket extends WebSocket {
   isAlive: boolean;
@@ -84,14 +83,6 @@ export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandl
         // The id is the only thing separating one user's conversations from another's in every store query.
         if (!isScalarUserId(user.id)) {
           log.error('ws', 'authenticator returned a user id the engine cannot use', {idKind: userIdKind(user.id)});
-          rejectSocket(socket, '401 Unauthorized');
-          return;
-        }
-
-        try {
-          assertScalarUserId(user.id);
-        } catch {
-          log.error('ws', 'authenticator returned non-scalar id', {idType: typeof user.id});
           rejectSocket(socket, '401 Unauthorized');
           return;
         }
