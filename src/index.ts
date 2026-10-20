@@ -94,6 +94,7 @@ export type {
   Message,
 } from './types/ai.js';
 export {AIError} from './types/ai.js';
+export {CredentialExpiredError} from './types/credential.js';
 
 export type {
   SessionEntry,

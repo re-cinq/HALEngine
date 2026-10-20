@@ -340,7 +340,7 @@ Reports an error condition. The connection remains open unless the error is fata
 | `code`    | string | Machine-readable code    |
 | `message` | string | Human-readable detail    |
 
-`ErrorCodes` defines eight error codes ([validated by: defines eight ErrorCodes, the three provider conditions added beside the five the protocol already had](../../src/transport/errorMapping.test.ts#L54)).
+`ErrorCodes` defines nine error codes ([validated by: defines nine ErrorCodes: the five the protocol had, three provider conditions, and CREDENTIAL_EXPIRED](../../src/transport/errorMapping.test.ts#L54)).
 
 Defined error codes:
 
@@ -354,6 +354,9 @@ Defined error codes:
 | `UPSTREAM_ERROR`      | provider condition | Any other AI provider failure                                                 | 502  |
 | `SERVER_ERROR`        | engine defect      | An unexpected error that is no AI provider error                              | 500  |
 | `UNSUPPORTED`         | feature            | The server does not serve this frame: the feature is off, or its store cannot | —    |
+| `CREDENTIAL_EXPIRED`  | credential         | A tool credential `resolveAuthHeaders` could not renew; `stream_end` follows  | —    |
+
+A `CREDENTIAL_EXPIRED` error carries, verbatim, the message of the `CredentialExpiredError` the consumer's `resolveAuthHeaders` threw, and a `stream_end` follows it, as [the credential resolver spec](../hal-engine-credential-resolver/spec.md) describes ([validated by: sends error CREDENTIAL_EXPIRED with the hook's own message, then stream_end, over a real connection](../../src/transport/credentialExpired.test.ts#L61)).
 
 A client MUST treat a `code` it does not recognise as `SERVER_ERROR`.
 
@@ -361,7 +364,7 @@ A client MUST treat a `code` it does not recognise as `SERVER_ERROR`.
 
 Semantics:
 
-- Every `AIError` maps through one table, `src/transport/errorMapping.ts`, which both transports read, so the WebSocket `code` and the HTTP status always agree; no other transport file maps a provider code ([validated by: answers RATE_LIMITED, SERVICE_UNAVAILABLE and TIMEOUT with their own code, status and fixed sentence](../../src/transport/errorMapping.test.ts#L24), [validated by: answers nine other AIError codes and one named constructor from the one fallback row, UPSTREAM_ERROR and 502](../../src/transport/errorMapping.test.ts#L36), [validated by: is the only non-test file under src/transport that maps a provider error code, rateLimit.ts aside](../../src/transport/errorMapping.test.ts#L67)).
+- Every `AIError` maps through one table, `src/transport/errorMapping.ts`, which both transports read, so the WebSocket `code` and the HTTP status always agree; no other transport file maps a provider code ([validated by: answers RATE_LIMITED, SERVICE_UNAVAILABLE and TIMEOUT with their own code, status and fixed sentence](../../src/transport/errorMapping.test.ts#L24), [validated by: answers nine other AIError codes and one named constructor from the one fallback row, UPSTREAM_ERROR and 502](../../src/transport/errorMapping.test.ts#L36), [validated by: is the only non-test file under src/transport that maps a provider error code, rateLimit.ts aside](../../src/transport/errorMapping.test.ts#L68)).
 - `SERVICE_UNAVAILABLE` and `TIMEOUT` frames carry fixed sentences, `AI service temporarily unavailable` and `AI service timed out` ([validated by: sends SERVICE_UNAVAILABLE and TIMEOUT error frames with their fixed sentences](../../src/transport/ws/messageHandler.test.ts#L932)).
 - `RATE_LIMITED` is unchanged, and `SERVER_ERROR` is sent only for a throw that is no `AIError` ([validated by: still sends RATE_LIMITED byte-identically, and SERVER_ERROR only for a throw that is no AIError](../../src/transport/ws/messageHandler.test.ts#L944)).
 - No frame carries an `AIError`'s own message, which can echo request content; it reaches only the log ([validated by: keeps the AIError message secret-detail-77 out of every frame it sends](../../src/transport/ws/messageHandler.test.ts#L956)).

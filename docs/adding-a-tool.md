@@ -143,6 +143,8 @@ const getOrder: ToolExecutor = async (input, context) => {
 };
 ```
 
+`context.authHeaders` is a copy made for each call from the round's headers, and an executor must not mutate it: a change would reach nothing outside its own call. Its value is the headers captured at the upgrade, unless the consumer sets `orchestrator.hooks.resolveAuthHeaders`, which is called once per tool round, before that round's calls start, and returns the headers the round's tools receive instead. Use it to renew a short-lived credential; when renewal is impossible, throw `CredentialExpiredError` with a message for the user, and the client gets a `CREDENTIAL_EXPIRED` error carrying it, then `stream_end`. The engine authors no text of its own for that message. A resolved credential is held only for its round, never written to the session or any store, and never logged.
+
 A tool that ignores the signal is still bounded, since the orchestrator stops waiting at the deadline either way, but its request keeps running, and keeps sending whatever it carries, after the round has moved on.
 
 - Return `JSON.stringify(result)` for most tools -- the result gets added to the conversation as a tool result message
