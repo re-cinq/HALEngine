@@ -95,7 +95,7 @@ This package reads neither. `src/providers/bedrock/bedrockProvider.ts:28` constr
 - `bedrock:InvokeModel`
 - `bedrock:InvokeModelWithResponseStream`
 
-A `tool_use` block's `signature`, which only Vertex reads, is left out of the Converse request ([validated by: sends a tool_use block carrying signature sig-1 to Bedrock as a toolUse without it](../../src/providers/bedrock/bedrockProvider.test.ts#L65)).
+A `tool_use` block's `signature`, which only Vertex reads, is left out of the Converse request ([validated by: sends a tool_use block carrying signature sig-1 to Bedrock as a toolUse without it](../../src/providers/bedrock/bedrockProvider.test.ts#L66)).
 
 See [spike-bedrock-integration.md](../../docs/spikes/spike-bedrock-integration.md) for detailed cost analysis, token limits, and error handling patterns.
 
@@ -302,11 +302,11 @@ It configures `generateStructured` only, and nothing inside `createHalEngine` ca
 
 **Bedrock** closes the request at the vendor:
 
-- `params.signal` is passed to `client.send` as its `abortSignal`, the exact object given ([validated by: passes params.signal to client.send as its abortSignal, the exact object it was given](../../src/providers/bedrock/bedrockProvider.test.ts#L52)).
-- With no signal, `client.send` receives the command alone, exactly as before the field existed ([validated by: calls client.send with the command alone when no signal is given](../../src/providers/bedrock/bedrockProvider.test.ts#L90)).
-- An abort while the request is in flight ends the stream with no chunk and no `AIError`, although the SDK rejects the call, and is logged at `info` as `request aborted` under the provider's name with no other field ([validated by: ends the stream without an AIError when its signal aborts the request in flight, logging only that it aborted](../../src/providers/bedrock/bedrockProvider.test.ts#L99)).
-- Events already received are not read after an abort, so a consumer that aborts after the first of three chunks receives one ([validated by: yields nothing further once its signal aborts mid-stream, so an abort after the first of three leaves one](../../src/providers/bedrock/bedrockProvider.test.ts#L130)).
-- A signal already aborted when `sendMessage` is called sends nothing to the vendor ([validated by: sends nothing to Bedrock when its signal is already aborted](../../src/providers/bedrock/bedrockProvider.test.ts#L138)).
+- `params.signal` is passed to `client.send` as its `abortSignal`, the exact object given ([validated by: passes params.signal to client.send as its abortSignal, the exact object it was given](../../src/providers/bedrock/bedrockProvider.test.ts#L53)).
+- With no signal, `client.send` receives the command alone, exactly as before the field existed ([validated by: calls client.send with the command alone when no signal is given](../../src/providers/bedrock/bedrockProvider.test.ts#L122)).
+- An abort while the request is in flight ends the stream with no chunk and no `AIError`, although the SDK rejects the call, and is logged at `info` as `request aborted` under the provider's name with no other field ([validated by: ends the stream without an AIError when its signal aborts the request in flight, logging only that it aborted](../../src/providers/bedrock/bedrockProvider.test.ts#L131)).
+- Events already received are not read after an abort, so a consumer that aborts after the first of three chunks receives one ([validated by: yields nothing further once its signal aborts mid-stream, so an abort after the first of three leaves one](../../src/providers/bedrock/bedrockProvider.test.ts#L162)).
+- A signal already aborted when `sendMessage` is called sends nothing to the vendor ([validated by: sends nothing to Bedrock when its signal is already aborted](../../src/providers/bedrock/bedrockProvider.test.ts#L170)).
 
 **Vertex** closes the request at the transport. `@google/genai` hands the signal to `fetch`, so an abort closes the connection and no more of the answer reaches the engine. Measured on 2026-10-19 with `@google/genai` 2.26.0 against `gemini-3.1-flash-lite` on the `eu` multi-region: an abort after the first chunk aborted the signal the SDK gave `fetch`, the next read of the response body raised `AbortError`, and 0 bytes arrived after the abort. The SDK documents that the service may still finish generating, and bill, a request the client aborted. Under `@google-cloud/vertexai` an abort only stopped the engine's reading, and the vendor's response ran to its end.
 
