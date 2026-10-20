@@ -1,0 +1,46 @@
+name: Lore Test Ingest
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lore-tests-jest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Fetch lore-code-trace
+        env:
+          LORE_INGEST_URL: ${{ secrets.LORE_INGEST_URL || vars.LORE_INGEST_URL || vars.LORE_API_URL }}
+        run: |
+          if [ -n "${LORE_INGEST_URL}" ]; then echo "::add-mask::${LORE_INGEST_URL}"; fi
+          for artifact in linux-amd64 checksums.txt; do
+            if ! curl -fsL "${LORE_INGEST_URL}/dist/lore-code-trace/${artifact}" -o "${artifact}"; then
+              echo "::warning::lore-code-trace (${artifact}) could not be fetched - skipping Lore test ingest"
+              exit 0
+            fi
+          done
+          echo "$(awk '/ linux-amd64$/{print $1}' checksums.txt)  linux-amd64" | sha256sum -c -
+          mv linux-amd64 lore-code-trace
+          chmod +x lore-code-trace
+
+      - name: Run tests and ingest to Lore
+        if: hashFiles('lore-code-trace') != ''
+        env:
+          LORE_API_URL: ${{ secrets.LORE_INGEST_URL || vars.LORE_INGEST_URL || vars.LORE_API_URL }}
+          LORE_INGEST_TOKEN: ${{ secrets.LORE_INGEST_TOKEN }}
+        run: ./lore-code-trace --post || echo "::warning::Lore test ingest failed"
