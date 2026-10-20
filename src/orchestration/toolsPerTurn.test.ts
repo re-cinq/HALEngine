@@ -4,6 +4,7 @@ import {DEFAULT_TOOL_PREAMBLE, PromptBuilder} from '../infrastructure/builders/p
 import type {AIProvider, MessageChunk, SendMessageParams, ToolDefinition} from '../types/ai.js';
 import type {ChatSession} from '../types/session.js';
 import {setLogger} from '../shared/logger.js';
+import {keepEveryLine} from '../shared/logCaptureTestSupport.js';
 
 const STOP: MessageChunk = {type: 'stop', stopReason: 'end_turn'};
 const callTo = (name: string): MessageChunk[] => [
@@ -139,10 +140,7 @@ describe('the tool list a turn reads', () => {
   });
 
   it('writes no tool description, input schema or prompt instructions to the log over a turn that calls the tool', async () => {
-    const lines: unknown[] = [];
-    const keep = (category: string, message: string, fields?: Record<string, unknown>) =>
-      void lines.push({category, message, ...fields});
-    setLogger({debug: keep, info: keep, warn: keep, error: keep});
+    const lines = keepEveryLine();
     const registry = new ToolRegistry();
     registry.register(WEATHER, async () => 'sunny');
     const {provider} = recording(callTo('weather'), [STOP]);
