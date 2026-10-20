@@ -43,12 +43,20 @@ describe('an authenticated id the engine cannot use as an identity', () => {
   });
 
   it('answers 401 for undefined, null, an array, NaN and Infinity, while a string and a finite number connect', async () => {
-    const answers = [];
+    const outcomes = [];
     for (const id of [undefined, null, [], Number.NaN, Number.POSITIVE_INFINITY, 'u1', 42]) {
-      answers.push((await upgradeAs(id)).answer);
+      outcomes.push(await upgradeAs(id));
     }
 
-    expect(answers).toEqual(['401', '401', '401', '401', '401', 'open', 'open']);
+    expect(outcomes.map(({answer, held}) => `${answer} held ${held}`)).toEqual([
+      '401 held 0',
+      '401 held 0',
+      '401 held 0',
+      '401 held 0',
+      '401 held 0',
+      'open held 1',
+      'open held 1',
+    ]);
   });
 
   it("logs the refusal at error with the id's kind and none of its contents", async () => {
