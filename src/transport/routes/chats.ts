@@ -13,6 +13,8 @@ import type {SessionStore} from '../../types/sessionStore.js';
 import type {AuthenticatedRequest, HttpAuthMiddleware} from '../../types/auth.js';
 import type {AuthenticatedUser} from '../../types/session.js';
 import {log} from '../../shared/logger.js';
+import {filterAuthHeaders, forwardedHeaders} from '../authHeaders.js';
+import type {ForwardableHeader} from '../authHeaders.js';
 import type {ChatSession, SessionEntry} from '../../types/session.js';
 
 interface ChatMessage {
@@ -32,9 +34,12 @@ interface Chat {
 export function createChatRoutes(
   orchestrator: ChatOrchestrator,
   sessionStore: SessionStore,
-  authMiddleware?: HttpAuthMiddleware
+  authMiddleware?: HttpAuthMiddleware,
+  forwardHeaders?: readonly ForwardableHeader[]
 ): Router {
   const router = Router();
+  // Resolved once at construction, so the headers a turn may carry are fixed before any request arrives.
+  const allow = forwardedHeaders(forwardHeaders);
   const chats = new Map<string, Chat>();
 
   // No middleware means no way to identify a caller, so deny rather than serve everyone as one shared user.
@@ -97,11 +102,14 @@ export function createChatRoutes(
       sessionId: chat.id,
       userId: chat.userId,
       workspaceId: chat.workspaceId,
-      authHeaders: {
-        cookie: req.headers.cookie,
-        authorization: req.headers.authorization,
-        host: (req.headers['x-forwarded-host'] as string) || req.headers.host,
-      },
+      authHeaders: filterAuthHeaders(
+        {
+          cookie: req.headers.cookie,
+          authorization: req.headers.authorization,
+          host: (req.headers['x-forwarded-host'] as string) || req.headers.host,
+        },
+        allow
+      ),
       entries: chatMessagesToEntries(chat.messages),
     };
 

@@ -3,6 +3,7 @@ import request from 'supertest';
 import type {Request, Response} from 'express';
 import {WebSocket} from 'ws';
 import {composeProvider, createHalEngine} from './config.js';
+import type {HalEngineConfig} from './config.js';
 import {HAL_WS_SUBPROTOCOL} from './transport/ws/subprotocol.js';
 import type {ProviderConfig} from './providers/providerFactory.js';
 import {AIError} from './types/ai.js';
@@ -435,21 +436,18 @@ describe('createHalEngine transport.connectMessage', () => {
     expect(outcomes).toEqual(['refused, naming the field', 'constructed', 'constructed']);
   });
 
-  it('carries transport.connectMessage to the first frame a real client receives', async () => {
-    const disclosure = 'Du skriver med en AI-assistent. Æ, ø og å.';
-    const engine = createHalEngine({
-      ...base,
-      auth: {ws: (async () => ({id: 'u1'})) as WsAuthenticator},
-      transport: {connectMessage: disclosure},
-    });
+  // Starts `engine`, opens one client sending `headers`, and returns its first frame once the server has handled the close.
+  const firstFrameFrom = async (
+    engine: ReturnType<typeof createHalEngine>,
+    headers: Record<string, string> = {}
+  ): Promise<unknown> => {
     await engine.start(0);
     const {port} = engine.server.address() as net.AddressInfo;
-
     const disconnected = new Promise<void>(resolve => {
       engine.wss.once('connection', socket => socket.once('close', () => setImmediate(resolve)));
     });
     const first = await new Promise<unknown>(resolve => {
-      const client = new WebSocket(`ws://127.0.0.1:${port}/hal/ws/c1`, [HAL_WS_SUBPROTOCOL]);
+      const client = new WebSocket(`ws://127.0.0.1:${port}/hal/ws/c1`, [HAL_WS_SUBPROTOCOL], {headers});
       client.once('message', frame => {
         client.close();
         resolve(JSON.parse(String(frame)));
@@ -457,8 +455,61 @@ describe('createHalEngine transport.connectMessage', () => {
     });
     // The server logs the disconnect on its own close; waiting for it keeps that line inside this test.
     await disconnected;
+    return first;
+  };
+
+  it('carries transport.connectMessage to the first frame a real client receives', async () => {
+    const disclosure = 'Du skriver med en AI-assistent. Æ, ø og å.';
+    const engine = createHalEngine({
+      ...base,
+      auth: {ws: (async () => ({id: 'u1'})) as WsAuthenticator},
+      transport: {connectMessage: disclosure},
+    });
+
+    const first = await firstFrameFrom(engine);
     await engine.stop();
 
     expect(first).toMatchObject({type: 'connected', message: disclosure});
+  });
+
+  it('refuses auth.forwardHeaders naming x-tenant-id at compile time, since the list only narrows the three captured headers', () => {
+    const config: HalEngineConfig = {
+      ...base,
+      auth: {
+        ws: (async () => ({id: 'u1'})) as WsAuthenticator,
+        // @ts-expect-error -- x-tenant-id is not a header the engine captures, so it is not a ForwardableHeader
+        forwardHeaders: ['x-tenant-id'],
+      },
+    };
+
+    expect(config.auth.forwardHeaders).toEqual(['x-tenant-id']);
+  });
+
+  it("carries auth.forwardHeaders listing only authorization to both capture sites: a socket's session and a REST turn's hold authorization alone", async () => {
+    const caller = {authorization: 'Bearer t-1', cookie: 'sid=1'};
+    const held: unknown[] = [];
+    const engine = createHalEngine({
+      ...base,
+      auth: {
+        ws: (async () => ({id: 'u1'})) as WsAuthenticator,
+        http: ((req, _res, next) => {
+          Object.assign(req, {user: {id: 'u1'}});
+          next();
+        }) as HttpAuthMiddleware,
+        forwardHeaders: ['authorization'],
+      },
+      onConnect: session => void held.push(session.authHeaders),
+      orchestrator: {hooks: {beforeSession: async session => void held.push(session.authHeaders)}},
+    });
+
+    await firstFrameFrom(engine, caller);
+    const created = await request(engine.app).post('/hal/chats').set(caller);
+    await request(engine.app)
+      .post(`/hal/chats/${(created.body as {id: string}).id}/messages`)
+      .set(caller)
+      .send({content: 'hi'});
+    await engine.stop();
+
+    expect(held).toEqual([{authorization: 'Bearer t-1'}, {authorization: 'Bearer t-1'}]);
   });
 });
