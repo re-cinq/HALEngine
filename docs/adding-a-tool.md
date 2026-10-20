@@ -105,7 +105,7 @@ The optional `examplePrompts` field provides example queries that are shown to u
 examplePrompts: ['What is the weather in Berlin?', 'Is it raining in Tokyo?'],
 ```
 
-The `ToolRegistry.getExamplePrompts()` method collects and flattens these from all registered tools. They are computed once at server startup and included in every new WebSocket connection's `connected` message.
+The `ToolRegistry.getExamplePrompts()` method collects and flattens these from all registered tools. They are collected again for every new WebSocket connection and included in that connection's `connected` message, so a tool registered after the server starts offers its prompts to every socket that connects afterwards.
 
 Guidelines:
 - Write prompts as natural user questions, not technical descriptions
@@ -180,9 +180,10 @@ Once a tool is registered, the following work without any additional code:
 
 **On the backend:**
 
-- `toolRegistry.getExamplePrompts()` collects example prompts from all tools and includes them in the WebSocket `connected` message
-- `chatOrchestrator.ts` calls `toolRegistry.getPromptInstructions()` to include tool guidance in the system prompt via `PromptBuilder`
-- `chatOrchestrator.ts` calls `toolRegistry.getDefinitions()` to pass all tools to the AI provider
+- `toolRegistry.getExamplePrompts()` collects example prompts from all tools at every connection and includes them in the WebSocket `connected` message
+- `chatOrchestrator.ts` calls `toolRegistry.getDefinitions()` once at the start of every turn, passes those definitions to the AI provider, and puts each one's `promptInstructions` in that turn's system prompt via `PromptBuilder`; an empty registry sends the provider no tools at all
+
+Because definitions and prompt instructions are read at the start of every turn and example prompts at every connection, a tool may be registered after `createHalEngine` returns, from a boot-time capability probe or a feature flag, and the model is told about it from the next turn. A tool registered during a turn waits for the next one, so the list never changes between rounds of the same turn. Not advertising a tool is not an access control: refuse a call the model must not make in `beforeToolCall` or in the executor. Every definition goes to the model provider every turn, so keep personal data and internal hostnames out of `description`, `inputSchema` and `promptInstructions`.
 - When the provider returns a `tool_use` chunk, the message handler creates a `ToolEntry` and sends it via `entry_upsert`
 - The orchestrator executes all pending tool calls in parallel with `Promise.all()`
 - Each call has `toolTimeoutMs` (default `30000`) to settle. A call still running then is abandoned: its `signal` is aborted, the model receives a `tool_result` saying the tool did not answer within the deadline, and the round's other calls keep their results. `toolTimeoutMs: 0` waits forever

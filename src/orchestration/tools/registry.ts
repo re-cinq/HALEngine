@@ -99,9 +99,7 @@ export class ToolRegistry {
   }
 
   getPromptInstructions(): string[] {
-    return this.getDefinitions()
-      .filter(t => t.promptInstructions)
-      .map(t => `${t.name}: ${t.promptInstructions}`);
+    return promptInstructionsOf(this.getDefinitions());
   }
 
   getExamplePrompts(): string[] {
@@ -197,4 +195,9 @@ function describeThrow(error: unknown): string {
   } catch {
     return typeof error;
   }
+}
+
+/** The prompt line of each definition that carries instructions, `name: instructions`, in the order given. */
+export function promptInstructionsOf(definitions: ToolDefinition[]): string[] {
+  return definitions.filter(t => t.promptInstructions).map(t => `${t.name}: ${t.promptInstructions}`);
 }

@@ -40,7 +40,7 @@ export type {OpenAIConfig} from './providers/openai/index.js';
 export {createAnthropicProvider} from './providers/anthropic/index.js';
 export type {AnthropicConfig} from './providers/anthropic/index.js';
 export {createMockProvider} from './providers/mock/index.js';
-export type {MockConfig} from './providers/mock/index.js';
+export type {MockConfig, MockTurn} from './providers/mock/index.js';
 
 export {ToolRegistry, normalizeToolResponse} from './orchestration/tools/index.js';
 export type {
@@ -104,7 +104,7 @@ export type {
   ChatSession,
   AuthenticatedUser,
 } from './types/session.js';
-export {ErrorCodes} from './types/session.js';
+export {ErrorCodes, assertScalarUserId, isScalarUserId} from './types/session.js';
 
 export type {
   IncomingMessage,

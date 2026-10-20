@@ -132,7 +132,8 @@ describe('createHalEngine orchestrator hooks reach the orchestrator', () => {
     expect(reply).toEqual('Mock response to: "unwrapped" ');
   });
 
-  it('hands a config-installed beforeModelResponse hook the built base system prompt, not merely storing it', async () => {
+  // An engine whose beforeModelResponse hook keeps the base system prompt it was handed.
+  const engineKeepingPrompt = (): {engine: ReturnType<typeof createHalEngine>; received: () => string} => {
     let received = 'never called';
     const engine = createHalEngine({
       ...base,
@@ -145,6 +146,11 @@ describe('createHalEngine orchestrator hooks reach the orchestrator', () => {
         },
       },
     });
+    return {engine, received: () => received};
+  };
+
+  it('hands a config-installed beforeModelResponse hook the built base system prompt, not merely storing it', async () => {
+    const {engine, received} = engineKeepingPrompt();
     const session: ChatSession = {
       sessionId: 's-prompt',
       userId: 'u1',
@@ -153,7 +159,28 @@ describe('createHalEngine orchestrator hooks reach the orchestrator', () => {
 
     await engine.orchestrator.processMessage(session);
 
-    expect(received).toBe('test');
+    expect(received()).toBe('test');
+  });
+
+  it('hands beforeModelResponse a prompt naming weather, a tool registered after createHalEngine returned', async () => {
+    const {engine, received} = engineKeepingPrompt();
+    engine.toolRegistry.register(
+      {
+        name: 'weather',
+        description: 'Reports the weather.',
+        inputSchema: {type: 'object'},
+        promptInstructions: 'Call weather for rain.',
+      },
+      async () => 'sunny'
+    );
+
+    await engine.orchestrator.processMessage({
+      sessionId: 's-late-tool',
+      userId: 'u1',
+      entries: [{role: 'user', content: 'hi', timestamp: ''}],
+    });
+
+    expect(received()).toContain('weather: Call weather for rain.');
   });
 
   it('fires the lifecycle hooks in documented order for a session that completes without error', async () => {
