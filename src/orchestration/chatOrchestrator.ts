@@ -1,11 +1,13 @@
 import type {ChatSession} from '../types/session.js';
 import type {ToolRegistry, ToolContext, ToolResponse} from './tools/registry.js';
+import {promptInstructionsOf} from './tools/registry.js';
 import type {
   AIProvider,
   Message,
   MessageChunk,
   SendMessageParams,
   ToolCall,
+  ToolDefinition,
   ToolResultContent,
   UsageMetadata,
 } from '../types/ai.js';
@@ -86,9 +88,7 @@ export function createChatOrchestrator(
   const maxToolRounds = normalizeToolRounds(options?.maxToolRounds);
   const toolTimeoutMs = normalizeToolTimeout(options?.toolTimeoutMs);
   const contextConfig = createContextConfig(options?.contextConfig);
-  const toolInstructions = toolRegistry?.getPromptInstructions();
-  const baseSystemPrompt = promptBuilder.build({...options?.promptBuilderOptions, toolInstructions});
-  const tools = toolRegistry?.getDefinitions();
+  const promptBuilderOptions = options?.promptBuilderOptions;
   const hooks = options?.hooks;
   const sessionStore = options?.sessionStore;
 
@@ -109,6 +109,8 @@ export function createChatOrchestrator(
 
         if (hooks?.afterUserInput) await hooks.afterUserInput(session, userMessage);
 
+        // Read every turn, never once per process, so a tool registered after construction is advertised from the next turn.
+        const {baseSystemPrompt, tools} = turnTools(promptBuilder, toolRegistry, promptBuilderOptions);
         const systemPrompt = hooks?.beforeModelResponse
           ? await hooks.beforeModelResponse(session, baseSystemPrompt)
           : baseSystemPrompt;
@@ -182,6 +184,21 @@ export function createChatOrchestrator(
         }
       }
     },
+  };
+}
+
+// One read per turn: the definitions, and the prompt's instructions derived from those same definitions, not a second read.
+function turnTools(
+  promptBuilder: PromptBuilder,
+  toolRegistry: ToolRegistry | undefined,
+  promptBuilderOptions: PromptBuilderOptions | undefined
+): {baseSystemPrompt: string; tools?: ToolDefinition[]} {
+  const definitions = toolRegistry?.getDefinitions() ?? [];
+  const toolInstructions = promptInstructionsOf(definitions);
+  return {
+    baseSystemPrompt: promptBuilder.build({...promptBuilderOptions, toolInstructions}),
+    // No tools is undefined, never []: Bedrock and Vertex read an empty list differently, so the orchestrator decides.
+    tools: definitions.length > 0 ? definitions : undefined,
   };
 }
 
