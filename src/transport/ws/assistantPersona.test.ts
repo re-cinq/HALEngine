@@ -1,5 +1,5 @@
-import type {WebSocket} from 'ws';
 import {createMessageHandler} from './messageHandler.js';
+import {recordingSocket} from './recordingSocketTestSupport.js';
 import {createChatOrchestrator} from '../../orchestration/chatOrchestrator.js';
 import type {OrchestratorHooks} from '../../orchestration/chatOrchestrator.js';
 import {createAssistantEntry} from '../../orchestration/entryFactories.js';
@@ -45,8 +45,7 @@ async function turnOn(session: ChatSession, {provider, hooks, tool}: Turn): Prom
   const orchestrator = createChatOrchestrator(provider, new PromptBuilder({identity: 'Persona test.'}), registry, {
     hooks,
   });
-  const sent: OutgoingMessage[] = [];
-  const ws = {send: (raw: string) => sent.push(JSON.parse(raw) as OutgoingMessage)} as unknown as WebSocket;
+  const {ws, sent} = recordingSocket();
   await createMessageHandler(orchestrator)(ws, session, {type: 'user_message', content: 'hello'});
   return sent;
 }
