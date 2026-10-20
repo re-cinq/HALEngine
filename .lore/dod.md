@@ -12,8 +12,8 @@ The red bar is CI's to show; the CI job that runs the tests is "Test (with cover
 
 ## Facets
 
-- [ ] Apply `assertScalarUserId` in `InMemorySessionStore.listFor`
-- [ ] Apply `assertScalarUserId` in `MongoSessionStore.listFor`
+- [x] Apply `assertScalarUserId` in `InMemorySessionStore.listFor`
+- [x] Apply `assertScalarUserId` in `MongoSessionStore.listFor`
 
 ## Out of scope
 

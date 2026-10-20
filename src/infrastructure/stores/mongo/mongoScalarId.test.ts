@@ -41,6 +41,14 @@ describe('MongoSessionStore scalar id guard', () => {
     }
   });
 
+  it('refuses listFor with a non-scalar userId', async () => {
+    const {collection} = recordingCollection();
+    const store = new MongoSessionStore({collection});
+    for (const id of nonScalar) {
+      await expect(store.listFor(id as string | number)).rejects.toThrow();
+    }
+  });
+
   it('issues no queries when given a non-scalar userId', async () => {
     const {collection, calls} = recordingCollection();
     const store = new MongoSessionStore({collection});
@@ -52,6 +60,11 @@ describe('MongoSessionStore scalar id guard', () => {
       }
       try {
         await store.latestFor(id as string | number);
+      } catch {
+        // expected rejection — only checking that no query was issued
+      }
+      try {
+        await store.listFor(id as string | number);
       } catch {
         // expected rejection — only checking that no query was issued
       }

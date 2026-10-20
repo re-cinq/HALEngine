@@ -53,7 +53,6 @@ export type {
 
 export {InMemorySessionStore} from './infrastructure/stores/inMemorySessionStore.js';
 export type {InMemorySessionStoreOptions} from './infrastructure/stores/inMemorySessionStore.js';
-export {assertScalarUserId} from './infrastructure/stores/scalarUserId.js';
 export {
   MongoSessionStore,
   createMongoSessionStore,
