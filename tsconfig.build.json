@@ -18,6 +18,7 @@
     "src/shared/logCaptureTestSupport.ts",
     "src/transport/wsTestSupport.ts",
     "src/transport/ws/recordingSocketTestSupport.ts",
+    "src/providers/maskTestSupport.ts",
     "src/testing/recordFrames.ts",
     "src/testing/writeFrames.ts"
   ]

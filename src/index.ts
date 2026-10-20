@@ -29,6 +29,8 @@ export {withRetry} from './providers/withRetry.js';
 export type {RetryPolicy} from './providers/withRetry.js';
 export {withFallback} from './providers/withFallback.js';
 export type {FallbackPolicy} from './providers/withFallback.js';
+export {withMask} from './providers/withMask.js';
+export type {PromptMask, MaskBinding} from './providers/withMask.js';
 export {createBedrockProvider} from './providers/bedrock/index.js';
 export type {BedrockConfig} from './providers/bedrock/index.js';
 export {createVertexProvider} from './providers/vertex/index.js';

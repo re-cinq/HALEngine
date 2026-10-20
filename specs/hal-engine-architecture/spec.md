@@ -522,7 +522,11 @@ Fail-over is stateless and per request. It keeps no memory of a vendor being dow
 
 ### Decision
 
-Retry is tier one of the resilience path, absorbing transient blips against one vendor; fail-over is tier two, routing a sustained outage to the next vendor once tier one has given up. A consumer may configure either independently: `resilience` alone retries one vendor, and `fallbackProviders` alone fails over on the first outage without retrying. The Vertex classifier maps `503` and `UNAVAILABLE` to a retryable `SERVICE_UNAVAILABLE`, and `504`, `DEADLINE_EXCEEDED` and a fetch timeout to a retryable `TIMEOUT`, so both tiers act on a Vertex outage. A prompt mask at the provider boundary, when one exists, composes outside both, so one binding covers every vendor an attempt reaches.
+Retry is tier one of the resilience path, absorbing transient blips against one vendor; fail-over is tier two, routing a sustained outage to the next vendor once tier one has given up. A consumer may configure either independently: `resilience` alone retries one vendor, and `fallbackProviders` alone fails over on the first outage without retrying. The Vertex classifier maps `503` and `UNAVAILABLE` to a retryable `SERVICE_UNAVAILABLE`, and `504`, `DEADLINE_EXCEEDED` and a fetch timeout to a retryable `TIMEOUT`, so both tiers act on a Vertex outage. The prompt mask composes outside both, so one binding covers every vendor an attempt reaches ([prompt mask](../hal-engine-prompt-mask/spec.md)).
+
+## Prompt masking
+
+`HalEngineConfig.privacy.mask` wraps the composed provider in `withMask`, the outermost layer, so the model vendor sees the consumer's tokens and everything downstream of the provider, the tool executors, the hooks, the stored session and the wire, sees real values ([prompt mask](../hal-engine-prompt-mask/spec.md)). `generateStructured` is unmasked. Its limits are honest ones: the mask cannot recognise what its detector does not describe, free-text user input is a residual exposure, a token the model does not echo verbatim reaches the user as a token, and per-call binding means neither the vendor nor the deployer can correlate tokens across turns.
 
 ## Source Files
 
