@@ -60,6 +60,7 @@ export const recordedFrames = {
       entry: {
         role: 'thinking',
         content: '',
+        timestamp: '<ts>',
         isStreaming: true,
       },
     },

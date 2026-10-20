@@ -75,7 +75,7 @@ hal-engine is designed around pluggable interfaces that let consumers customize 
 
 ### SessionStore
 
-Controls where session data is stored: the default `InMemorySessionStore` keeps sessions in a `Map` ([validated by: creates and retrieves a session](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L10)). Implement this interface to persist sessions in Redis, a database, or any other backing store. The store is generic -- pass your own session type extending `BaseSession`.
+Controls where session data is stored: the default `InMemorySessionStore` keeps sessions in a `Map` ([validated by: creates and retrieves a session](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L13)). Implement this interface to persist sessions in Redis, a database, or any other backing store. The store is generic -- pass your own session type extending `BaseSession`.
 
 <!-- doc-block: src/types/sessionStore.ts#SessionStore -->
 ```typescript
@@ -98,12 +98,20 @@ interface SessionStore<T extends BaseSession = ChatSession> {
 }
 ```
 
-- `create` records the optional `authHeaders` and `workspaceId` on the session it returns, so a tool can later reach upstream services as the caller ([validated by: creates session with options](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L19)).
-- `get` returns `undefined` for a session id the store does not hold, rather than throwing ([validated by: returns undefined for unknown session](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L31)).
-- `delete` removes the session and reports `true` ([validated by: deletes a session](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L35)).
-- `delete` reports `false` for an id the store was not holding ([validated by: returns false when deleting nonexistent session](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L42)).
-- `count` reflects creates and deletes as they happen ([validated by: tracks count correctly](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L46)).
-- `clear` empties the store, leaving `count` at zero and every previous id unresolvable ([validated by: clears all sessions](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L60)).
+- `create` records the optional `authHeaders` and `workspaceId` on the session it returns, so a tool can later reach upstream services as the caller ([validated by: creates session with options](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L29)).
+- `ChatSession.createdAt` is written by the store, not the engine: `InMemorySessionStore.create` stamps it, ISO 8601, at the time of the call ([validated by: stamps createdAt at create as the ISO 8601 time of the call, 2026-10-20T08:00:00.000Z on a clock set to it](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L78)).
+- `MongoSessionStore` sets `createdAt` from the creation time it writes to the document, on the session `create` returns and on one a second store reads back ([validated by: sets createdAt to the document's creation time, 2026-10-20T08:00:00.000Z, on create and on a second store's read](../../src/infrastructure/stores/mongo/mongoCreatedAt.test.ts#L10)).
+- A document that holds no creation time reads back with no `createdAt` key ([validated by: reads a document that holds no createdAt back as a session with no createdAt key](../../src/infrastructure/stores/mongo/mongoCreatedAt.test.ts#L23)).
+- The field is optional, so a session stored before it existed completes a turn unchanged ([validated by: completes a turn unchanged on a session with no createdAt, as one stored before the field existed would be](../../src/orchestration/entryFactories.test.ts#L23)).
+- A consumer may type its own sessions with `createdAt` required and implement `SessionStore` over them ([validated by: lets a consumer type its sessions with createdAt required and implement SessionStore over them](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L87)).
+- `assertScalarUserId`, exported for a consumer's own store, refuses a user id that is not a string or a finite number, naming its kind rather than its contents ([validated by: is refused by assertScalarUserId for an operator object, undefined, null, an array, NaN and Infinity](../../src/infrastructure/stores/scalarUserId.test.ts#L10)).
+- `InMemorySessionStore` refuses such an id in `create`, `listFor` and `latestFor` ([validated by: is refused by InMemorySessionStore create, listFor and latestFor, which hold nothing afterwards](../../src/infrastructure/stores/scalarUserId.test.ts#L33)).
+- `MongoSessionStore` refuses it in the same three methods before any query reaches the collection, so a caller of its own, a maintenance script or an HTTP route, gets the same refusal as the WebSocket path ([validated by: is refused by MongoSessionStore create, listFor and latestFor before any query reaches the collection](../../src/infrastructure/stores/scalarUserId.test.ts#L53)).
+- `get` returns `undefined` for a session id the store does not hold, rather than throwing ([validated by: returns undefined for unknown session](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L41)).
+- `delete` removes the session and reports `true` ([validated by: deletes a session](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L45)).
+- `delete` reports `false` for an id the store was not holding ([validated by: returns false when deleting nonexistent session](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L52)).
+- `count` reflects creates and deletes as they happen ([validated by: tracks count correctly](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L56)).
+- `clear` empties the store, leaving `count` at zero and every previous id unresolvable ([validated by: clears all sessions](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L70)).
 - `save` is the optional write signal the engine calls once per processed user message, detailed in [the session write signal spec](../hal-engine-session-write-signal/spec.md); a store that omits it, as `InMemorySessionStore` does, is unaffected ([validated by: logs nothing for a store that implements no save](../../src/orchestration/sessionSave.test.ts#L67)).
 
 ### WsAuthenticator
@@ -137,8 +145,8 @@ interface AIProvider {
 }
 ```
 
-- `sendMessage` streams responses for user-facing output ([validated by: streams word-by-word response echoing user input](../../src/providers/mock/mockProvider.test.ts#L7)).
-- `generateStructured` returns typed JSON for internal AI decisions, such as evaluation, classification and structured extraction ([validated by: returns default values matching schema shape](../../src/providers/mock/mockProvider.test.ts#L72)).
+- `sendMessage` streams responses for user-facing output ([validated by: streams word-by-word response echoing user input](../../src/providers/mock/mockProvider.test.ts#L8)).
+- `generateStructured` returns typed JSON for internal AI decisions, such as evaluation, classification and structured extraction ([validated by: returns default values matching schema shape](../../src/providers/mock/mockProvider.test.ts#L73)).
 
 ### PromptStore
 

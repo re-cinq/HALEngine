@@ -6,7 +6,7 @@ import type {WsAuthenticator} from '../../types/auth.js';
 import type {SessionStore} from '../../types/sessionStore.js';
 import type {ConnectedMessage} from '../../types/messages.js';
 import type {AuthenticatedUser, ChatSession} from '../../types/session.js';
-import {ErrorCodes} from '../../types/session.js';
+import {ErrorCodes, isScalarUserId, userIdKind} from '../../types/session.js';
 import {sendError} from './sender.js';
 import {isValidWsPath, rejectSocket, parseWsData, sessionIdFromUpgrade, newSessionRequested} from './helpers.js';
 import {presentedCredential} from './credential.js';
@@ -69,6 +69,12 @@ export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandl
     authenticate(deps.wsAuth, request)
       .then(user => {
         if (!user) {
+          rejectSocket(socket, '401 Unauthorized');
+          return;
+        }
+        // The id is the only thing separating one user's conversations from another's in every store query.
+        if (!isScalarUserId(user.id)) {
+          log.error('ws', 'authenticator returned a user id the engine cannot use', {idKind: userIdKind(user.id)});
           rejectSocket(socket, '401 Unauthorized');
           return;
         }

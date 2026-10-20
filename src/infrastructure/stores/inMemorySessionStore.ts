@@ -1,4 +1,5 @@
 import type {ChatSession} from '../../types/session.js';
+import {assertScalarUserId} from '../../types/session.js';
 import type {
   SessionCursor,
   SessionStore,
@@ -32,16 +33,20 @@ export class InMemorySessionStore implements SessionStore {
   }
 
   create(sessionId: string, userId: string | number, options?: SessionCreateOptions): ChatSession {
+    assertScalarUserId(userId);
     this.sweepExpired();
 
+    const createdAt = Date.now();
     const session: ChatSession = {
       sessionId,
       userId,
       entries: [],
       authHeaders: options?.authHeaders,
       workspaceId: options?.workspaceId,
+      // An unusable clock reading has no ISO form, and a session must still open on it.
+      ...(Number.isFinite(createdAt) ? {createdAt: new Date(createdAt).toISOString()} : {}),
     };
-    this.sessions.set(sessionId, {session, createdAt: Date.now()});
+    this.sessions.set(sessionId, {session, createdAt});
     return session;
   }
 
@@ -83,6 +88,7 @@ export class InMemorySessionStore implements SessionStore {
 
   /** Summaries of the user's live sessions, newest activity first, by the same activity `latestFor` reads. */
   listFor(userId: string | number, options?: SessionListOptions): SessionSummary[] {
+    assertScalarUserId(userId);
     const limit = cappedLimit(options?.limit);
     if (limit === 0) return [];
 
@@ -95,6 +101,7 @@ export class InMemorySessionStore implements SessionStore {
 
   /** The user's most recently active session that has not aged out: its newest entry decides, or its creation if it has none. */
   latestFor(userId: string | number): ChatSession | undefined {
+    assertScalarUserId(userId);
     // The list's own order, ties broken by session id, so a resume rejoins the conversation the list shows first.
     return this.ownedBy(userId).map(rowOf).sort(byNewestRow)[0]?.held.session;
   }
@@ -160,7 +167,7 @@ function summaryOf(held: HeldSession): SessionSummary {
 // The store has no save to stamp, so activity is read off the entries; an unusable clock reading counts as none.
 function lastActivity(held: HeldSession): number {
   const {entries} = held.session;
-  const stamps = entries.map(entry => ('timestamp' in entry ? Date.parse(entry.timestamp) : Number.NaN));
+  const stamps = entries.map(entry => (entry.timestamp === undefined ? Number.NaN : Date.parse(entry.timestamp)));
   // Folded rather than spread into Math.max, whose argument list runs out past about 150,000 entries.
   return [held.createdAt, ...stamps].filter(Number.isFinite).reduce((latest, time) => Math.max(latest, time), 0);
 }
