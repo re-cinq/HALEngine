@@ -1,4 +1,5 @@
 import {createMockProvider} from './mockProvider.js';
+import {createProvider} from '../providerFactory.js';
 import {collectAbortingAfter, collectChunks, userMessage} from '../providerTestSupport.js';
 import type {AIProvider, SendMessageParams, ResponseSchema} from '../../types/ai.js';
 
@@ -124,6 +125,114 @@ describe('createMockProvider', () => {
       });
 
       expect(result).toEqual({name: ''});
+    });
+  });
+
+  describe('scripted turns', () => {
+    const lookup = {id: 't1', name: 'lookup', input: {q: 'hi'}};
+    // The stop chunk of each of `calls` consecutive calls, in order.
+    const stopsOf = async (provider: AIProvider, calls: number) => {
+      const stops = [];
+      for (let call = 0; call < calls; call++)
+        stops.push((await collectChunks(provider.sendMessage(userMessage('go')))).at(-1));
+      return stops;
+    };
+    const typesOf = async (provider: AIProvider) =>
+      (await collectChunks(provider.sendMessage(userMessage('go')))).map(chunk => chunk.type);
+
+    it('ends a turn that calls a tool with stopReason tool_use, and one that does not with end_turn', async () => {
+      const provider = createMockProvider({type: 'mock', turns: [{toolCalls: [lookup]}, {text: 'done'}]});
+
+      expect(await stopsOf(provider, 2)).toMatchObject([
+        {type: 'stop', stopReason: 'tool_use'},
+        {type: 'stop', stopReason: 'end_turn'},
+      ]);
+    });
+
+    it("emits a turn's text, then its tool calls, then its stop, the text joining back to exactly what was scripted", async () => {
+      const chunks = await collectChunks(
+        createMockProvider({type: 'mock', turns: [{text: 'one moment please', toolCalls: [lookup]}]}).sendMessage(
+          userMessage('go')
+        )
+      );
+
+      expect({
+        types: chunks.map(chunk => chunk.type),
+        text: chunks.map(chunk => (chunk.type === 'text' ? chunk.text : '')).join(''),
+      }).toEqual({types: ['text', 'text', 'text', 'tool_use', 'stop'], text: 'one moment please'});
+    });
+
+    it('throws on the third call against a two-turn script, naming call 3 of 2 scripted turns', async () => {
+      const provider = createMockProvider({type: 'mock', turns: [{text: 'a'}, {text: 'b'}]});
+      await typesOf(provider);
+      await typesOf(provider);
+
+      await expect(typesOf(provider)).rejects.toThrow('mock provider script exhausted: call 3 of 2 scripted turns');
+    });
+
+    it('reports the fixed usage on a scripted turn that sets none, and exactly the usage a turn sets', async () => {
+      const usage = {inputTokens: 1, outputTokens: 2, totalTokens: 3};
+      const provider = createMockProvider({type: 'mock', turns: [{text: 'a'}, {text: 'b', usage}]});
+
+      expect(await stopsOf(provider, 2)).toMatchObject([
+        {usage: {inputTokens: 10, outputTokens: 20, totalTokens: 30}},
+        {usage},
+      ]);
+    });
+
+    it('runs onSendMessage once per call, before the first chunk, with the parameters the caller passed', async () => {
+      const seen: Array<{params: SendMessageParams; chunksSoFar: number}> = [];
+      let chunksSoFar = 0;
+      const provider = createMockProvider({
+        type: 'mock',
+        turns: [{text: 'a'}],
+        onSendMessage: params => void seen.push({params, chunksSoFar}),
+      });
+      const params = userMessage('go');
+
+      for await (const chunk of provider.sendMessage(params)) {
+        void chunk;
+        chunksSoFar++;
+      }
+
+      expect(seen).toEqual([{params, chunksSoFar: 0}]);
+    });
+
+    it('emits a tool_use for a tool no registry holds, checking nothing against params.tools', async () => {
+      const invented = {id: 't9', name: 'invented_tool', input: {}};
+
+      const chunks = await collectChunks(
+        createMockProvider({type: 'mock', turns: [{toolCalls: [invented]}]}).sendMessage({
+          ...userMessage('go'),
+          tools: [],
+        })
+      );
+
+      expect(chunks[0]).toEqual({type: 'tool_use', toolCall: invented});
+    });
+
+    it('answers generateStructured from structuredResponses exactly as before when turns are also set', async () => {
+      const answer = {score: 1};
+      const provider = createMockProvider({
+        type: 'mock',
+        turns: [{text: 'a'}],
+        structuredResponses: new Map([['rate this', answer]]),
+      });
+
+      const result = await provider.generateStructured({
+        messages: [{role: 'user', content: 'rate this'}],
+        systemPrompt: 's',
+        responseSchema: {type: 'object'},
+      });
+
+      expect(result).toBe(answer);
+    });
+
+    it('takes turns through createProvider as well as createMockProvider', async () => {
+      expect(await typesOf(createProvider({type: 'mock', turns: [{toolCalls: [lookup]}]}))).toEqual([
+        'tool_use',
+        'stop',
+      ]);
     });
   });
 });
