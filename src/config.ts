@@ -5,6 +5,8 @@ import type {ContextConfig} from './orchestration/conversationContext.js';
 import type {ProviderConfig} from './providers/providerFactory.js';
 import {withRetry} from './providers/withRetry.js';
 import {withFallback} from './providers/withFallback.js';
+import {withMask} from './providers/withMask.js';
+import type {PromptMask} from './providers/withMask.js';
 import type {RetryPolicy} from './providers/withRetry.js';
 import type {Logger} from './shared/logger.js';
 import {setLogger} from './shared/logger.js';
@@ -29,6 +31,10 @@ export interface HalEngineConfig {
   resilience?: RetryPolicy;
   /** Tried in order, once each, when the provider before it is unavailable; each is built at construction like the primary and gets its own `resilience` retry. */
   fallbackProviders?: ProviderConfig[];
+  /** Reversible pseudonymisation at the provider boundary: the model sees `mask`'s tokens, and everything downstream the real values. */
+  privacy?: {
+    mask?: PromptMask;
+  };
   prompt: PromptBuilderConfig;
   tools?: ToolRegistry;
   session?: SessionStore;
@@ -131,17 +137,25 @@ function refuseBlankConnectMessage(connectMessage: string | undefined): void {
   );
 }
 
-/** The provider the orchestrator receives: retry innermost per provider, then the fallback chain; with neither configured, exactly what `create` returned. */
+/** The provider the orchestrator receives: retry innermost per provider, then the fallback chain, then the mask; with none configured, exactly what `create` returned. */
 export function composeProvider(
-  config: Pick<HalEngineConfig, 'provider' | 'resilience' | 'fallbackProviders'>,
+  config: Pick<HalEngineConfig, 'provider' | 'resilience' | 'fallbackProviders' | 'privacy'>,
   create: (providerConfig: ProviderConfig) => AIProvider = createProvider
 ): AIProvider {
   const resilient = (provider: AIProvider): AIProvider =>
     config.resilience ? withRetry(provider, config.resilience) : provider;
   const primary = resilient(create(config.provider));
   const fallbacks = config.fallbackProviders ?? [];
-  if (fallbacks.length === 0) return primary;
   // Every fallback is built now, so a misconfigured one fails at startup rather than during an outage.
-  const chain = fallbacks.map(fallback => resilient(create(fallback)));
-  return withFallback(primary, chain, {labels: [config.provider.type, ...fallbacks.map(fallback => fallback.type)]});
+  const routed =
+    fallbacks.length === 0
+      ? primary
+      : withFallback(
+          primary,
+          fallbacks.map(fallback => resilient(create(fallback))),
+          {labels: [config.provider.type, ...fallbacks.map(fallback => fallback.type)]}
+        );
+  // Outermost, so a retry replays masked parameters and every vendor tried receives text from one binding.
+  const mask = config.privacy?.mask;
+  return mask ? withMask(routed, mask) : routed;
 }

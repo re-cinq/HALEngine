@@ -123,6 +123,7 @@ interface HalEngineConfig {
   prompt: PromptBuilderConfig; // System prompt configuration
   tools?: ToolRegistry; // Registered tools (optional)
   session?: SessionStore; // Custom session store (default: in-memory)
+  privacy?: {mask?: PromptMask}; // opt-in: the model sees your detector's tokens, everything else the real values
   transport?: {
     port?: number; // Server port (default: 8086)
     corsOrigin?: string | string[];
