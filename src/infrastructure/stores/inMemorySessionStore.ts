@@ -42,6 +42,7 @@ export class InMemorySessionStore implements SessionStore {
       userId,
       entries: [],
       authHeaders: options?.authHeaders,
+      user: options?.user,
       workspaceId: options?.workspaceId,
       // An unusable clock reading has no ISO form, and a session must still open on it.
       ...(Number.isFinite(createdAt) ? {createdAt: new Date(createdAt).toISOString()} : {}),
