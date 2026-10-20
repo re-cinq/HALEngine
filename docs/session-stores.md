@@ -49,6 +49,22 @@ outlives the request it was issued for — and it matches what the transport doe
 library-owned timer keeps your process alive; how often you call it, and what cutoff you pass, is
 the retention decision, and it belongs to your deployment with a named person behind it.
 
+Two timestamps exist to enforce a retention period against: `ChatSession.createdAt`, written by
+the store when it creates a session (never by the engine), and each entry's `timestamp`, written by
+`src/orchestration/entryFactories.ts`. Both shipped stores set `createdAt`: `InMemorySessionStore`
+at `create`, and `MongoSessionStore` from the creation time it writes to each document, so a session
+read back from MongoDB carries the time it was first created. A `SessionStore` you implement is the
+other producer of `createdAt`. Both are ISO 8601, and ISO 8601 values may arrive in different forms - `Z`-suffixed UTC
+or a numeric offset such as `+01:00` - that parse to the same instant but sort differently as
+strings, so parse before comparing. Both are optional on the types: a thinking entry stored before
+0.9 has no `timestamp`, and a session has no `createdAt` when its store holds no creation time for
+it. `MongoSessionStore` has written one to every document since 0.4.0, so its sessions carry
+`createdAt` even when they were stored before 0.9.
+
+**GDPR.** A creation time attached to an identified user's conversation is personal data like the
+rest of the session, a retained metadata category of its own; the fields exist precisely so a
+retention period can be enforced against them.
+
 `InMemorySessionStore`'s `maxAgeMs` is **not** a retention policy. It is a memory bound so the
 default store does not grow without limit, and it defaults to eight hours.
 

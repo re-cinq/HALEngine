@@ -46,7 +46,14 @@ export function toChatSession(document: MongoSessionDocument): ChatSession {
     userId: document.userId,
     entries: document.entries as SessionEntry[],
     workspaceId: document.workspaceId,
+    ...isoCreatedAt(document.createdAt),
   };
+}
+
+/** The document's creation time as `ChatSession.createdAt`, or no key when it holds no usable Date. */
+export function isoCreatedAt(createdAt: unknown): Pick<ChatSession, 'createdAt'> {
+  if (!(createdAt instanceof Date) || !Number.isFinite(createdAt.getTime())) return {};
+  return {createdAt: createdAt.toISOString()};
 }
 
 /** Builds the list row from a projected document; a pre-0.6 one carries no counter and reads as a conversation of none. */

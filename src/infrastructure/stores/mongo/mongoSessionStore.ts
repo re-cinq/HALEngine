@@ -9,7 +9,13 @@ import type {
 import {StoreCannotList} from '../../../types/sessionStore.js';
 import type {CollectionLike, MongoClientLike} from './mongoDriverTypes.js';
 import type {MongoSessionDocument} from './mongoSessionDocument.js';
-import {persistedFields, toChatSession, toLabelledSummary, toSessionSummary} from './mongoSessionDocument.js';
+import {
+  isoCreatedAt,
+  persistedFields,
+  toChatSession,
+  toLabelledSummary,
+  toSessionSummary,
+} from './mongoSessionDocument.js';
 import {cappedLimit, cursorAt} from '../sessionListWindow.js';
 import {log} from '../../../shared/logger.js';
 
@@ -58,15 +64,16 @@ export class MongoSessionStore implements SessionStore {
   }
 
   async create(sessionId: string, userId: string | number, options?: SessionCreateOptions): Promise<ChatSession> {
+    const startedAt = this.now();
     const session: ChatSession = {
       sessionId,
       userId,
       entries: [],
       authHeaders: options?.authHeaders,
       workspaceId: options?.workspaceId,
+      ...isoCreatedAt(startedAt),
     };
     const collection = await this.collection();
-    const startedAt = this.now();
     await collection.updateOne(
       {_id: sessionId},
       {$set: {...persistedFields(session), createdAt: startedAt, updatedAt: startedAt}},
