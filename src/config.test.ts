@@ -3,6 +3,7 @@ import request from 'supertest';
 import type {Request, Response} from 'express';
 import {WebSocket} from 'ws';
 import {composeProvider, createHalEngine} from './config.js';
+import type {HalEngineConfig} from './config.js';
 import {HAL_WS_SUBPROTOCOL} from './transport/ws/subprotocol.js';
 import type {ProviderConfig} from './providers/providerFactory.js';
 import {AIError} from './types/ai.js';
@@ -442,6 +443,19 @@ describe('createHalEngine transport.connectMessage', () => {
     await engine.stop();
 
     expect(first).toMatchObject({type: 'connected', message: disclosure});
+  });
+
+  it('refuses auth.forwardHeaders naming x-tenant-id at compile time, since the list only narrows the three captured headers', () => {
+    const config: HalEngineConfig = {
+      ...base,
+      auth: {
+        ws: (async () => ({id: 'u1'})) as WsAuthenticator,
+        // @ts-expect-error -- x-tenant-id is not a header the engine captures, so it is not a ForwardableHeader
+        forwardHeaders: ['x-tenant-id'],
+      },
+    };
+
+    expect(config.auth.forwardHeaders).toEqual(['x-tenant-id']);
   });
 
   it("carries auth.forwardHeaders listing only authorization to both capture sites: a socket's session and a REST turn's hold authorization alone", async () => {

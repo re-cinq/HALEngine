@@ -1,5 +1,4 @@
 import {filterAuthHeaders, forwardedHeaders} from './authHeaders.js';
-import type {ForwardableHeader} from './authHeaders.js';
 import {setLogger} from '../shared/logger.js';
 
 const CAPTURED = {cookie: 'sid=cookie-7f3a', authorization: 'Bearer token-9c2e', host: 'tenant-4b1d.example'};
@@ -21,13 +20,6 @@ describe('filterAuthHeaders', () => {
       empty: filterAuthHeaders(CAPTURED, []),
       unsent: filterAuthHeaders({authorization: 'Bearer token-9c2e'}, ['cookie']),
     }).toEqual({empty: undefined, unsent: undefined});
-  });
-
-  it('refuses x-tenant-id at compile time, since an allowlist only narrows the three captured headers', () => {
-    // @ts-expect-error -- x-tenant-id is not a header the engine captures, so it is not a ForwardableHeader
-    const allow: ForwardableHeader[] = ['x-tenant-id'];
-
-    expect(filterAuthHeaders(CAPTURED, allow)).toBeUndefined();
   });
 });
 
