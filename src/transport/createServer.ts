@@ -61,7 +61,8 @@ export function createServer(options: HalServerOptions): HalServer {
     sessionStore: options.sessionStore,
     history: options.history,
   });
-  const examplePrompts = options.toolRegistry?.getExamplePrompts() ?? [];
+  // Read at each connection, never once at startup, so a tool registered after the server starts offers its prompts too.
+  const getExamplePrompts = () => options.toolRegistry?.getExamplePrompts() ?? [];
 
   const deps = {
     wsAuth: options.wsAuth,
@@ -75,7 +76,7 @@ export function createServer(options: HalServerOptions): HalServer {
   };
 
   const handleUpgrade = createUpgradeHandler(wss, deps);
-  const handleConnection = createConnectionHandler(deps, {examplePrompts, connectMessage: options.connectMessage});
+  const handleConnection = createConnectionHandler(deps, {getExamplePrompts, connectMessage: options.connectMessage});
 
   const server = http.createServer(options.app);
 

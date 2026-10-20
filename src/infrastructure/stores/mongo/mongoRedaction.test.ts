@@ -63,6 +63,22 @@ describe('what a persisted session may not contain', () => {
     }).toEqual({entries: 2, kept: 'Bearer-looking'});
   });
 
+  it('writes no user key to the stored document and reads back a session with none, though create and save were handed one', async () => {
+    const user = {id: 'u1', role: 'editor', apiToken: 'sk-live-0123456789abcdef'};
+    const writer = new MongoSessionStore({collection: collectionFor()});
+    const created = await writer.create('s2', 'u1', {user});
+    await writer.save({sessionId: 's2', userId: 'u1', entries: [], user});
+
+    const stored = await collectionFor().findOne({_id: 's2'});
+    const readBack = await new MongoSessionStore({collection: collectionFor()}).get('s2');
+
+    expect({
+      heldInMemory: created.user,
+      stored: JSON.stringify(stored).includes('apiToken'),
+      readBack: Object.hasOwn(readBack ?? {}, 'user'),
+    }).toEqual({heldInMemory: user, stored: false, readBack: false});
+  });
+
   it('leaves the caller their in-memory credentials, which the tools still need', () => {
     const session = sessionCarryingCredentials();
 

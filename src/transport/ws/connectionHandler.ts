@@ -6,7 +6,7 @@ import type {WsAuthenticator} from '../../types/auth.js';
 import type {SessionStore} from '../../types/sessionStore.js';
 import type {ConnectedMessage} from '../../types/messages.js';
 import type {AuthenticatedUser, ChatSession} from '../../types/session.js';
-import {ErrorCodes} from '../../types/session.js';
+import {ErrorCodes, isScalarUserId, userIdKind} from '../../types/session.js';
 import {sendError} from './sender.js';
 import {isValidWsPath, rejectSocket, parseWsData, sessionIdFromUpgrade, newSessionRequested} from './helpers.js';
 import {presentedCredential} from './credential.js';
@@ -27,6 +27,8 @@ export interface ExtWebSocket extends WebSocket {
   };
   requestedSessionId?: string;
   startNewSession?: boolean;
+  /** Everything `auth.ws` returned for this upgrade, so a tool can read a claim without a second lookup. */
+  user?: AuthenticatedUser;
 }
 
 export interface ConnectionHandlerDeps {
@@ -78,12 +80,19 @@ export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandl
           rejectSocket(socket, '401 Unauthorized');
           return;
         }
+        // The id is the only thing separating one user's conversations from another's in every store query.
+        if (!isScalarUserId(user.id)) {
+          log.error('ws', 'authenticator returned a user id the engine cannot use', {idKind: userIdKind(user.id)});
+          rejectSocket(socket, '401 Unauthorized');
+          return;
+        }
 
         wss.handleUpgrade(request, socket, head, ws => {
           upgraded = ws as ExtWebSocket;
           const extWs = upgraded;
           extWs.userId = user.id;
           extWs.workspaceId = user['workspaceId'] as string | number | undefined;
+          extWs.user = user;
           extWs.authHeaders = filterAuthHeaders(
             {
               cookie: request.headers.cookie,
@@ -132,7 +141,8 @@ export const DEFAULT_CONNECT_MESSAGE = 'Connected to HAL Engine';
 
 /** What every new socket's connected frame carries besides its session id. */
 export interface ConnectionOptions {
-  examplePrompts: string[];
+  /** Called for each connected frame, so the prompts reflect the registry when that socket connects. */
+  getExamplePrompts: () => string[];
   /** The frame's `message`; a deployer serving EU users may carry the AI Act Art. 50(1) disclosure here, and a per-session resolver could later take this field's place. */
   connectMessage?: string;
 }
@@ -213,7 +223,7 @@ async function openSession(deps: ConnectionHandlerDeps, options: ConnectionOptio
     type: 'connected',
     sessionId,
     message: options.connectMessage ?? DEFAULT_CONNECT_MESSAGE,
-    examplePrompts: options.examplePrompts,
+    examplePrompts: options.getExamplePrompts(),
     ...resumeFields(deps.resume, outcome),
   };
   // A socket that died between the check above and this frame must not leave the session it was created for behind.
@@ -251,10 +261,10 @@ async function openSession(deps: ConnectionHandlerDeps, options: ConnectionOptio
   ws.resume();
 }
 
-// Joined as the newest socket on the session, which carries this upgrade's credentials from here on.
+// Joined as the newest socket on the session, which carries this upgrade's credentials and user from here on.
 function join(session: ChatSession, ws: ExtWebSocket): void {
   openSockets.set(session, [...(openSockets.get(session) ?? []), ws]);
-  session.authHeaders = ws.authHeaders;
+  lend(session, ws);
 }
 
 // `undefined` rather than a throw: one store failure closes one socket instead of ending the process.
@@ -267,6 +277,7 @@ async function createSession(
     return await deps.sessionStore.create(sessionId, ws.userId, {
       authHeaders: ws.authHeaders,
       workspaceId: ws.workspaceId,
+      user: ws.user,
     });
   } catch (error) {
     log.error('ws', 'session create failed', {userId: ws.userId, error: messageOf(error)});
@@ -293,19 +304,20 @@ function endSession(
   runHook('onDisconnect', sessionId, () => deps.onDisconnect?.(sessionId));
 }
 
-// The newest socket still open lends the session its credentials; with none left, nothing keeps them or a closed socket.
+// The newest socket still open lends the session its credentials and user; with none left, nothing keeps them or a closed socket.
 function leave(session: ChatSession, ws: ExtWebSocket): void {
   const open = openSockets.get(session) ?? [];
   if (!open.includes(ws)) return;
   const remaining = open.filter(socket => socket !== ws);
-  const newest = remaining.at(-1);
-  if (newest === undefined) {
-    openSockets.delete(session);
-    session.authHeaders = undefined;
-    return;
-  }
-  openSockets.set(session, remaining);
-  session.authHeaders = newest.authHeaders;
+  if (remaining.length > 0) openSockets.set(session, remaining);
+  if (remaining.length === 0) openSockets.delete(session);
+  lend(session, remaining.at(-1));
+}
+
+// Both connection-scoped fields come from one socket, so a session never pairs one upgrade's credentials with another's user.
+function lend(session: ChatSession, ws: ExtWebSocket | undefined): void {
+  session.authHeaders = ws?.authHeaders;
+  session.user = ws?.user;
 }
 
 // Never a resumed session: evict erases, and a resumed session holds the conversation being rejoined.
