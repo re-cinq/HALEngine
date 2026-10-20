@@ -95,7 +95,7 @@ describe('the tool list a turn reads', () => {
     ]);
   });
 
-  it('invokes a definition thunk once per turn, so the second turn sends its changed description', async () => {
+  it('invokes a definition thunk once in each of two turns that call no tool, so the second turn sends its changed description', async () => {
     const registry = new ToolRegistry();
     const invoked: string[] = [];
     let description = 'First description.';
@@ -118,6 +118,24 @@ describe('the tool list a turn reads', () => {
       invoked: ['First description.', 'Second description.'],
       sent: ['First description.', 'Second description.'],
     });
+  });
+
+  it('invokes a definition thunk twice in a turn that calls its tool once: at the turn start, then for the call', async () => {
+    const registry = new ToolRegistry();
+    let invocations = 0;
+    registry.register(
+      () => {
+        invocations++;
+        return WEATHER;
+      },
+      async () => 'sunny'
+    );
+    invocations = 0;
+    const {provider} = recording(callTo('weather'), [STOP]);
+
+    await orchestratorOver(provider, registry).processMessage(session());
+
+    expect(invocations).toBe(2);
   });
 
   it('writes no tool description, input schema or prompt instructions to the log over a turn that calls the tool', async () => {
