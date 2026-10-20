@@ -1,6 +1,6 @@
 import {jest} from '@jest/globals';
-import type {WebSocket} from 'ws';
 import {createMessageHandler} from './messageHandler.js';
+import {recordingSocket} from './recordingSocketTestSupport.js';
 import {createChatOrchestrator} from '../../orchestration/chatOrchestrator.js';
 import type {OrchestratorHooks} from '../../orchestration/chatOrchestrator.js';
 import {ToolRegistry} from '../../orchestration/tools/registry.js';
@@ -61,8 +61,7 @@ const engine = (rounds: MessageChunk[][], hooks: OrchestratorHooks = {}) => {
   const orchestrator = createChatOrchestrator(provider, new PromptBuilder({identity: 'A test assistant.'}), registry, {
     hooks,
   });
-  const frames: OutgoingMessage[] = [];
-  const ws = {send: (raw: string) => void frames.push(JSON.parse(raw) as OutgoingMessage)} as unknown as WebSocket;
+  const {ws, sent: frames} = recordingSocket();
   const session: ChatSession = {sessionId: 's1', userId: 'u1', entries: []};
   const handle = createMessageHandler(orchestrator);
 

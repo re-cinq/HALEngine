@@ -1,5 +1,5 @@
-import type {WebSocket} from 'ws';
 import {createMessageHandler} from './messageHandler.js';
+import {recordingSocket} from './recordingSocketTestSupport.js';
 import {createChatOrchestrator} from '../../orchestration/chatOrchestrator.js';
 import {
   answering,
@@ -8,7 +8,6 @@ import {
   writeSignalPromptBuilder,
 } from '../../infrastructure/writeSignalTestSupport.js';
 import type {ChatSession, SessionEntry} from '../../types/session.js';
-import type {OutgoingMessage} from '../../types/messages.js';
 
 // The transport commits the assistant entry, so only a turn driven through it can prove what save receives.
 
@@ -19,8 +18,7 @@ const shape = (entry: SessionEntry): Record<string, unknown> =>
     : {role: entry.role, content: 'content' in entry ? entry.content : ''};
 
 const turn = async (onSave: (session: ChatSession) => void, provider = answering('hello back')) => {
-  const sent: OutgoingMessage[] = [];
-  const ws = {send: (raw: string) => sent.push(JSON.parse(raw) as OutgoingMessage)} as unknown as WebSocket;
+  const {ws, sent} = recordingSocket();
   const sessionStore = recordingSessionStore(onSave);
   const orchestrator = createChatOrchestrator(provider, writeSignalPromptBuilder, undefined, {sessionStore});
   const session = sessionStore.create('s1', 'u1') as ChatSession;

@@ -192,6 +192,15 @@ src/
 - [Contributing](CONTRIBUTING.md)
 - [Coding Practices](docs/coding-practices.md)
 
+## Recorded protocol frames
+
+`recordedFrames`, exported from the package root, holds the frames the server sends for five scripted turns: `connectionOpened`, `simpleAnswer`, `thinkingThenTool`, `multiRoundSuppressed` and `rateLimited`. They are recorded through the real handlers, so a client's tests can import the sequence instead of transcribing the protocol spec. Every `timestamp` is normalised to `"<ts>"` and the session id to `"<session-id>"`; compare your own frames after the same normalisation. See [the protocol spec § 8.5](specs/hal-engine-websocket-protocol/spec.md).
+
+<!-- doc-block: none -- an import line; smoke/index.mjs makes the same import from the packed tarball -->
+```typescript
+import {recordedFrames} from '@re-cinq/hal-engine';
+```
+
 ## Security
 
 Do not open a public issue for a vulnerability. Report it privately to **security@re-cinq.com**; we aim to acknowledge within 48 hours.

@@ -63,7 +63,8 @@
     "lint": "npm run eslint",
     "check:build-chain": "npm run check:audit && npm run check:action-pins",
     "prettier": "prettier --write \"{src,scripts,smoke}/**/*.ts\"",
-    "prettier:check": "prettier --check \"{src,scripts,smoke}/**/*.ts\""
+    "prettier:check": "prettier --check \"{src,scripts,smoke}/**/*.ts\"",
+    "record:frames": "tsx src/testing/writeFrames.ts && prettier --write src/testing/frames.ts"
   },
   "dependencies": {
     "@types/express": "^5.0.0",

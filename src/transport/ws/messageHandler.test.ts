@@ -11,6 +11,7 @@ import type {ChatSession, SessionEntry} from '../../types/session.js';
 import type {OutgoingMessage} from '../../types/messages.js';
 import {PerSessionLock} from '../../shared/perSessionLock.js';
 import {deferred} from '../wsTestSupport.js';
+import {recordingSocket} from './recordingSocketTestSupport.js';
 import {setLogger} from '../../shared/logger.js';
 
 // The frames, in order, are the contract - above all for suppression, which retracts.
@@ -40,8 +41,7 @@ interface StreamScript {
 }
 
 const harness = (chunks: MessageChunk[], {failWith, pauseAfter}: StreamScript = {}) => {
-  const sent: OutgoingMessage[] = [];
-  const ws = {send: (raw: string) => sent.push(JSON.parse(raw) as OutgoingMessage)} as unknown as WebSocket;
+  const {ws, sent} = recordingSocket();
 
   const stream = async function* (): AsyncGenerator<MessageChunk> {
     for (const [position, chunk] of chunks.entries()) {
@@ -673,12 +673,8 @@ const afterPendingWork = () => new Promise(resolve => setImmediate(resolve));
 
 // Each run answers with its own number and then waits at its gate, so a test decides when it ends.
 const gated = (runs: number) => {
-  const sent: OutgoingMessage[] = [];
-  const socket = {
-    readyState: WebSocket.OPEN as number,
-    send: (raw: string) => sent.push(JSON.parse(raw) as OutgoingMessage),
-  };
-  const ws = socket as unknown as WebSocket;
+  const socket = recordingSocket();
+  const {ws, sent} = socket;
   const gates = Array.from({length: runs}, () => deferred());
   const handed: SessionEntry[][] = [];
   const processMessageStream = async function* (session: ChatSession): AsyncGenerator<MessageChunk> {
@@ -695,9 +691,7 @@ const gated = (runs: number) => {
     session,
     handed,
     release: (run: number) => gates[run].release(),
-    close: () => {
-      socket.readyState = WebSocket.CLOSED;
-    },
+    close: socket.close,
     frames: () => wire(sent),
     send: (raw: unknown) => handle(ws, session, raw),
   };
@@ -911,8 +905,7 @@ async function turnOver(call: ToolCall, registry: ToolRegistry): Promise<string[
       return {} as T;
     },
   };
-  const sent: OutgoingMessage[] = [];
-  const ws = {send: (raw: string) => sent.push(JSON.parse(raw) as OutgoingMessage)} as unknown as WebSocket;
+  const {ws, sent} = recordingSocket();
   const orchestrator = createChatOrchestrator(provider, new PromptBuilder({identity: 'Failure test.'}), registry);
   const session: ChatSession = {sessionId: 's1', userId: 'u1', entries: []};
 

@@ -33,8 +33,8 @@ A tool call the registry could not run used to end the conversation. `ToolRegist
 
 - No value from the call's input reaches the answer or any log line, only the input's keys, which the registry already logs ([validated by: keeps every value of the call input out of the answer and the log, for an invented name and a throwing executor](../../src/orchestration/tools/registry.test.ts#L247)).
 - A round in which some calls fail still returns every result: a working tool beside them runs once and its result reaches the model unchanged ([validated by: returns every result of a round in which calls fail, the working tool run once and its result unchanged](../../src/orchestration/chatOrchestrator.test.ts#L781)).
-- **NIS-2 Article 21, operational resilience.** Over the WebSocket, a turn whose tool name was invented streams its answer and ends with `stream_end`, never an `error` frame ([validated by: completes a turn whose tool name the model invented: its answer streams, then stream_end, with no error frame](../../src/transport/ws/messageHandler.test.ts#L880)).
-- So does a turn whose tool executor threw: one broken tool degrades one answer instead of ending the conversation ([validated by: completes a turn whose tool executor threw: its answer streams, then stream_end, with no error frame](../../src/transport/ws/messageHandler.test.ts#L886)).
+- **NIS-2 Article 21, operational resilience.** Over the WebSocket, a turn whose tool name was invented streams its answer and ends with `stream_end`, never an `error` frame ([validated by: completes a turn whose tool name the model invented: its answer streams, then stream_end, with no error frame](../../src/transport/ws/messageHandler.test.ts#L874)).
+- So does a turn whose tool executor threw: one broken tool degrades one answer instead of ending the conversation ([validated by: completes a turn whose tool executor threw: its answer streams, then stream_end, with no error frame](../../src/transport/ws/messageHandler.test.ts#L880)).
 
 ## Compatibility
 
