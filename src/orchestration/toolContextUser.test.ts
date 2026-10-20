@@ -5,23 +5,13 @@ import {PromptBuilder} from '../infrastructure/builders/promptBuilder.js';
 import {InMemorySessionStore} from '../infrastructure/stores/inMemorySessionStore.js';
 import type {AIProvider, MessageChunk} from '../types/ai.js';
 import type {ChatSession} from '../types/session.js';
+import {scriptedProvider} from './scriptedProviderTestSupport.js';
 
 const callsTo = (...names: string[]): MessageChunk[] => [
   ...names.map((name, i): MessageChunk => ({type: 'tool_use', toolCall: {id: `c${i}`, name, input: {}}})),
   {type: 'stop', stopReason: 'tool_use'},
 ];
 const STOP: MessageChunk = {type: 'stop', stopReason: 'end_turn'};
-
-// Each provider call answers with the next round, the last one repeating.
-function scripted(...rounds: MessageChunk[][]): AIProvider {
-  let call = 0;
-  return {
-    async *sendMessage(): AsyncGenerator<MessageChunk> {
-      yield* rounds[Math.min(call++, rounds.length - 1)];
-    },
-    generateStructured: async <T>() => ({}) as T,
-  };
-}
 
 const QUIET = {name: '', description: 'A test tool.', inputSchema: {type: 'object'}};
 
@@ -46,7 +36,7 @@ describe('the user a tool context carries', () => {
     });
     const session: ChatSession = {sessionId: 's1', userId: 'u1', user: {id: 'u1', role: 'editor'}, entries: []};
 
-    await turnOn(session, scripted(callsTo('mutate', 'observe'), [STOP]), registry);
+    await turnOn(session, scriptedProvider(callsTo('mutate', 'observe'), [STOP]), registry);
 
     expect({session: session.user?.id, sibling: seenBySibling}).toEqual({session: 'u1', sibling: 'u1'});
   });
@@ -60,7 +50,7 @@ describe('the user a tool context carries', () => {
     });
     const session = new InMemorySessionStore().create('s1', 'u1');
 
-    await turnOn(session, scripted(callsTo('whoami'), [STOP]), registry);
+    await turnOn(session, scriptedProvider(callsTo('whoami'), [STOP]), registry);
 
     const [context] = contexts;
     expect({noUser: context?.user === undefined, userId: context?.userId}).toEqual({noUser: true, userId: 'u1'});

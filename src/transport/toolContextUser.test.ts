@@ -5,6 +5,7 @@ import type {AuthenticatedUser, ChatSession} from '../types/session.js';
 import type {HalServerOptions} from './createServer.js';
 import {credentialFromSubprotocol} from './ws/subprotocol.js';
 import {setLogger} from '../shared/logger.js';
+import {keepEveryLine} from '../shared/logCaptureTestSupport.js';
 import {connectClient, startEngineWith, stopEngines} from './wsTestSupport.js';
 import {whoamiOrchestrator} from './whoamiTestSupport.js';
 
@@ -94,10 +95,7 @@ describe('the authenticated user on the tool context', () => {
   });
 
   it('writes the secret-shaped claim to no log line at any level and to no frame, though the tool received it', async () => {
-    const lines: unknown[] = [];
-    const keep = (category: string, message: string, fields?: Record<string, unknown>) =>
-      void lines.push({category, message, ...fields});
-    setLogger({debug: keep, info: keep, warn: keep, error: keep});
+    const lines = keepEveryLine();
     const engine = await engineFor(() => ({...CLAIMS, apiToken: SECRET}));
 
     const frames = await turnAs(engine.url, 't');

@@ -13,6 +13,7 @@
     "smoke",
     "**/*.test.ts",
     "src/providers/providerTestSupport.ts",
+    "src/orchestration/scriptedProviderTestSupport.ts",
     "src/infrastructure/writeSignalTestSupport.ts",
     "src/infrastructure/stores/mongo/mongoTestSupport.ts",
     "src/shared/logCaptureTestSupport.ts",
