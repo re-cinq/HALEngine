@@ -12,8 +12,8 @@ import {setLogger} from '../shared/logger.js';
 import {connectClient, startEngineWith, stopEngines} from './wsTestSupport.js';
 import {whoamiOrchestrator} from './whoamiTestSupport.js';
 
-// Consumer copy, in Danish as a deployer would write it; no file the engine ships may contain it.
-const EXPIRED = 'Din adgang til bookingsystemet er udløbet. Log ind igen for at fortsætte.';
+// Consumer copy, in Danish as a deployer would write it, joined from halves so no file under src/, this one included, holds it whole.
+const EXPIRED = ['Din adgang til bookingsystemet er udløbet.', 'Log ind igen for at fortsætte.'].join(' ');
 const RESOLVED = 'Bearer sk-resolved-5e1f0c';
 
 interface Run {
@@ -44,12 +44,12 @@ async function runTurn(hooks: OrchestratorHooks): Promise<Run> {
   return {frames: raw.map(frame => JSON.parse(frame) as Run['frames'][number]), raw: raw.join('\n'), contexts};
 }
 
-// Every non-test TypeScript file under src/, read whole.
-function shippedSources(dir: string): string[] {
+// Every TypeScript file under src/, tests included, read whole.
+function sourcesUnder(dir: string): string[] {
   return readdirSync(dir, {withFileTypes: true}).flatMap(entry => {
     const path = join(dir, entry.name);
-    if (entry.isDirectory()) return shippedSources(path);
-    return entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts') ? [readFileSync(path, 'utf8')] : [];
+    if (entry.isDirectory()) return sourcesUnder(path);
+    return entry.name.endsWith('.ts') ? [readFileSync(path, 'utf8')] : [];
   });
 }
 
@@ -110,10 +110,13 @@ describe('a credential the consumer cannot renew', () => {
     ]);
   });
 
-  it('authors no product copy: the message a consumer gave appears in no file the engine ships under src/', () => {
-    const src = fileURLToPath(new URL('..', import.meta.url));
+  it('authors no product copy: the message a consumer gave appears in no file under src/, tests included', () => {
+    const sources = sourcesUnder(fileURLToPath(new URL('..', import.meta.url)));
 
-    expect(shippedSources(src).some(source => source.includes(EXPIRED))).toBe(false);
+    expect({searched: sources.length > 100, found: sources.some(source => source.includes(EXPIRED))}).toEqual({
+      searched: true,
+      found: false,
+    });
   });
 
   it('writes the resolved credential to no log line at any level and to no frame, though the tool received it', async () => {

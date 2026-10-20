@@ -22,10 +22,12 @@ The engine captures the caller's credential once, at the WebSocket upgrade, and 
 - A hook that throws `CredentialExpiredError` ends the turn, over a real connection, with `{type: 'error', code: 'CREDENTIAL_EXPIRED', message}` carrying the error's own message, then `stream_end`, so the client's busy state clears ([validated by: sends error CREDENTIAL_EXPIRED with the hook's own message, then stream_end, over a real connection](../../src/transport/credentialExpired.test.ts#L60)).
 - `onError` fires exactly once, with the instance the hook threw, before the error frame is sent ([validated by: fires onError exactly once, with the instance the hook threw, before the error frame is sent](../../src/transport/credentialExpired.test.ts#L73)).
 - Any other `Error` the hook throws keeps the generic `SERVER_ERROR` path ([validated by: keeps the SERVER_ERROR path for any other Error the hook throws](../../src/transport/credentialExpired.test.ts#L100)).
-- The engine authors no product copy: the message a consumer gives its error appears in no file the engine ships ([validated by: authors no product copy: the message a consumer gave appears in no file the engine ships under src/](../../src/transport/credentialExpired.test.ts#L113)).
-- A resolved credential is written to no log line at any level and to no frame ([validated by: writes the resolved credential to no log line at any level and to no frame, though the tool received it](../../src/transport/credentialExpired.test.ts#L119)).
+- The engine authors no product copy: the message a consumer gives its error appears in no file under `src/`, tests included ([validated by: authors no product copy: the message a consumer gave appears in no file under src/, tests included](../../src/transport/credentialExpired.test.ts#L113)).
+- A resolved credential is written to no log line at any level and to no frame ([validated by: writes the resolved credential to no log line at any level and to no frame, though the tool received it](../../src/transport/credentialExpired.test.ts#L122)).
 
 ## Rationale
+
+What the hook returns is not filtered by `auth.forwardHeaders`. The allowlist governs which caller headers the engine captures at the upgrade or on a REST message; a resolver's return value is headers the consumer chose for its tools, and a resolver that refreshes a token from `session.authHeaders` only ever sees the headers the allowlist let through. A resolver that adds a header the allowlist leaves out has decided to send it.
 
 The value is never written back to `session.authHeaders`: nothing else reads it there, a fresh secret written back would become durable once a session is persisted, and it would be shared, mutable state across turns running at once. The resolver's shape is the one a TTL-on-read credential cache already has, resolving on demand; de-duplicating in-flight resolutions and invalidating on failure stay with the consumer, and the engine only asks, once per round.
 
