@@ -1,4 +1,4 @@
-# lore-ingest-version: 6
+# lore-ingest-version: 7
 name: Lore Context Ingest
 
 on:
@@ -253,5 +253,17 @@ jobs:
           if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
             ./lore-code-trace docs --post --force
           else
-            ./lore-code-trace docs --post
+            # Exit 75 is a transient projection failure that retried out. The
+            # next doc push resends the delta, so a push stays green; a manual
+            # backfill above still fails, because nothing would resend it.
+            if ./lore-code-trace docs --post; then
+              exit 0
+            else
+              TRACE_EXIT=$?
+            fi
+            if [ "${TRACE_EXIT}" = "75" ]; then
+              echo "::warning::lore-code-trace graph projection will retry on next doc push"
+              exit 0
+            fi
+            exit "${TRACE_EXIT}"
           fi
