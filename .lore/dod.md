@@ -18,6 +18,7 @@ The red bar is CI's to show; the CI job that runs the tests is "Test (with cover
 - [x] Fix duplicate code between `mongoScalarId.test.ts` and acceptance test
 - [x] Fix broken spec links in `hal-engine-connect-message/spec.md`
 - [x] Fix stale spec link line numbers for 4 connectionHandler tests (244, 306, 366, 402) and add missing INVALID_FORMAT link
+- [x] Add missing spec links for connectionHandler tests at L290 and L358
 
 ## Out of scope
 
