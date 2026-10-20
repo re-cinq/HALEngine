@@ -9,8 +9,8 @@
 
 ## The contract
 
-- `register` refuses a name already registered: the second call throws `Error('Duplicate tool name: <name>')`, and the registry keeps the first tool, its definition and its executor ([validated by: throws Duplicate tool name: get_weather on the second register and keeps the first tool and its executor](../../src/orchestration/tools/registry.test.ts#L320)).
-- The name checked is the one the definition resolves to at registration, for a plain definition and a definition function alike ([validated by: throws for a definition function that resolves to get_weather once a plain definition holds that name](../../src/orchestration/tools/registry.test.ts#L341)).
+- `register` refuses a name already registered: the second call throws `Error('Duplicate tool name: <name>')`, and the registry keeps the first tool, its definition and its executor ([validated by: throws Duplicate tool name: get_weather on the second register and keeps the first tool and its executor](../../src/orchestration/tools/registry.test.ts#L325)).
+- The name checked is the one the definition resolves to at registration, for a plain definition and a definition function alike ([validated by: throws for a definition function that resolves to get_weather once a plain definition holds that name](../../src/orchestration/tools/registry.test.ts#L346)).
 
 ## Rationale
 

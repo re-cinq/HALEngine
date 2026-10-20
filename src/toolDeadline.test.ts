@@ -116,7 +116,9 @@ describe('a deadline per tool call', () => {
         name: 'TimeoutError',
         message: `Tool 'lookup' did not answer within ${DEFAULT_DEADLINE_MS} ms`,
       }),
-      results: [{type: 'tool_result', toolUseId: 'c1', content: timeoutResult('lookup', DEFAULT_DEADLINE_MS)}],
+      results: [
+        {type: 'tool_result', toolUseId: 'c1', content: timeoutResult('lookup', DEFAULT_DEADLINE_MS), isError: true},
+      ],
     });
   });
 
@@ -131,7 +133,7 @@ describe('a deadline per tool call', () => {
       beforeDeadline: false,
       reply: 'Done.',
       results: [
-        {type: 'tool_result', toolUseId: 'c1', content: timeoutResult('lookup', DEFAULT_DEADLINE_MS)},
+        {type: 'tool_result', toolUseId: 'c1', content: timeoutResult('lookup', DEFAULT_DEADLINE_MS), isError: true},
         {type: 'tool_result', toolUseId: 'c2', content: 'quick result'},
       ],
     });
@@ -164,7 +166,9 @@ describe('a deadline per tool call', () => {
 
     expect({reply: await t.reply, results: resultsSent(t.sent)}).toEqual({
       reply: 'Done.',
-      results: [{type: 'tool_result', toolUseId: 'c1', content: timeoutResult('lookup', DEFAULT_DEADLINE_MS)}],
+      results: [
+        {type: 'tool_result', toolUseId: 'c1', content: timeoutResult('lookup', DEFAULT_DEADLINE_MS), isError: true},
+      ],
     });
   });
 
@@ -185,7 +189,9 @@ describe('a deadline per tool call', () => {
     expect({reply: await t.reply, executions, results: resultsSent(t.sent)}).toEqual({
       reply: 'Done.',
       executions: 0,
-      results: [{type: 'tool_result', toolUseId: 'c1', content: timeoutResult('lookup', DEFAULT_DEADLINE_MS)}],
+      results: [
+        {type: 'tool_result', toolUseId: 'c1', content: timeoutResult('lookup', DEFAULT_DEADLINE_MS), isError: true},
+      ],
     });
   });
 
@@ -254,7 +260,9 @@ describe('a deadline per tool call', () => {
 
     expect({entries: t.session.entries, results: resultsSent(t.sent)}).toEqual({
       entries: sessionAsking().entries,
-      results: [{type: 'tool_result', toolUseId: 'c1', content: timeoutResult('lookup', DEFAULT_DEADLINE_MS)}],
+      results: [
+        {type: 'tool_result', toolUseId: 'c1', content: timeoutResult('lookup', DEFAULT_DEADLINE_MS), isError: true},
+      ],
     });
   });
 
@@ -325,7 +333,7 @@ describe('a deadline set through createHalEngine', () => {
 
     expect({reply, results: resultsSent(sent)}).toEqual({
       reply: 'Done.',
-      results: [{type: 'tool_result', toolUseId: 'c1', content: timeoutResult('lookup', 20)}],
+      results: [{type: 'tool_result', toolUseId: 'c1', content: timeoutResult('lookup', 20), isError: true}],
     });
   });
 

@@ -440,6 +440,40 @@ describe('createVertexProvider', () => {
 
       expect(received).toEqual([{type: 'text', text: 'only'}]);
     });
+
+    it('sends a failed tool_result under functionResponse.response.error and a successful one under response.result', async () => {
+      mockGenerateContentStream.mockResolvedValueOnce(streamResult([]));
+
+      await collectChunks(
+        createVertexProvider(defaultConfig).sendMessage({
+          systemPrompt: 's',
+          messages: [
+            {role: 'user', content: 'look both up'},
+            {
+              role: 'assistant',
+              content: [
+                {type: 'tool_use', toolUseId: 'lookup', name: 'lookup', input: {}},
+                {type: 'tool_use', toolUseId: 'weather', name: 'weather', input: {}},
+              ],
+            },
+            {
+              role: 'user',
+              content: [
+                {type: 'tool_result', toolUseId: 'lookup', content: 'lookup failed', isError: true},
+                {type: 'tool_result', toolUseId: 'weather', content: 'sunny'},
+              ],
+            },
+          ],
+        })
+      );
+
+      const [[request]] = mockGenerateContentStream.mock.calls;
+      const parts = (request.contents as Array<{parts?: Array<Record<string, unknown>>}>).flatMap(c => c.parts ?? []);
+      expect(parts.filter(part => 'functionResponse' in part)).toEqual([
+        {functionResponse: {name: 'lookup', response: {error: 'lookup failed'}}},
+        {functionResponse: {name: 'weather', response: {result: 'sunny'}}},
+      ]);
+    });
   });
 
   describe('generateStructured', () => {

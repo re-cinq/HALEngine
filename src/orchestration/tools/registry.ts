@@ -11,6 +11,8 @@ export interface ToolResponse {
   result: string;
   clientMessages?: OutgoingMessage[];
   suppressAssistantResponse?: boolean;
+  /** Tells the model `result` describes a failure, not an answer; each provider's encoding is in specs/hal-engine-tool-responses/spec.md. */
+  isError?: boolean;
 }
 
 export interface ToolContext {
@@ -154,21 +156,26 @@ function kindOf(value: unknown): string {
 function invalidInput(name: string, errors: ErrorObject[]): ToolResponse {
   const message = errors.map(e => `${e.instancePath || '(root)'} ${e.message}`).join('; ');
   log.warn('tool', 'input validation failed', {name, paths: errors.map(e => e.instancePath)});
-  return {result: `Tool '${name}' input invalid: ${message}`};
+  return {result: `Tool '${name}' input invalid: ${message}`, isError: true};
 }
 
 // A name the model invented is its mistake to correct, so it is answered, bounded, with nothing from the call's input.
 function missingTool(name: string, registered: string[]): ToolResponse {
   const attempted = name.slice(0, MAX_NAME_IN_ANSWER);
   log.warn('tool', 'tool not found', {name: attempted});
-  if (registered.length === 0) return {result: `There is no tool named '${attempted}', and no tools are registered.`};
-  return {result: `There is no tool named '${attempted}'. The available tools are: ${registered.join(', ')}.`};
+  if (registered.length === 0) {
+    return {result: `There is no tool named '${attempted}', and no tools are registered.`, isError: true};
+  }
+  return {
+    result: `There is no tool named '${attempted}'. The available tools are: ${registered.join(', ')}.`,
+    isError: true,
+  };
 }
 
 // The model learns only that the call failed: a thrown message can carry a host name or another user's identifier.
 function crashed(name: string, error: unknown, signal: AbortSignal | undefined): ToolResponse {
   logThrow(name, error, signal);
-  return {result: `The ${name} tool failed and returned no result.`};
+  return {result: `The ${name} tool failed and returned no result.`, isError: true};
 }
 
 // A user leaving is no tool failing, so a throw once the turn was abandoned stays out of the error lines; a deadline's does not.

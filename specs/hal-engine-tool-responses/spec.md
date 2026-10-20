@@ -22,6 +22,8 @@ interface ToolResponse {
   result: string;
   clientMessages?: OutgoingMessage[];
   suppressAssistantResponse?: boolean;
+  /** Tells the model `result` describes a failure, not an answer; each provider's encoding is in specs/hal-engine-tool-responses/spec.md. */
+  isError?: boolean;
 }
 ```
 
@@ -30,6 +32,7 @@ interface ToolResponse {
 | `result` | The string the AI model sees -- identical to what a plain-string executor returns |
 | `clientMessages` | Optional array of `OutgoingMessage` values sent directly to the client via WebSocket |
 | `suppressAssistantResponse` | When `true`, the AI's next text response still accumulates in `session.entries` for context continuity, but is not sent to the client |
+| `isError` | When `true`, `result` describes a failure, and the provider is told so on its own wire; see [Marking a failure](#marking-a-failure-iserror) |
 
 A `ToolExecutor` can return either a plain `string` or a `ToolResponse`:
 
@@ -43,6 +46,25 @@ type ToolExecutor = (input: Record<string, unknown>, context?: ToolContext) => P
 An executor that throws is caught: the model is told the call failed, and the thrown message reaches only the log, as [tool-executor-throw](../hal-engine-tool-executor-throw/spec.md) specifies.
 
 The registry normalizes both forms internally via `normalizeToolResponse()`, so downstream code always sees a `ToolResponse`.
+
+## Marking a failure: isError
+
+A tool signals that a call failed by returning `isError: true` beside its `result`, a single bit rather than a taxonomy: a kind of failure stays in the `result` text, where the model reads it. The flag never reaches the browser wire.
+
+- `normalizeToolResponse` turns a plain string into `{result}` with no `isError` key, so a tool that returns a string sees no change ([validated by: normalizes '18 degrees and clear' to {result} with no isError key](../../src/orchestration/toolResultError.test.ts#L53)).
+- A `ToolResponse` with `isError: true` reaches the provider's next call as a `tool_result` carrying `isError: true` ([validated by: carries isError true from an executor's {result: 'lookup failed', isError: true} onto the tool_result the provider's next call gets](../../src/orchestration/toolResultError.test.ts#L62)).
+- A successful result carries no `isError` key at all, so it reaches the provider exactly as it did before the field existed ([validated by: sends a successful result with no isError key at all, as before the field existed](../../src/orchestration/toolResultError.test.ts#L68)).
+- The engine marks a schema rejection as an error ([validated by: marks a schema rejection as an error: lookup called without its required id](../../src/orchestration/toolResultError.test.ts#L77)).
+- It marks its answer to a tool name the model invented as an error ([validated by: marks the answer to an unknown tool name as an error: lookpu, a name the model invented](../../src/orchestration/toolResultError.test.ts#L81)).
+- It marks the result it substitutes at a call's deadline as an error ([validated by: marks the deadline substitution as an error: lookup never answering within toolTimeoutMs 5](../../src/orchestration/toolResultError.test.ts#L85)).
+- It marks a call declined because its `beforeToolCall` policy threw as an error ([validated by: marks a declined call as an error: a beforeToolCall policy that throws](../../src/orchestration/toolResultError.test.ts#L89)).
+- It marks the result it gives for an executor that threw as an error ([validated by: marks a caught executor throw as an error: lookup rejecting with ECONNREFUSED](../../src/orchestration/toolResultError.test.ts#L97)).
+- Bedrock encodes the flag as the Converse API's `toolResult.status: 'error'` ([validated by: maps a tool_result with isError true to a toolResult whose status is 'error'](../../src/providers/bedrock/bedrockMessageMapper.test.ts#L8)).
+- A Bedrock result without the flag carries no `status` key at all ([validated by: maps the same tool_result with isError omitted to a toolResult with no status key](../../src/providers/bedrock/bedrockMessageMapper.test.ts#L17)).
+- The Bedrock mapper writes the literal `'error'`, not the SDK's `ToolResultStatus.ERROR`, because that constant is a value import, and the module imports the optional peer as types only ([validated by: imports @aws-sdk/client-bedrock-runtime as types only, so the optional peer is never loaded by mapping](../../src/providers/bedrock/bedrockMessageMapper.test.ts#L27)).
+- Vertex has no status field, so a failure travels as `functionResponse.response.error` in place of `response.result`, and a success is unchanged ([validated by: sends a failed tool_result under functionResponse.response.error and a successful one under response.result](../../src/providers/vertex/vertexProvider.test.ts#L444)).
+
+Bedrock's own note on `toolResult.status`, as `@aws-sdk/client-bedrock-runtime` 3.1020.0 documents it: "This field is only supported by Amazon Nova and Anthropic Claude 3 and 4 models." Other Bedrock models get the same failure text in `result` without the status. The mock provider maps no tool result at all, so it has nothing to encode.
 
 ## When to Use This
 

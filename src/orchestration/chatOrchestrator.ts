@@ -337,6 +337,7 @@ function withDeadline(
     log.warn('orchestrator', 'tool call timed out', {tool: tc.name, elapsedMs: Date.now() - startedAt});
     return {
       result: `Tool '${tc.name}' did not answer within ${toolTimeoutMs} ms, so the call was abandoned and returned no result.`,
+      isError: true,
     };
   };
 }
@@ -369,7 +370,7 @@ async function consultPolicy(
       tool: tc.name,
       errorType: error instanceof Error ? error.name : typeof error,
     });
-    return {result: `The ${tc.name} call was declined and not performed.`};
+    return {result: `The ${tc.name} call was declined and not performed.`, isError: true};
   }
 }
 
@@ -395,6 +396,8 @@ async function executeToolCalls(
     type: 'tool_result' as const,
     toolUseId: tc.id,
     content: response.result,
+    // Only a failure carries the key, so a successful result reaches the provider exactly as before.
+    ...(response.isError === true ? {isError: true} : {}),
   }));
   messages.push({role: 'user', content: toolResults});
 

@@ -761,7 +761,9 @@ describe('a tool call that fails', () => {
 
     expect({reply, results: toolResultsIn(requests[1])}).toEqual({
       reply: 'all done',
-      results: [{type: 'tool_result', toolUseId: 'tu-1', content: expect.stringContaining('get_wether')}],
+      results: [
+        {type: 'tool_result', toolUseId: 'tu-1', content: expect.stringContaining('get_wether'), isError: true},
+      ],
     });
   });
 
@@ -773,7 +775,7 @@ describe('a tool call that fails', () => {
 
     expect({reply, results: toolResultsIn(requests[1]), callOrder}).toEqual({
       reply: 'all done',
-      results: [{type: 'tool_result', toolUseId: 'call-1', content: expect.stringContaining('lookup')}],
+      results: [{type: 'tool_result', toolUseId: 'call-1', content: expect.stringContaining('lookup'), isError: true}],
       callOrder: ['afterModelResponse'],
     });
   });

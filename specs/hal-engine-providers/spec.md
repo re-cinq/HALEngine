@@ -101,7 +101,7 @@ See [spike-bedrock-integration.md](../../docs/spikes/spike-bedrock-integration.m
 
 ## Google Vertex AI
 
-Supports streaming through `sendMessage` and structured JSON output through `generateStructured` ([validated by: streams text chunks from Vertex AI response](../../src/providers/vertex/vertexProvider.test.ts#L69), [validated by: returns parsed JSON from Vertex response](../../src/providers/vertex/vertexProvider.test.ts#L455)).
+Supports streaming through `sendMessage` and structured JSON output through `generateStructured` ([validated by: streams text chunks from Vertex AI response](../../src/providers/vertex/vertexProvider.test.ts#L69), [validated by: returns parsed JSON from Vertex response](../../src/providers/vertex/vertexProvider.test.ts#L489)).
 
 <!-- doc-block: none -- a composed provider configuration; its fields are checked through src/config.ts by typecheck -->
 ```typescript
@@ -127,11 +127,11 @@ Measured on 2026-09-25 against project `re5-n8n-platform`, one `generateContent`
 
 `location` selects the regional endpoint, so it decides where the request is processed and which jurisdiction the data stays in - not merely which datacentre is nearest. It is passed straight to `new GoogleGenAI({vertexai: true, location})` and the engine does not validate it: a region that does not serve the model surfaces as a vendor error on the first call, not at construction. The examples here use `europe-west4`.
 
-The `eu` multi-region is a distinct host, `aiplatform.eu.rep.googleapis.com`. `@google/genai` derives it from `location: 'eu'` itself, as it does `us`, and gives any other location its regional host, so `location` alone now reaches it; under `@google-cloud/vertexai` it could not. The optional `apiEndpoint` on `VertexConfig` still overrides the host: it becomes the client's base URL, `https://<apiEndpoint>/`, and when it is absent no base URL is passed, so a deployment that sets only `location` gets the SDK's own choice of host ([validated by: forwards apiEndpoint to the client as its base URL for the eu multi-region](../../src/providers/vertex/vertexProvider.test.ts#L566), [validated by: omits apiEndpoint when unset so single-region deployments are unchanged](../../src/providers/vertex/vertexProvider.test.ts#L581)).
+The `eu` multi-region is a distinct host, `aiplatform.eu.rep.googleapis.com`. `@google/genai` derives it from `location: 'eu'` itself, as it does `us`, and gives any other location its regional host, so `location` alone now reaches it; under `@google-cloud/vertexai` it could not. The optional `apiEndpoint` on `VertexConfig` still overrides the host: it becomes the client's base URL, `https://<apiEndpoint>/`, and when it is absent no base URL is passed, so a deployment that sets only `location` gets the SDK's own choice of host ([validated by: forwards apiEndpoint to the client as its base URL for the eu multi-region](../../src/providers/vertex/vertexProvider.test.ts#L600), [validated by: omits apiEndpoint when unset so single-region deployments are unchanged](../../src/providers/vertex/vertexProvider.test.ts#L615)).
 
 Measured on 2026-10-19 with `@google/genai` 2.26.0 against project `re5-n8n-platform`: a tool-using turn on `gemini-3.1-flash-lite` with `location: 'eu'` reached `aiplatform.eu.rep.googleapis.com` both with `apiEndpoint` unset and set to that host, ran its tool, and sent the call's thought signature back accepted.
 
-- The client is always created in Vertex mode, never against the Gemini API, on Vertex's GA `v1` API, which `@google-cloud/vertexai` called and `@google/genai` would otherwise replace with `v1beta1`, carrying the configured project, location and auth options ([validated by: creates the client in Vertex mode on the v1 API with the configured project, location and auth options](../../src/providers/vertex/vertexProvider.test.ts#L554)).
+- The client is always created in Vertex mode, never against the Gemini API, on Vertex's GA `v1` API, which `@google-cloud/vertexai` called and `@google/genai` would otherwise replace with `v1beta1`, carrying the configured project, location and auth options ([validated by: creates the client in Vertex mode on the v1 API with the configured project, location and auth options](../../src/providers/vertex/vertexProvider.test.ts#L588)).
 
 **Credentials:**
 
@@ -195,10 +195,10 @@ Gemini 3 models attach an opaque `thoughtSignature` to the part that carries a f
 
 ### Structured output
 
-- `generateStructured` sets `responseMimeType` to `application/json` and passes the schema with its type names upper-cased, which is the form the Vertex SDK expects ([validated by: configures the request with responseMimeType and responseSchema](../../src/providers/vertex/vertexProvider.test.ts#L469)).
-- A response body that is not valid JSON raises `AIError` with code `PARSE_ERROR`, rather than returning something the caller would have to re-check ([validated by: throws AIError with PARSE_ERROR on invalid JSON](../../src/providers/vertex/vertexProvider.test.ts#L500)).
-- A response with no candidates raises `PARSE_ERROR` as well, since it carries no JSON ([validated by: raises PARSE_ERROR for a structured response with no candidates, which carries no JSON](../../src/providers/vertex/vertexProvider.test.ts#L510)).
-- An `enum` passes through the response schema unchanged, and an array's `items` schema is mapped like any other, its type upper-cased ([validated by: passes an enum and an array of items through the response schema, upper-casing the item type](../../src/providers/vertex/vertexProvider.test.ts#L516)).
+- `generateStructured` sets `responseMimeType` to `application/json` and passes the schema with its type names upper-cased, which is the form the Vertex SDK expects ([validated by: configures the request with responseMimeType and responseSchema](../../src/providers/vertex/vertexProvider.test.ts#L503)).
+- A response body that is not valid JSON raises `AIError` with code `PARSE_ERROR`, rather than returning something the caller would have to re-check ([validated by: throws AIError with PARSE_ERROR on invalid JSON](../../src/providers/vertex/vertexProvider.test.ts#L534)).
+- A response with no candidates raises `PARSE_ERROR` as well, since it carries no JSON ([validated by: raises PARSE_ERROR for a structured response with no candidates, which carries no JSON](../../src/providers/vertex/vertexProvider.test.ts#L544)).
+- An `enum` passes through the response schema unchanged, and an array's `items` schema is mapped like any other, its type upper-cased ([validated by: passes an enum and an array of items through the response schema, upper-casing the item type](../../src/providers/vertex/vertexProvider.test.ts#L550)).
 
 ### Error mapping
 
@@ -208,7 +208,7 @@ Gemini 3 models attach an opaque `thoughtSignature` to the part that carries a f
 - A failure whose HTTP status is `401` or `403`, or whose message names `401`, `403` or `PERMISSION_DENIED`, becomes `AUTH_ERROR`; `@google/genai`'s `ApiError` carries the status, and its message is the vendor's JSON error body ([validated by: throws AIError with AUTH_ERROR on permission denied](../../src/providers/vertex/vertexProvider.test.ts#L172), [validated by: maps a failure by its HTTP status when its message names no code: 429 to RATE_LIMITED, 403 to AUTH_ERROR](../../src/providers/vertex/vertexProvider.test.ts#L379), [validated by: still maps a failure carrying no status by its message, 403 Forbidden to AUTH_ERROR](../../src/providers/vertex/vertexProvider.test.ts#L184)).
 - Anything the mapping cannot classify becomes `PROVIDER_ERROR`, so an SDK error never reaches the caller as a raw `Error` ([validated by: falls back to PROVIDER_ERROR for a failure it cannot classify](../../src/providers/vertex/vertexProvider.test.ts#L244)).
 - A rejection that is not an `Error` at all becomes `PROVIDER_ERROR` with the message `Unknown Vertex AI error` ([validated by: maps a rejection that is no Error, the string 'boom', to PROVIDER_ERROR naming an unknown Vertex AI error](../../src/providers/vertex/vertexProvider.test.ts#L148)).
-- The mapping is shared: a failure raised during `generateStructured` is classified exactly as the same failure during `sendMessage` would be ([validated by: throws mapped AIError on Vertex API failure](../../src/providers/vertex/vertexProvider.test.ts#L541)).
+- The mapping is shared: a failure raised during `generateStructured` is classified exactly as the same failure during `sendMessage` would be ([validated by: throws mapped AIError on Vertex API failure](../../src/providers/vertex/vertexProvider.test.ts#L575)).
 
 ## OpenAI
 
