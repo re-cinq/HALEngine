@@ -184,7 +184,7 @@ interface ChatSession {
 }
 ```
 
-The `authHeaders` field carries request headers forwarded from the WebSocket upgrade request — useful for proxying authenticated calls to upstream services from inside a tool.
+The `authHeaders` field carries the caller headers `auth.forwardHeaders` lets through, from the WebSocket upgrade or the REST chat request — useful for proxying authenticated calls to upstream services from inside a tool. List only what your tools need: unset, it still forwards `cookie`, `authorization` and `host` with a warning, and from 0.10.0 an unset list forwards none (`specs/hal-engine-tool-header-allowlist/spec.md`).
 
 ## Key files to read first
 

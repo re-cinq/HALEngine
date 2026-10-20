@@ -1,4 +1,5 @@
 import type {WsAuthenticator, HttpAuthMiddleware} from './types/auth.js';
+import type {ForwardableHeader} from './transport/authHeaders.js';
 import type {SessionStore} from './types/sessionStore.js';
 import type {PromptBuilderConfig} from './infrastructure/builders/promptBuilder.js';
 import type {ContextConfig} from './orchestration/conversationContext.js';
@@ -54,6 +55,8 @@ export interface HalEngineConfig {
   auth: {
     ws: WsAuthenticator;
     http?: HttpAuthMiddleware;
+    /** Which caller headers reach a tool as `authHeaders`; unset, all three, with a warning, until 0.10.0 forwards none. */
+    forwardHeaders?: ForwardableHeader[];
   };
   orchestrator?: {
     maxToolRounds?: number;
@@ -98,6 +101,7 @@ export function createHalEngine(config: HalEngineConfig): HalEngine {
     corsOrigin: config.transport?.corsOrigin,
     basePath,
     authMiddleware: config.auth.http,
+    forwardHeaders: config.auth.forwardHeaders,
     orchestrator,
     sessionStore,
     additionalRoutes: config.transport?.additionalRoutes,
@@ -108,6 +112,7 @@ export function createHalEngine(config: HalEngineConfig): HalEngine {
   const halServer = createServer({
     app,
     wsAuth: config.auth.ws,
+    forwardHeaders: config.auth.forwardHeaders,
     sessionStore,
     orchestrator,
     toolRegistry,

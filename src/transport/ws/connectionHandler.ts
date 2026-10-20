@@ -10,6 +10,8 @@ import {ErrorCodes} from '../../types/session.js';
 import {sendError} from './sender.js';
 import {isValidWsPath, rejectSocket, parseWsData, sessionIdFromUpgrade, newSessionRequested} from './helpers.js';
 import {presentedCredential} from './credential.js';
+import {filterAuthHeaders, forwardedHeaders} from '../authHeaders.js';
+import type {ForwardableHeader} from '../authHeaders.js';
 import {replayEntries, resumableSession, resumeFields} from './sessionResume.js';
 import type {ConnectInfo, SessionResumeOptions} from './sessionResume.js';
 import {log} from '../../shared/logger.js';
@@ -41,10 +43,14 @@ export interface ConnectionHandlerDeps {
   onConnect?: (session: import('../../types/session.js').ChatSession, connection: ConnectInfo) => void | Promise<void>;
   onDisconnect?: (sessionId: string) => void | Promise<void>;
   resume?: SessionResumeOptions;
+  /** The caller headers a tool may receive; unset, all three until 0.10.0 (specs/hal-engine-tool-header-allowlist/spec.md). */
+  forwardHeaders?: readonly ForwardableHeader[];
 }
 export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandlerDeps) {
   // Once per engine, not per upgrade: a client naming an id it cannot use must not let anyone flood the log.
   let reportedIgnoredId = false;
+  // Resolved here, at capture: a header never held cannot reach a tool, a store or a log.
+  const allow = forwardedHeaders(deps.forwardHeaders);
 
   return function handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
     // Nothing may throw out of this listener: the `upgrade` event has no catch above it, so a throw ends the process.
@@ -78,11 +84,14 @@ export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandl
           const extWs = upgraded;
           extWs.userId = user.id;
           extWs.workspaceId = user['workspaceId'] as string | number | undefined;
-          extWs.authHeaders = {
-            cookie: request.headers.cookie,
-            authorization,
-            host: (request.headers['x-forwarded-host'] as string | undefined) ?? request.headers.host,
-          };
+          extWs.authHeaders = filterAuthHeaders(
+            {
+              cookie: request.headers.cookie,
+              authorization,
+              host: (request.headers['x-forwarded-host'] as string | undefined) ?? request.headers.host,
+            },
+            allow
+          );
           extWs.isAlive = true;
           const named = sessionIdFromUpgrade(request.url || '', deps.basePath);
           if (deps.resume?.enabled) {
