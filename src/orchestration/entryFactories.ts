@@ -11,7 +11,7 @@ export function createAssistantEntry(persona?: string): SessionEntry {
 }
 
 export function createThinkingEntry(): SessionEntry {
-  return {role: 'thinking', content: '', isStreaming: true};
+  return {role: 'thinking', content: '', timestamp: new Date().toISOString(), isStreaming: true};
 }
 
 export function createToolEntry(toolName: string, toolInput: Record<string, unknown>): SessionEntry {
