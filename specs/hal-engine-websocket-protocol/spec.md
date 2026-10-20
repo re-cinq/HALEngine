@@ -525,6 +525,7 @@ Internal AI reasoning, separated from user-facing content by the server's thinki
 {
   "role": "thinking",
   "content": "I should look up the weather for Berlin using the get_weather tool.",
+  "timestamp": "2026-01-15T14:30:00.000Z",
   "isStreaming": false
 }
 ```
@@ -533,10 +534,12 @@ Internal AI reasoning, separated from user-facing content by the server's thinki
 | ------------ | ------- | ----------------------------------------- |
 | `role`       | string  | `"thinking"`                              |
 | `content`    | string  | Reasoning text, built incrementally       |
+| `timestamp`  | string  | ISO 8601 datetime. Optional: absent on a thinking entry stored before 0.9 |
 | `isStreaming` | boolean | `true` while deltas are arriving          |
 | `truncated`   | `true`  | Optional. Present only when the run ended before this entry finished, or when a resume replays it still streaming; see § 7.1 and § 11.3 |
 
-Note: ThinkingEntry does not include a `timestamp` field.
+- A thinking entry carries a `timestamp`, ISO 8601, like the other entries, and it round-trips through `Date` ([validated by: stamps a thinking entry with an ISO 8601 timestamp that round-trips through Date](../../src/orchestration/entryFactories.test.ts#L8)).
+- The field is optional as a statement about stored data: a thinking entry written before it existed is still a valid `SessionEntry`, and `timestamp` can be read off any entry without narrowing on `role` ([validated by: reads timestamp off any SessionEntry with no role narrowing, and accepts a thinking entry without one](../../src/orchestration/entryFactories.test.ts#L14)).
 
 ### 6.4 ToolEntry
 

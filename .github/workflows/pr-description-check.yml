@@ -1,0 +1,30 @@
+name: PR Description Check
+
+on:
+  pull_request:
+    types: [opened, edited]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  check-pr-description:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check required sections
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          missing=()
+          for section in "## Why" "## What Changed" "## Testing"; do
+            if ! echo "$PR_BODY" | grep -qF "$section"; then
+              missing+=("$section")
+            fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::PR description is missing required sections: ${missing[*]}"
+            echo "Required sections: ## Why, ## What Changed, ## Testing"
+            exit 1
+          fi
+          echo "All required PR description sections are present."

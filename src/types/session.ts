@@ -20,6 +20,8 @@ export interface AssistantEntry {
 export interface ThinkingEntry {
   role: 'thinking';
   content: string;
+  /** When the entry was created, ISO 8601: `2026-01-15T14:30:00.000Z` or `2026-01-15T15:30:00.000+01:00` alike, so parse before comparing; absent on an entry stored before 0.9. */
+  timestamp?: string;
   isStreaming: boolean;
   /** Present only when the run ended before this entry finished (a provider failure or a round with no stop), or on a resume's replay of an entry still streaming. */
   truncated?: true;
@@ -59,6 +61,8 @@ export interface ChatSession {
   workspaceId?: string | number;
   /** Set by the consumer before or during beforeModelResponse; every assistant entry created for that turn carries it as its persona. */
   activePersona?: string;
+  /** When the store created the session, ISO 8601: `Z`-suffixed or with an offset alike, so parse before comparing; written by the store, not the engine, and absent when the store holds no creation time for the session. */
+  createdAt?: string;
 }
 
 export interface AuthenticatedUser {
