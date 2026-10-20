@@ -9,6 +9,7 @@ import type {ChatSession} from '../types/session.js';
 import {createMessageHandler} from './ws/messageHandler.js';
 import {recordingSocket} from './ws/recordingSocketTestSupport.js';
 import {setLogger} from '../shared/logger.js';
+import {keepEveryLine} from '../shared/logCaptureTestSupport.js';
 import {connectClient, startEngineWith, stopEngines} from './wsTestSupport.js';
 import {whoamiOrchestrator} from './whoamiTestSupport.js';
 
@@ -120,10 +121,7 @@ describe('a credential the consumer cannot renew', () => {
   });
 
   it('writes the resolved credential to no log line at any level and to no frame, though the tool received it', async () => {
-    const lines: unknown[] = [];
-    const keep = (category: string, message: string, fields?: Record<string, unknown>) =>
-      void lines.push({category, message, ...fields});
-    setLogger({debug: keep, info: keep, warn: keep, error: keep});
+    const lines = keepEveryLine();
 
     const {raw, contexts} = await runTurn({resolveAuthHeaders: async () => ({authorization: RESOLVED})});
 

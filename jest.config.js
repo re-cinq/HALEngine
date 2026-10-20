@@ -20,6 +20,7 @@ export default {
     'src/**/*.ts',
     '!src/**/*.test.ts',
     '!src/providers/providerTestSupport.ts',
+    '!src/orchestration/scriptedProviderTestSupport.ts',
     '!src/infrastructure/writeSignalTestSupport.ts',
     '!src/infrastructure/stores/sessionStoreTestSupport.ts',
     '!src/shared/logCaptureTestSupport.ts',

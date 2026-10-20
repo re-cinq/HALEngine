@@ -3,8 +3,9 @@ import type {OrchestratorHooks} from './chatOrchestrator.js';
 import {ToolRegistry} from './tools/registry.js';
 import type {ToolContext, ToolExecutor} from './tools/registry.js';
 import {PromptBuilder} from '../infrastructure/builders/promptBuilder.js';
-import type {AIProvider, MessageChunk} from '../types/ai.js';
+import type {MessageChunk} from '../types/ai.js';
 import type {ChatSession} from '../types/session.js';
+import {scriptedProvider} from './scriptedProviderTestSupport.js';
 
 const UPGRADE = {authorization: 'Bearer from-the-upgrade'};
 const TOOL_STOP: MessageChunk = {type: 'stop', stopReason: 'tool_use'};
@@ -40,23 +41,17 @@ async function turn(
     authHeaders: {...UPGRADE},
     entries: [{role: 'user', content: 'go', timestamp: 't'}],
   };
-  const orchestrator = createChatOrchestrator(scripted(rounds), new PromptBuilder({identity: 'Renewal.'}), registry, {
-    hooks,
-  });
+  const orchestrator = createChatOrchestrator(
+    scriptedProvider(...rounds),
+    new PromptBuilder({identity: 'Renewal.'}),
+    registry,
+    {
+      hooks,
+    }
+  );
   const chunks: MessageChunk[] = [];
   for await (const chunk of orchestrator.processMessageStream(session, {signal})) chunks.push(chunk);
   return {session, seen};
-}
-
-// Each provider call answers with the next round, the last one repeating.
-function scripted(rounds: MessageChunk[][]): AIProvider {
-  let call = 0;
-  return {
-    async *sendMessage(): AsyncGenerator<MessageChunk> {
-      yield* rounds[Math.min(call++, rounds.length - 1)];
-    },
-    generateStructured: async <T>() => ({}) as T,
-  };
 }
 
 describe('resolveAuthHeaders', () => {

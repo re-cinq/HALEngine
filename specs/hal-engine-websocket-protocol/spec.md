@@ -356,7 +356,7 @@ Defined error codes:
 | `UNSUPPORTED`         | feature            | The server does not serve this frame: the feature is off, or its store cannot | —    |
 | `CREDENTIAL_EXPIRED`  | credential         | A tool credential `resolveAuthHeaders` could not renew; `stream_end` follows  | —    |
 
-A `CREDENTIAL_EXPIRED` error carries, verbatim, the message of the `CredentialExpiredError` the consumer's `resolveAuthHeaders` threw, and a `stream_end` follows it, as [the credential resolver spec](../hal-engine-credential-resolver/spec.md) describes ([validated by: sends error CREDENTIAL_EXPIRED with the hook's own message, then stream_end, over a real connection](../../src/transport/credentialExpired.test.ts#L60)).
+A `CREDENTIAL_EXPIRED` error carries, verbatim, the message of the `CredentialExpiredError` the consumer's `resolveAuthHeaders` threw, and a `stream_end` follows it, as [the credential resolver spec](../hal-engine-credential-resolver/spec.md) describes ([validated by: sends error CREDENTIAL_EXPIRED with the hook's own message, then stream_end, over a real connection](../../src/transport/credentialExpired.test.ts#L61)).
 
 A client MUST treat a `code` it does not recognise as `SERVER_ERROR`.
 
