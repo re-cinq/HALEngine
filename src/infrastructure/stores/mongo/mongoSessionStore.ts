@@ -1,4 +1,5 @@
 import type {ChatSession} from '../../../types/session.js';
+import {assertScalarUserId} from '../../../types/session.js';
 import type {
   SessionCreateOptions,
   SessionCursor,
@@ -64,6 +65,7 @@ export class MongoSessionStore implements SessionStore {
   }
 
   async create(sessionId: string, userId: string | number, options?: SessionCreateOptions): Promise<ChatSession> {
+    assertScalarUserId(userId);
     const startedAt = this.now();
     const session: ChatSession = {
       sessionId,
@@ -145,6 +147,7 @@ export class MongoSessionStore implements SessionStore {
 
   /** One query, filtered on the user in the database and sorted on the index `latestFor` already needs. */
   async listFor(userId: string | number, options?: SessionListOptions): Promise<SessionSummary[]> {
+    assertScalarUserId(userId);
     const limit = cappedLimit(options?.limit);
     // Never issued as a query: mongo reads `limit: 0` as no limit at all, which is the opposite of what it asks for.
     if (limit === 0) return [];
@@ -167,6 +170,7 @@ export class MongoSessionStore implements SessionStore {
 
   /** The user's most recently saved conversation, by `updatedAt`, read through `get` so a live one is the object its running turn writes to. */
   async latestFor(userId: string | number): Promise<ChatSession | undefined> {
+    assertScalarUserId(userId);
     const collection = await this.collection();
     const latest = await collection.findOne({userId}, {sort: {updatedAt: -1, _id: -1}, projection: {_id: 1}});
     return latest === null ? undefined : this.get(latest._id);

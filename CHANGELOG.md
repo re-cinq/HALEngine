@@ -8,6 +8,10 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+### Security
+
+- **An authenticated id the engine cannot use as an identity is refused.** A `wsAuth` that resolves a user whose `id` is not a string or a finite number, such as an object a token decoded to, is now answered `401` and logged as an authenticator fault naming only the id's kind. Before, the value reached the session store as a query filter, and on `MongoSessionStore` `{$ne: null}` matched every user's conversations. The shipped stores also refuse such an id in `create`, `listFor` and `latestFor`, and `assertScalarUserId` is exported for your own. A deployment whose authenticator returns a non-scalar id now fails to connect where it previously connected with a broken identity.
+
 ### Added
 
 - **`ChatSession.createdAt` and a `timestamp` on thinking entries.** `InMemorySessionStore` stamps `createdAt` when it creates a session, `MongoSessionStore` sets it from each document's own creation time, and thinking entries now carry a `timestamp` like the other entries, both ISO 8601, so a retention period has something to measure age from. Both are optional on the types: a thinking entry stored before 0.9 has no `timestamp`, and a session has no `createdAt` when its store holds none, though a MongoDB session from any release since 0.4.0 has one; parse them before comparing, as `Z` and offset forms sort differently as strings. A custom `SessionStore` may set `createdAt` too. See `docs/session-stores.md` § Retention.

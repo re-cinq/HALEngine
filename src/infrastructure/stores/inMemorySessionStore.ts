@@ -1,4 +1,5 @@
 import type {ChatSession} from '../../types/session.js';
+import {assertScalarUserId} from '../../types/session.js';
 import type {
   SessionCursor,
   SessionStore,
@@ -32,6 +33,7 @@ export class InMemorySessionStore implements SessionStore {
   }
 
   create(sessionId: string, userId: string | number, options?: SessionCreateOptions): ChatSession {
+    assertScalarUserId(userId);
     this.sweepExpired();
 
     const createdAt = Date.now();
@@ -86,6 +88,7 @@ export class InMemorySessionStore implements SessionStore {
 
   /** Summaries of the user's live sessions, newest activity first, by the same activity `latestFor` reads. */
   listFor(userId: string | number, options?: SessionListOptions): SessionSummary[] {
+    assertScalarUserId(userId);
     const limit = cappedLimit(options?.limit);
     if (limit === 0) return [];
 
@@ -98,6 +101,7 @@ export class InMemorySessionStore implements SessionStore {
 
   /** The user's most recently active session that has not aged out: its newest entry decides, or its creation if it has none. */
   latestFor(userId: string | number): ChatSession | undefined {
+    assertScalarUserId(userId);
     // The list's own order, ties broken by session id, so a resume rejoins the conversation the list shows first.
     return this.ownedBy(userId).map(rowOf).sort(byNewestRow)[0]?.held.session;
   }
