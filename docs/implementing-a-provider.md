@@ -12,6 +12,11 @@ reference implementation for streaming, and
 [vertexProvider.ts](../src/providers/vertex/vertexProvider.ts) for
 `generateStructured`.
 
+Bedrock reports token counts on its stop chunk, read from the Converse stream's
+`metadata` event; AWS sends that event after `messageStop`, so the stop chunk
+waits for the stream to end. A provider you finish reports its counts on its
+stop chunk the same way, as `usage`.
+
 ## Anthropic ([anthropicProvider.ts](../src/providers/anthropic/anthropicProvider.ts))
 
 1. Install `@anthropic-ai/sdk`
