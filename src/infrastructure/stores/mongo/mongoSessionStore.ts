@@ -72,6 +72,7 @@ export class MongoSessionStore implements SessionStore {
       userId,
       entries: [],
       authHeaders: options?.authHeaders,
+      user: options?.user,
       workspaceId: options?.workspaceId,
       ...isoCreatedAt(startedAt),
     };

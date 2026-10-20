@@ -2,6 +2,7 @@ import {Ajv} from 'ajv';
 import type {ErrorObject, ValidateFunction} from 'ajv';
 import type {ToolDefinition} from '../../types/ai.js';
 import type {OutgoingMessage} from '../../types/messages.js';
+import type {AuthenticatedUser} from '../../types/session.js';
 import {log} from '../../shared/logger.js';
 
 const MAX_NAME_IN_ANSWER = 64;
@@ -22,6 +23,8 @@ export interface ToolContext {
     authorization?: string;
     host?: string;
   };
+  /** A shallow copy of what `auth.ws` returned, made per call, so treat it as read-only; absent on the REST path. */
+  user?: AuthenticatedUser;
   /** Aborted when the orchestrator abandons this call, at its `toolTimeoutMs` deadline with a `TimeoutError` or with its turn; pass it to `fetch` so the call's own request stops too. */
   signal?: AbortSignal;
 }
@@ -96,9 +99,7 @@ export class ToolRegistry {
   }
 
   getPromptInstructions(): string[] {
-    return this.getDefinitions()
-      .filter(t => t.promptInstructions)
-      .map(t => `${t.name}: ${t.promptInstructions}`);
+    return promptInstructionsOf(this.getDefinitions());
   }
 
   getExamplePrompts(): string[] {
@@ -194,4 +195,9 @@ function describeThrow(error: unknown): string {
   } catch {
     return typeof error;
   }
+}
+
+/** The prompt line of each definition that carries instructions, `name: instructions`, in the order given. */
+export function promptInstructionsOf(definitions: ToolDefinition[]): string[] {
+  return definitions.filter(t => t.promptInstructions).map(t => `${t.name}: ${t.promptInstructions}`);
 }

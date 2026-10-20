@@ -105,7 +105,7 @@ The optional `examplePrompts` field provides example queries that are shown to u
 examplePrompts: ['What is the weather in Berlin?', 'Is it raining in Tokyo?'],
 ```
 
-The `ToolRegistry.getExamplePrompts()` method collects and flattens these from all registered tools. They are computed once at server startup and included in every new WebSocket connection's `connected` message.
+The `ToolRegistry.getExamplePrompts()` method collects and flattens these from all registered tools. They are collected again for every new WebSocket connection and included in that connection's `connected` message, so a tool registered after the server starts offers its prompts to every socket that connects afterwards.
 
 Guidelines:
 - Write prompts as natural user questions, not technical descriptions
@@ -130,7 +130,7 @@ A `ToolExecutor` is an async function that takes the tool input and returns eith
 type ToolExecutor = (input: Record<string, unknown>, context?: ToolContext) => Promise<string | ToolResponse>;
 ```
 
-The optional `context` provides `userId`, `sessionId`, `workspaceId`, and `authHeaders` for tools that need to make authenticated API calls, and `signal`, which the orchestrator aborts when it abandons the call: at its `toolTimeoutMs` deadline, with a `TimeoutError` as the reason, or when the turn is abandoned because its socket closed. Pass it to `fetch`, or to whatever client your tool uses, so the call's own request stops too:
+The optional `context` provides `userId`, `sessionId`, `workspaceId`, `authHeaders` and `user` for tools that need to make authenticated API calls, and `signal`, which the orchestrator aborts when it abandons the call: at its `toolTimeoutMs` deadline, with a `TimeoutError` as the reason, or when the turn is abandoned because its socket closed. Pass it to `fetch`, or to whatever client your tool uses, so the call's own request stops too:
 
 <!-- doc-block: none -- an executor a reader writes against their own API, which this package does not ship -->
 ```typescript
@@ -142,6 +142,8 @@ const getOrder: ToolExecutor = async (input, context) => {
   return JSON.stringify(await response.json());
 };
 ```
+
+`context.user` is everything your `auth.ws` returned for the connection: a role, a customer id, whatever it resolved, so a tool needs no second lookup keyed on `userId`. It is a shallow copy made for each call, so treat it as read-only: assigning to it changes nothing outside the call, but nested objects are still shared. It is set only over a WebSocket connection; a tool reached through the REST chat routes gets `context.user` undefined and reads `context.userId`. The engine reads nothing from it beyond `id` and `workspaceId`, so any authorization on other claims is yours. A credential you attach to `user` reaches every tool, whatever headers you forward to tools, so it bypasses any header allowlist you set: forward a credential through `authHeaders` instead. Under GDPR, `user` is a processing step: the claims resolved at connect reach every tool call for the connection's life, are held in memory only, never logged and never sent to the client, and are left out of anything a session store persists.
 
 A tool that ignores the signal is still bounded, since the orchestrator stops waiting at the deadline either way, but its request keeps running, and keeps sending whatever it carries, after the round has moved on.
 
@@ -178,9 +180,10 @@ Once a tool is registered, the following work without any additional code:
 
 **On the backend:**
 
-- `toolRegistry.getExamplePrompts()` collects example prompts from all tools and includes them in the WebSocket `connected` message
-- `chatOrchestrator.ts` calls `toolRegistry.getPromptInstructions()` to include tool guidance in the system prompt via `PromptBuilder`
-- `chatOrchestrator.ts` calls `toolRegistry.getDefinitions()` to pass all tools to the AI provider
+- `toolRegistry.getExamplePrompts()` collects example prompts from all tools at every connection and includes them in the WebSocket `connected` message
+- `chatOrchestrator.ts` calls `toolRegistry.getDefinitions()` once at the start of every turn, passes those definitions to the AI provider, and puts each one's `promptInstructions` in that turn's system prompt via `PromptBuilder`; an empty registry sends the provider no tools at all
+
+Because definitions and prompt instructions are read at the start of every turn and example prompts at every connection, a tool may be registered after `createHalEngine` returns, from a boot-time capability probe or a feature flag, and the model is told about it from the next turn. A tool registered during a turn waits for the next one, so the list never changes between rounds of the same turn. Not advertising a tool is not an access control: refuse a call the model must not make in `beforeToolCall` or in the executor. Every definition goes to the model provider every turn, so keep personal data and internal hostnames out of `description`, `inputSchema` and `promptInstructions`.
 - When the provider returns a `tool_use` chunk, the message handler creates a `ToolEntry` and sends it via `entry_upsert`
 - The orchestrator executes all pending tool calls in parallel with `Promise.all()`
 - Each call has `toolTimeoutMs` (default `30000`) to settle. A call still running then is abandoned: its `signal` is aborted, the model receives a `tool_result` saying the tool did not answer within the deadline, and the round's other calls keep their results. `toolTimeoutMs: 0` waits forever
