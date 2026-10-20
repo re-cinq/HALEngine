@@ -170,6 +170,8 @@ const engine = createHalEngine({
   auth: {
     ws: async () => ({id: 'user-1'}),
     http: authMiddleware,
+    // The caller headers a tool may receive as authHeaders; list only what your tools need, [] for none.
+    forwardHeaders: ['authorization'],
   },
 
   // OPTIONAL: Tool registry
