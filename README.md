@@ -99,7 +99,7 @@ This is [`example/server.ts`](example/server.ts) apart from the import specifier
 | Provider           | `type`        | `sendMessage`                                       | `generateStructured`                                       | Package                           |
 | ------------------ | ------------- | --------------------------------------------------- | ---------------------------------------------------------- | --------------------------------- |
 | AWS Bedrock        | `'bedrock'`   | Implemented                                         | throws `Bedrock structured output is not yet implemented.` | `@aws-sdk/client-bedrock-runtime` |
-| Google Vertex AI   | `'vertex'`    | Implemented                                         | Implemented                                                | `@google-cloud/vertexai`          |
+| Google Vertex AI   | `'vertex'`    | Implemented                                         | Implemented                                                | `@google/genai`                   |
 | Mock               | `'mock'`      | Implemented                                         | Implemented                                                | (built-in)                        |
 | OpenAI / ChatGPT   | `'openai'`    | throws `OpenAI provider is not yet implemented.`    | throws `OpenAI provider is not yet implemented.`           | `openai`                          |
 | Anthropic / Claude | `'anthropic'` | throws `Anthropic provider is not yet implemented.` | throws `Anthropic provider is not yet implemented.`        | `@anthropic-ai/sdk`               |
@@ -123,12 +123,15 @@ interface HalEngineConfig {
   prompt: PromptBuilderConfig; // System prompt configuration
   tools?: ToolRegistry; // Registered tools (optional)
   session?: SessionStore; // Custom session store (default: in-memory)
+  privacy?: {mask?: PromptMask}; // opt-in: the model sees your detector's tokens, everything else the real values
   transport?: {
     port?: number; // Server port (default: 8086)
     corsOrigin?: string | string[];
     basePath?: string; // URL prefix (default: '/hal')
     heartbeatIntervalMs?: number; // WS heartbeat (default: 30000)
+    connectMessage?: string; // the connected frame's message (default: 'Connected to HAL Engine'); may carry the AI disclosure
     resume?: {enabled: boolean; latest?: boolean}; // opt-in: rejoin a conversation by ?sessionId=, or the user's latest
+    history?: {enabled: boolean; preview?: boolean}; // opt-in: answer list_conversations with the user's own conversations; preview adds each one's opening question
     additionalRoutes?: (router: Router) => void; // mounted under basePath, no auth gate
     rootRoutes?: (router: Router) => void; // mounted at /, after basePath router
     errorHandler?: express.ErrorRequestHandler; // replaces Express default HTML errors
@@ -190,6 +193,15 @@ src/
 - [Logging](docs/logging.md)
 - [Contributing](CONTRIBUTING.md)
 - [Coding Practices](docs/coding-practices.md)
+
+## Recorded protocol frames
+
+`recordedFrames`, exported from the package root, holds the frames the server sends for five scripted turns: `connectionOpened`, `simpleAnswer`, `thinkingThenTool`, `multiRoundSuppressed` and `rateLimited`. They are recorded through the real handlers, so a client's tests can import the sequence instead of transcribing the protocol spec. Every `timestamp` is normalised to `"<ts>"` and the session id to `"<session-id>"`; compare your own frames after the same normalisation. See [the protocol spec § 8.5](specs/hal-engine-websocket-protocol/spec.md).
+
+<!-- doc-block: none -- an import line; smoke/index.mjs makes the same import from the packed tarball -->
+```typescript
+import {recordedFrames} from '@re-cinq/hal-engine';
+```
 
 ## Security
 

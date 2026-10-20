@@ -3,7 +3,8 @@
 import type {SessionCursor, SessionSummary} from '../../types/sessionStore.js';
 
 const DEFAULT_LIMIT = 50;
-const MAX_LIMIT = 200;
+/** The most summaries one `listFor` answers with, exported so the transport refuses a frame asking for more than the store would give. */
+export const MAX_LIMIT = 200;
 
 /** How many summaries one `listFor` may answer with: the caller's limit, bounded, and 50 when it names none. */
 export function cappedLimit(limit: number | undefined): number {

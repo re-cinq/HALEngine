@@ -11,6 +11,8 @@ import type {ChatSession, SessionEntry} from '../../types/session.js';
 import type {OutgoingMessage} from '../../types/messages.js';
 import {PerSessionLock} from '../../shared/perSessionLock.js';
 import {deferred} from '../wsTestSupport.js';
+import {recordingSocket} from './recordingSocketTestSupport.js';
+import {setLogger} from '../../shared/logger.js';
 
 // The frames, in order, are the contract - above all for suppression, which retracts.
 
@@ -39,8 +41,7 @@ interface StreamScript {
 }
 
 const harness = (chunks: MessageChunk[], {failWith, pauseAfter}: StreamScript = {}) => {
-  const sent: OutgoingMessage[] = [];
-  const ws = {send: (raw: string) => sent.push(JSON.parse(raw) as OutgoingMessage)} as unknown as WebSocket;
+  const {ws, sent} = recordingSocket();
 
   const stream = async function* (): AsyncGenerator<MessageChunk> {
     for (const [position, chunk] of chunks.entries()) {
@@ -192,12 +193,27 @@ describe('the websocket message handler', () => {
       ]);
     });
 
-    it('never blanks a thinking entry, only assistant ones', async () => {
+    it('blanks a thinking entry already sent beside the answer, and no frame after suppression carries its text', async () => {
       const h = harness([text('<thinking>private</thinking>said'), STOP, SUPPRESS]);
 
       await h.send();
 
-      expect(h.frames().filter(frame => frame.startsWith('upsert 1'))).toEqual(['upsert 1 thinking ""']);
+      const afterSuppression = h.sent.slice(h.frames().indexOf('commit 2') + 1);
+      expect({frames: h.frames(), leaked: /private|said/.test(JSON.stringify(afterSuppression))}).toEqual({
+        frames: [
+          'upsert 0 user "hello"',
+          'upsert 1 thinking ""',
+          'delta 1 "private"',
+          'commit 1',
+          'upsert 2 assistant ""',
+          'delta 2 "said"',
+          'commit 2',
+          'upsert 1 thinking ""',
+          'upsert 2 assistant ""',
+          'stream_end',
+        ],
+        leaked: false,
+      });
     });
 
     it('skips rather than upserts a segment opened after suppression', async () => {
@@ -252,14 +268,14 @@ describe('the websocket message handler', () => {
       expect(answer).toMatchObject({role: 'assistant', content: 'hidden', suppressed: true});
     });
 
-    it('leaves a thinking entry the client kept seeing unmarked, and marks the blanked answer', async () => {
+    it('marks a blanked thinking entry suppressed beside the blanked answer, keeping both texts', async () => {
       const h = harness([text('<thinking>private</thinking>said'), STOP, SUPPRESS]);
 
       await h.send();
 
       const [, thinking, answer] = h.session.entries;
-      expect({thinking: 'suppressed' in thinking, answer}).toMatchObject({
-        thinking: false,
+      expect({thinking, answer}).toMatchObject({
+        thinking: {role: 'thinking', content: 'private', suppressed: true},
         answer: {role: 'assistant', content: 'said', suppressed: true},
       });
     });
@@ -285,24 +301,69 @@ describe('the websocket message handler', () => {
       });
     });
 
-    it('commits a thought still open when suppression begins as the client saw it, and skips what follows', async () => {
+    it('commits and retracts a thought still open when suppression begins, and skips what follows as a new entry', async () => {
       const h = harness([text('<thinking>early'), SUPPRESS, text(' later</thinking>'), STOP]);
 
       await h.send();
 
       const [, thought, after] = h.session.entries;
-      expect({frames: h.frames(), thought, marked: 'suppressed' in thought, after}).toMatchObject({
+      expect({frames: h.frames(), thought, after}).toMatchObject({
         frames: [
           'upsert 0 user "hello"',
           'upsert 1 thinking ""',
           'delta 1 "early"',
           'commit 1',
+          'upsert 1 thinking ""',
           'skip 2',
           'stream_end',
         ],
-        thought: {role: 'thinking', content: 'early', isStreaming: false},
-        marked: false,
+        thought: {role: 'thinking', content: 'early', isStreaming: false, suppressed: true},
         after: {role: 'thinking', content: ' later', suppressed: true},
+      });
+    });
+
+    it('skips a thinking entry opened after suppression rather than blanking it', async () => {
+      const h = harness([SUPPRESS, text('<thinking>hidden</thinking>'), STOP]);
+
+      await h.send();
+
+      expect(h.frames()).toEqual(['upsert 0 user "hello"', 'skip 1', 'stream_end']);
+    });
+
+    it('still sends a tool entry opened under suppression as an entry_upsert carrying its toolName and toolInput', async () => {
+      const h = harness([SUPPRESS, {type: 'tool_use', toolCall: {id: 'c1', name: 'lookup', input: {q: 1}}}, STOP]);
+
+      await h.send();
+
+      expect({frames: h.frames(), tool: h.sent[1]}).toMatchObject({
+        frames: ['upsert 0 user "hello"', 'upsert 1 tool ""', 'stream_end'],
+        tool: {type: 'entry_upsert', index: 1, entry: {role: 'tool', toolName: 'lookup', toolInput: {q: 1}}},
+      });
+    });
+
+    describe('the blanking log line', () => {
+      const lines: Array<{level: string; category: string; message: string; fields?: Record<string, unknown>}> = [];
+      const into = (level: string) => (category: string, message: string, fields?: Record<string, unknown>) =>
+        void lines.push({level, category, message, fields});
+
+      beforeEach(() => {
+        lines.length = 0;
+        setLogger({debug: into('debug'), info: into('info'), warn: into('warn'), error: into('error')});
+      });
+      afterEach(() => setLogger());
+
+      it('lists thinking index 1 and assistant index 2 at suppression, and no line carries their text', async () => {
+        await harness([text('<thinking>private</thinking>said'), STOP, SUPPRESS]).send();
+
+        expect({
+          blanking: lines.filter(line => line.message === 'suppression activated'),
+          leaked: /private|said|hello/.test(JSON.stringify(lines)),
+        }).toEqual({
+          blanking: [
+            {level: 'info', category: 'stream', message: 'suppression activated', fields: {blankingEntries: [1, 2]}},
+          ],
+          leaked: false,
+        });
       });
     });
   });
@@ -612,12 +673,8 @@ const afterPendingWork = () => new Promise(resolve => setImmediate(resolve));
 
 // Each run answers with its own number and then waits at its gate, so a test decides when it ends.
 const gated = (runs: number) => {
-  const sent: OutgoingMessage[] = [];
-  const socket = {
-    readyState: WebSocket.OPEN as number,
-    send: (raw: string) => sent.push(JSON.parse(raw) as OutgoingMessage),
-  };
-  const ws = socket as unknown as WebSocket;
+  const socket = recordingSocket();
+  const {ws, sent} = socket;
   const gates = Array.from({length: runs}, () => deferred());
   const handed: SessionEntry[][] = [];
   const processMessageStream = async function* (session: ChatSession): AsyncGenerator<MessageChunk> {
@@ -634,9 +691,7 @@ const gated = (runs: number) => {
     session,
     handed,
     release: (run: number) => gates[run].release(),
-    close: () => {
-      socket.readyState = WebSocket.CLOSED;
-    },
+    close: socket.close,
     frames: () => wire(sent),
     send: (raw: unknown) => handle(ws, session, raw),
   };
@@ -850,8 +905,7 @@ async function turnOver(call: ToolCall, registry: ToolRegistry): Promise<string[
       return {} as T;
     },
   };
-  const sent: OutgoingMessage[] = [];
-  const ws = {send: (raw: string) => sent.push(JSON.parse(raw) as OutgoingMessage)} as unknown as WebSocket;
+  const {ws, sent} = recordingSocket();
   const orchestrator = createChatOrchestrator(provider, new PromptBuilder({identity: 'Failure test.'}), registry);
   const session: ChatSession = {sessionId: 's1', userId: 'u1', entries: []};
 
@@ -867,3 +921,62 @@ function outcomeOf(frames: string[]): {answered: boolean; last: string | undefin
     errors: frames.filter(frame => frame.startsWith('error')),
   };
 }
+
+describe('the websocket error frame, from the one AIError table', () => {
+  const errorFramesFor = async (failWith: Error) => {
+    const h = harness([], {failWith});
+    await h.send();
+    return h.sent.filter(frame => frame.type === 'error');
+  };
+
+  it('sends SERVICE_UNAVAILABLE and TIMEOUT error frames with their fixed sentences', async () => {
+    const frames = [
+      ...(await errorFramesFor(new AIError('x', 'SERVICE_UNAVAILABLE'))),
+      ...(await errorFramesFor(new AIError('x', 'TIMEOUT'))),
+    ];
+
+    expect(frames).toEqual([
+      {type: 'error', code: 'SERVICE_UNAVAILABLE', message: 'AI service temporarily unavailable'},
+      {type: 'error', code: 'TIMEOUT', message: 'AI service timed out'},
+    ]);
+  });
+
+  it('still sends RATE_LIMITED byte-identically, and SERVER_ERROR only for a throw that is no AIError', async () => {
+    const frames = [
+      ...(await errorFramesFor(new AIError('slow down', 'RATE_LIMITED'))),
+      ...(await errorFramesFor(new Error('boom'))),
+    ];
+
+    expect(frames).toEqual([
+      {type: 'error', code: 'RATE_LIMITED', message: 'AI service is busy, please try again'},
+      {type: 'error', code: 'SERVER_ERROR', message: 'Failed to process message'},
+    ]);
+  });
+
+  it('keeps the AIError message secret-detail-77 out of every frame it sends', async () => {
+    const h = harness([], {failWith: new AIError('secret-detail-77', 'BEDROCK_ERROR')});
+
+    await h.send();
+
+    expect({
+      error: h.sent.find(frame => frame.type === 'error'),
+      leaked: JSON.stringify(h.sent).includes('secret-detail-77'),
+    }).toEqual({
+      error: {type: 'error', code: 'UPSTREAM_ERROR', message: 'AI service temporarily unavailable'},
+      leaked: false,
+    });
+  });
+
+  it('ends a SERVICE_UNAVAILABLE turn with the same terminal frames as an engine defect', async () => {
+    const provider = harness([], {failWith: new AIError('x', 'SERVICE_UNAVAILABLE')});
+    const defect = harness([], {failWith: new Error('boom')});
+
+    await provider.send();
+    await defect.send();
+
+    expect({provider: provider.frames(), defect: defect.frames()}).toEqual({
+      provider: ['upsert 0 user "hello"', 'error SERVICE_UNAVAILABLE', 'stream_end'],
+      defect: ['upsert 0 user "hello"', 'error SERVER_ERROR', 'stream_end'],
+    });
+  });
+});

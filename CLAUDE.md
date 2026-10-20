@@ -179,6 +179,10 @@ interface ChatSession {
     host?: string;
   };
   workspaceId?: string | number;
+  /** Set by the consumer before or during beforeModelResponse; every assistant entry created for that turn carries it as its persona. */
+  activePersona?: string;
+  /** When the store created the session, ISO 8601: `Z`-suffixed or with an offset alike, so parse before comparing; written by the store, not the engine, and absent when the store holds no creation time for the session. */
+  createdAt?: string;
 }
 ```
 

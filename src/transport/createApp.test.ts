@@ -94,8 +94,8 @@ describe('createApp chat route mounting', () => {
     expect(response.status).toBe(404);
   });
 
-  // sessionStore gates whether the routes mount; the routes themselves keep their own Map.
-  it('leaves the session store empty after a chat is created through it', async () => {
+  // sessionStore gates whether the routes mount; POST /chats also calls sessionStore.create.
+  it('stores the session in the session store after a chat is created through it', async () => {
     const store = new InMemorySessionStore();
     const attach: HttpAuthMiddleware = (req, _res, next) => {
       (req as AuthenticatedRequest).user = {id: 'alice'};
@@ -105,7 +105,7 @@ describe('createApp chat route mounting', () => {
       '/hal/chats'
     );
 
-    expect(store.count()).toBe(0);
+    expect(store.count()).toBe(1);
   });
 
   it('does not share chats between two apps built on one session store', async () => {
@@ -133,8 +133,14 @@ describe('createApp rootRoutes extension', () => {
     const root = await request(a).get('/');
     const health = await request(a).get('/hal/health');
 
-    expect({rootStatus: root.status, healthStatus: health.status, healthOk: health.body?.status}).toEqual({
+    expect({
+      rootStatus: root.status,
+      rootType: root.headers['content-type'],
+      healthStatus: health.status,
+      healthOk: health.body?.status,
+    }).toEqual({
       rootStatus: 200,
+      rootType: expect.stringContaining('text/html'),
       healthStatus: 200,
       healthOk: 'ok',
     });

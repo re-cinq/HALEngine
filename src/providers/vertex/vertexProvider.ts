@@ -1,12 +1,12 @@
 import type {
-  SchemaType,
   Content,
-  GenerateContentRequest,
+  FunctionDeclaration,
+  GenerateContentConfig,
   GenerateContentResponse,
-  FunctionCallPart,
-  FunctionDeclarationSchema,
+  GoogleGenAIOptions,
   Part,
-} from '@google-cloud/vertexai';
+  Schema,
+} from '@google/genai';
 import {AIError} from '../../types/ai.js';
 import type {
   AIProvider,
@@ -15,6 +15,8 @@ import type {
   SendMessageParams,
   StructuredOutputParams,
   ResponseSchema,
+  ToolCallContent,
+  ToolDefinition,
   UsageMetadata,
 } from '../../types/ai.js';
 import {log} from '../../shared/logger.js';
@@ -26,27 +28,18 @@ export interface VertexConfig {
   location: string;
   modelId: string;
   maxTokens?: number;
-  /** Base Vertex AI endpoint; use `aiplatform.eu.rep.googleapis.com` for the EU multi-region. */
+  /** Base Vertex AI host, such as `aiplatform.eu.rep.googleapis.com`; unset, the SDK derives it from `location`, `eu` included. */
   apiEndpoint?: string;
   googleAuthOptions?: Record<string, unknown>;
 }
-export function createVertexProvider(config: VertexConfig): AIProvider {
-  const {VertexAI} = requireOptionalPeer<typeof import('@google-cloud/vertexai')>('@google-cloud/vertexai');
-  const vertexAI = new VertexAI({
-    project: config.projectId,
-    location: config.location,
-    ...(config.apiEndpoint ? {apiEndpoint: config.apiEndpoint} : {}),
-    googleAuthOptions: config.googleAuthOptions,
-  });
 
-  const model = vertexAI.getGenerativeModel({
-    model: config.modelId,
-    generationConfig: {maxOutputTokens: config.maxTokens},
-  });
+export function createVertexProvider(config: VertexConfig): AIProvider {
+  const {GoogleGenAI} = requireOptionalPeer<typeof import('@google/genai')>('@google/genai');
+  const client = new GoogleGenAI(clientOptions(config));
 
   return {
     async *sendMessage(params: SendMessageParams): AsyncGenerator<MessageChunk> {
-      // The SDK cannot cancel a request once sent, so this check is the only one that keeps the conversation from the vendor.
+      // Checked before the request exists, so an abort here keeps the conversation from the vendor altogether.
       if (params.signal?.aborted) return;
 
       log.info('vertex', 'sending message', {
@@ -56,16 +49,13 @@ export function createVertexProvider(config: VertexConfig): AIProvider {
       });
 
       try {
-        const request = buildRequest(params);
-        if (params.maxTokens) {
-          request.generationConfig = {maxOutputTokens: params.maxTokens};
-        }
+        const stream = await client.models.generateContentStream({
+          model: config.modelId,
+          contents: params.messages.map(mapMessage),
+          config: streamConfig(params, config.maxTokens),
+        });
 
-        const streamResult = await model.generateContentStream(request);
-        // The SDK drains a copy of the stream into this promise; left unobserved, its rejection would end the process.
-        streamResult.response.catch(ignoreRejection);
-
-        yield* turnChunks(streamResult.stream, params.signal);
+        yield* turnChunks(stream, params.signal);
       } catch (error) {
         // An abort is the engine's own decision, not a vendor failure, so it ends the stream instead of raising.
         if (params.signal?.aborted) {
@@ -84,24 +74,18 @@ export function createVertexProvider(config: VertexConfig): AIProvider {
       });
 
       try {
-        const structuredModel = vertexAI.getGenerativeModel({
+        const response = await client.models.generateContent({
           model: config.modelId,
-          generationConfig: {
+          contents: params.messages.map(mapMessage),
+          config: {
+            systemInstruction: params.systemPrompt,
             maxOutputTokens: params.maxTokens ?? config.maxTokens,
             responseMimeType: 'application/json',
-            responseSchema: mapResponseSchema(params.responseSchema),
+            responseSchema: mapResponseSchema(params.responseSchema) as Schema,
           },
         });
 
-        const request: GenerateContentRequest = {
-          contents: params.messages.map(mapMessage),
-          systemInstruction: {role: 'user', parts: [{text: params.systemPrompt}]},
-        };
-
-        const result = await structuredModel.generateContent(request);
-        const text = extractText(result.response);
-
-        return JSON.parse(text) as T;
+        return JSON.parse(extractText(response)) as T;
       } catch (error) {
         if (error instanceof SyntaxError) {
           throw new AIError('Failed to parse structured response as JSON', 'PARSE_ERROR');
@@ -113,6 +97,34 @@ export function createVertexProvider(config: VertexConfig): AIProvider {
   };
 }
 
+// Vertex mode, never the Gemini API: a project and location select Vertex, and its data-residency terms with it.
+function clientOptions(config: VertexConfig): GoogleGenAIOptions {
+  return {
+    vertexai: true,
+    project: config.projectId,
+    location: config.location,
+    // The GA surface @google-cloud/vertexai called; the SDK would otherwise default to v1beta1.
+    apiVersion: 'v1',
+    googleAuthOptions: config.googleAuthOptions as GoogleGenAIOptions['googleAuthOptions'],
+    ...(config.apiEndpoint ? {httpOptions: {baseUrl: `https://${config.apiEndpoint}/`}} : {}),
+  };
+}
+
+function streamConfig(params: SendMessageParams, maxTokens: number | undefined): GenerateContentConfig {
+  return {
+    systemInstruction: params.systemPrompt,
+    maxOutputTokens: params.maxTokens ?? maxTokens,
+    // Handed to fetch, so an abort closes the connection; the SDK notes the service may still finish and bill it.
+    ...(params.signal ? {abortSignal: params.signal} : {}),
+    ...(params.tools?.length ? {tools: [{functionDeclarations: params.tools.map(declarationOf)}]} : {}),
+  };
+}
+
+// The SDK turns this JSON Schema into Gemini's own schema shape, upper-casing types and dropping additionalProperties.
+function declarationOf(tool: ToolDefinition): FunctionDeclaration {
+  return {name: tool.name, description: tool.description, parameters: tool.inputSchema as Schema};
+}
+
 // Exactly one stop chunk, last: at the first finish reason, or derived once the stream ends without one.
 async function* turnChunks(
   stream: AsyncIterable<GenerateContentResponse>,
@@ -120,7 +132,6 @@ async function* turnChunks(
 ): AsyncGenerator<MessageChunk> {
   let endOfTurn = 'end_turn';
   let usage: UsageMetadata | undefined;
-  // @google-cloud/vertexai 1.10.4 has no per-call abort, so an abort stops this read loop while the vendor request runs on.
   for await (const chunk of stream) {
     if (signal?.aborted) return;
     usage = extractUsage(chunk) ?? usage;
@@ -144,51 +155,26 @@ function stopReasonOf(finishReason: string, endOfTurn: string): string {
   return finishReason.toLowerCase();
 }
 
-// The stream loop already reports the same failure, so the drained copy's rejection carries nothing new.
-function ignoreRejection(): undefined {
-  return undefined;
-}
-
 // A part can carry text and a function call at once, so it maps to 0, 1 or 2 chunks.
 function* partChunks(parts: Part[]): Generator<MessageChunk> {
   for (const part of parts) {
-    if ('text' in part && part.text) {
+    if (part.text) {
       yield {type: 'text', text: part.text};
     }
 
-    if ('functionCall' in part) {
-      const fc = (part as FunctionCallPart).functionCall;
+    if (part.functionCall) {
+      const name = part.functionCall.name ?? '';
       yield {
         type: 'tool_use',
-        toolCall: {
-          id: fc.name,
-          name: fc.name,
-          input: (fc.args ?? {}) as Record<string, unknown>,
-        },
+        toolCall: {id: name, name, input: part.functionCall.args ?? {}, ...signatureOf(part)},
       };
     }
   }
 }
 
-function buildRequest(params: SendMessageParams): GenerateContentRequest {
-  const request: GenerateContentRequest = {
-    contents: params.messages.map(mapMessage),
-    systemInstruction: {role: 'user', parts: [{text: params.systemPrompt}]},
-  };
-
-  if (params.tools?.length) {
-    request.tools = [
-      {
-        functionDeclarations: params.tools.map(t => ({
-          name: t.name,
-          description: t.description,
-          parameters: t.inputSchema as unknown as FunctionDeclarationSchema,
-        })),
-      },
-    ];
-  }
-
-  return request;
+// No key at all for a call that came unsigned, so nothing is invented on the way back.
+function signatureOf(part: Part): {signature?: string} {
+  return part.thoughtSignature === undefined ? {} : {signature: part.thoughtSignature};
 }
 
 function mapMessage(m: Message): Content {
@@ -196,15 +182,8 @@ function mapMessage(m: Message): Content {
     return {role: m.role === 'assistant' ? 'model' : 'user', parts: [{text: m.content}]};
   }
 
-  const parts = m.content.map(block => {
-    if (block.type === 'tool_use') {
-      return {
-        functionCall: {
-          name: block.name,
-          args: block.input,
-        },
-      };
-    }
+  const parts = m.content.map((block): Part => {
+    if (block.type === 'tool_use') return functionCallPart(block);
     return {
       functionResponse: {
         name: block.toolUseId,
@@ -214,6 +193,14 @@ function mapMessage(m: Message): Content {
   });
 
   return {role: m.role === 'assistant' ? 'model' : 'user', parts};
+}
+
+// Gemini 3 refuses a turn's next request when a call it signed comes back without that signature.
+function functionCallPart(block: ToolCallContent): Part {
+  return {
+    functionCall: {name: block.name, args: block.input},
+    ...(block.signature === undefined ? {} : {thoughtSignature: block.signature}),
+  };
 }
 
 function extractUsage(response: GenerateContentResponse): UsageMetadata | undefined {
@@ -226,22 +213,45 @@ function extractUsage(response: GenerateContentResponse): UsageMetadata | undefi
   };
 }
 
+// The SDK's ApiError carries the HTTP status; its message, the vendor's JSON body, is the fallback for anything else.
 function mapVertexError(error: unknown): AIError {
   if (error instanceof AIError) return error;
   const message = error instanceof Error ? error.message : 'Unknown Vertex AI error';
-  if (message.includes('429') || message.includes('RESOURCE_EXHAUSTED')) {
+  const status = statusOf(error);
+  if (status === 429 || message.includes('429') || message.includes('RESOURCE_EXHAUSTED')) {
     // eslint-disable-next-line re-lint/no-flag-params -- AIError's retryable flag; see adrs/ADR-006-lint-suppressions.md
     return new AIError(message, 'RATE_LIMITED', true);
   }
-  if (message.includes('401') || message.includes('403') || message.includes('PERMISSION_DENIED')) {
+  // A vendor that is down or out of time is an outage, retryable, so the retry tier and then a fallback can route it.
+  if (status === 503 || message.includes('503') || message.includes('UNAVAILABLE')) {
+    // eslint-disable-next-line re-lint/no-flag-params -- AIError's retryable flag; see adrs/ADR-006-lint-suppressions.md
+    return new AIError(message, 'SERVICE_UNAVAILABLE', true);
+  }
+  if (ranOutOfTime(status, message, error)) {
+    // eslint-disable-next-line re-lint/no-flag-params -- AIError's retryable flag; see adrs/ADR-006-lint-suppressions.md
+    return new AIError(message, 'TIMEOUT', true);
+  }
+  if (status === 401 || status === 403 || /401|403|PERMISSION_DENIED/.test(message)) {
     return new AIError(message, 'AUTH_ERROR');
   }
   return new AIError(message, 'PROVIDER_ERROR');
 }
 
+// A 504, a DEADLINE_EXCEEDED body, or fetch's TimeoutError: a deadline the request hit, not an abort anyone chose.
+function ranOutOfTime(status: number | undefined, message: string, error: unknown): boolean {
+  if (status === 504 || (error instanceof Error && error.name === 'TimeoutError')) return true;
+  return message.includes('504') || message.includes('DEADLINE_EXCEEDED');
+}
+
+function statusOf(error: unknown): number | undefined {
+  if (!(error instanceof Object)) return undefined;
+  const {status} = error as {status?: unknown};
+  return typeof status === 'number' ? status : undefined;
+}
+
 function mapResponseSchema(schema: ResponseSchema): Record<string, unknown> {
   const mapped: Record<string, unknown> = {
-    type: schema.type.toUpperCase() as SchemaType,
+    type: schema.type.toUpperCase(),
   };
 
   if (schema.description) mapped.description = schema.description;
@@ -260,8 +270,6 @@ function mapResponseSchema(schema: ResponseSchema): Record<string, unknown> {
 
 function extractText(response: GenerateContentResponse): string {
   const candidate = response.candidates?.[0];
-  const parts = candidate?.content?.parts;
-  if (!parts) return '';
-  const texts = parts.filter((p): p is {text: string} => 'text' in p && typeof p.text === 'string').map(p => p.text);
-  return texts.join('');
+  const parts = candidate?.content?.parts ?? [];
+  return parts.map(part => part.text ?? '').join('');
 }

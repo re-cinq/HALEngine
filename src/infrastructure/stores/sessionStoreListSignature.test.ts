@@ -37,4 +37,13 @@ describe('the SessionStore listFor member', () => {
       authHeaders: undefined,
     });
   });
+
+  it('carries one field more for a label, and still neither the conversation nor a credential', () => {
+    const store = new InMemorySessionStore();
+    const session = store.create('s1', 'u1', {authHeaders: {cookie: 'session=secret'}});
+    session.entries.push({role: 'user', content: 'hello', timestamp: START.toISOString()});
+    const [summary] = store.listFor('u1', {preview: true}) as [SessionSummary];
+
+    expect(Object.keys(summary).sort()).toEqual(['createdAt', 'entryCount', 'preview', 'sessionId', 'updatedAt']);
+  });
 });

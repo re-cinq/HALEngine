@@ -39,14 +39,14 @@ describe('the in-memory store conversation list', () => {
     }).toEqual({order: ['newer', 'older'], heads: true});
   });
 
-  it('breaks a tie on activity by session id, where latestFor takes the session created later', () => {
+  it('breaks a tie on activity by session id in both members, so latestFor names the head of the list', () => {
     const store = new InMemorySessionStore();
     store.create('zeta', 'u1');
     store.create('alpha', 'u1');
 
     expect({listed: store.listFor('u1').map(row => row.sessionId), latest: store.latestFor('u1')?.sessionId}).toEqual({
       listed: ['zeta', 'alpha'],
-      latest: 'alpha',
+      latest: 'zeta',
     });
   });
 
@@ -136,6 +136,61 @@ describe('the in-memory store conversation list', () => {
       epoch: 1,
       unusable: 'listFor cursor has no usable updatedAt: last tuesday',
     });
+  });
+
+  it('carries no preview key for a list that did not ask for one, nor for an explicit preview of false', () => {
+    const store = new InMemorySessionStore();
+    const session = store.create('s1', 'u1');
+    session.entries.push({role: 'user', content: 'hello', timestamp: START.toISOString()});
+
+    const asked = [store.listFor('u1'), store.listFor('u1', {preview: false})];
+
+    expect(asked.map(rows => rows.map(row => 'preview' in row))).toEqual([[false], [false]]);
+  });
+
+  it('labels a conversation with its opening question when one is asked for', () => {
+    const store = new InMemorySessionStore();
+    const session = store.create('s1', 'u1');
+    session.entries.push({role: 'user', content: '  How   do I cancel?  ', timestamp: START.toISOString()});
+
+    const [labelled] = store.listFor('u1', {preview: true});
+
+    expect(labelled?.preview).toBe('How do I cancel?');
+  });
+
+  it("labels a conversation from the user's question even where a tool suppressed the answer to it", () => {
+    const store = new InMemorySessionStore();
+    const session = store.create('s1', 'u1');
+    session.entries.push(
+      {role: 'user', content: 'hi', timestamp: START.toISOString()},
+      {
+        role: 'assistant',
+        content: 'text the client never saw',
+        timestamp: START.toISOString(),
+        isStreaming: false,
+        suppressed: true,
+      }
+    );
+
+    const [labelled] = store.listFor('u1', {preview: true});
+
+    expect(labelled?.preview).toBe('hi');
+  });
+
+  it('labels nothing for a conversation with no entries, nor for one opening with a model-authored entry', () => {
+    const store = new InMemorySessionStore();
+    store.create('empty', 'u1');
+    const headless = store.create('headless', 'u1');
+    headless.entries.push({
+      role: 'assistant',
+      content: 'unprompted',
+      timestamp: START.toISOString(),
+      isStreaming: false,
+    });
+
+    const labelled = store.listFor('u1', {preview: true});
+
+    expect(labelled.map(row => 'preview' in row)).toEqual([false, false]);
   });
 
   it('keeps a conversation tied on activity rather than dropping it across a page boundary', () => {

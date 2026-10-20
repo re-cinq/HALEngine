@@ -2,10 +2,10 @@
 
 | Field  | Value                 |
 | ------ | --------------------- |
-| Issue  | re-cinq/Otto#102      |
+| Issue  | re-cinq/HALEngine#42  |
 | Status | Implemented           |
 
-`SessionStore` was fully synchronous — `create` returned `T`, `get` returned `T | undefined`, `delete` returned `boolean` — and no store backed by a real database can honour that. The org already had the proof: `the-expert`'s `MongoSessionStore` satisfies the interface out of an in-process `Map` and does every durable operation through three private methods that are not on the interface at all, so what is called a `SessionStore` is really a cache plus a hidden API. Every member is now `Awaitable<T>`, which is `T | Promise<T>` rather than a hard `Promise<T>`, so a synchronous implementation needs no change while a database-backed one becomes expressible for the first time. The only call site that had to change is the WebSocket connection handler, and the care there is about what happens to a socket while the store is still thinking. The known consumer, `the-expert`, types its store as the concrete `MongoSessionStore` class rather than as the interface, so it is unaffected either way.
+`SessionStore` was fully synchronous — `create` returned `T`, `get` returned `T | undefined`, `delete` returned `boolean` — and no store backed by a real database can honour that. The proof already existed in a consumer's own code: a `MongoSessionStore` that satisfies the interface out of an in-process `Map` and does every durable operation through three private methods that are not on the interface at all, so what is called a `SessionStore` is really a cache plus a hidden API. Every member is now `Awaitable<T>`, which is `T | Promise<T>` rather than a hard `Promise<T>`, so a synchronous implementation needs no change while a database-backed one becomes expressible for the first time. The only call site that had to change is the WebSocket connection handler, and the care there is about what happens to a socket while the store is still thinking. That consumer types its store as the concrete `MongoSessionStore` class rather than as the interface, so it is unaffected either way.
 
 ## The widened interface
 
@@ -14,17 +14,17 @@
 ## Waiting without dropping a frame
 
 - The socket is paused before the awaited `create` and resumed only once the `message` listener is attached, so a client that sends its first frame in its `open` handler — before `connected` has arrived — is answered rather than ignored; the `connected` frame still precedes every entry frame ([validated by: delivers a frame sent before the connected frame arrives](../../src/transport/awaitedSessionCreate.test.ts#L33)).
-- The `connected` frame is no longer sent inside the connection listener's own tick, since it now follows an awaited `create`. The hook ordering it anchors is unchanged: `onConnect` still runs after that frame is sent ([validated by: runs after the connected frame is sent, not before it](../../src/transport/ws/connectionHandler.test.ts#L91)).
+- The `connected` frame is no longer sent inside the connection listener's own tick, since it now follows an awaited `create`. The hook ordering it anchors is unchanged: `onConnect` still runs after that frame is sent ([validated by: runs after the connected frame is sent, not before it](../../src/transport/ws/connectionHandler.test.ts#L110)).
 
 ## When the socket loses the race
 
 - A socket that closes while `create` is still pending leaves no session behind: the `close` listener is attached before the await rather than after it, since one attached afterwards would miss the event entirely, so the handler releases the session once the create resolves and sends no `connected` frame to a socket that is already gone ([validated by: leaves no session behind when the socket closes during create](../../src/transport/awaitedSessionCreate.test.ts#L42)).
-- `onDisconnect` is the other half of `onConnect` rather than of the socket: a connection that was never handed a session — because `create` rejected, or because the socket closed before the `connected` frame — fires neither hook ([validated by: stays silent for a connection that was never handed a session](../../src/transport/ws/connectionHandler.test.ts#L266)).
+- `onDisconnect` is the other half of `onConnect` rather than of the socket: a connection that was never handed a session — because `create` rejected, or because the socket closed before the `connected` frame — fires neither hook ([validated by: stays silent for a connection that was never handed a session](../../src/transport/ws/connectionHandler.test.ts#L285)).
 
 ## When the store fails
 
 - **NIS-2 Article 21.** A `create` that rejects closes that one socket with an `error` frame carrying `SERVER_ERROR` and produces no `unhandledRejection`, since an async connection listener that rejects would otherwise end the process and take every other conversation on the server with it; the socket is resumed before it is closed, because `ws.close()` on a paused socket waits for a close frame it can never read and gives up only after the library's own thirty-second timeout ([validated by: answers a rejecting create with SERVER_ERROR rather than an unhandled rejection](../../src/transport/awaitedSessionCreate.test.ts#L56)).
-- **GDPR.** A store call that rejects while releasing a session is caught and logged with the session id, so a cleanup that failed is reported rather than silently recorded as done ([validated by: logs a rejecting evict rather than dropping it](../../src/transport/ws/connectionHandler.test.ts#L242)).
+- **GDPR.** A store call that rejects while releasing a session is caught and logged with the session id, so a cleanup that failed is reported rather than silently recorded as done ([validated by: logs a rejecting evict rather than dropping it](../../src/transport/ws/connectionHandler.test.ts#L261)).
 
 ## Compatibility
 
@@ -33,4 +33,4 @@
 
 ## Out of scope
 
-Resuming a conversation from a session id (re-cinq/Otto#103); removing the engine's `delete` call on socket close, which this issue only makes observable rather than settles (re-cinq/Otto#117); what `delete` should mean once a store is durable; bounding and redacting what a session keeps (re-cinq/Otto#89); and the Mongo-backed store itself (re-cinq/HALEngine#92).
+Resuming a conversation from a session id (re-cinq/HALEngine#45); removing the engine's `delete` call on socket close, which this issue only makes observable rather than settles (re-cinq/HALEngine#44); what `delete` should mean once a store is durable; bounding and redacting what a session keeps (re-cinq/HALEngine#41); and the Mongo-backed store itself (re-cinq/HALEngine#92).

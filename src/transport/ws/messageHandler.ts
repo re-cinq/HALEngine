@@ -5,10 +5,13 @@ import {ErrorCodes} from '../../types/messages.js';
 import type {OutgoingMessage} from '../../types/messages.js';
 import {ThinkingTagParser, ParsedSegment} from '../../infrastructure/parsers/thinkingTagParser.js';
 import {validateMessage} from './validation.js';
-import type {ValidationResult} from './validation.js';
+import {answerConversationList} from './conversationList.js';
+import type {ConversationListDeps} from './conversationList.js';
+import type {ValidationFailure, ValidationResult} from './validation.js';
 import {PerSessionLock} from '../../shared/perSessionLock.js';
 import type {ChatOrchestrator} from '../../orchestration/chatOrchestrator.js';
 import {AIError} from '../../types/ai.js';
+import {clientErrorFor} from '../errorMapping.js';
 import type {MessageChunk} from '../../types/ai.js';
 import {
   createUserEntry,
@@ -24,12 +27,16 @@ interface StreamState {
   thinkingIndex: number | null;
   assistantIndex: number | null;
   suppressOutput: boolean;
-  sentAssistantIndices: number[];
+  // Every model-authored entry the client was sent, thinking or assistant: what suppression must blank.
+  blankableIndices: number[];
 }
 
 type StateIndexKey = 'thinkingIndex' | 'assistantIndex';
-type EntryFactory = typeof createThinkingEntry | typeof createAssistantEntry;
-export function createMessageHandler(orchestrator: ChatOrchestrator) {
+type EntryFactory = () => SessionEntry;
+/** What the handler needs besides the orchestrator: the store a conversation list reads, and whether one is served. */
+export type MessageHandlerDeps = ConversationListDeps;
+
+export function createMessageHandler(orchestrator: ChatOrchestrator, deps?: MessageHandlerDeps) {
   // Keyed by session, not socket: a resumed session can be open on more than one (specs/hal-engine-architecture/spec.md).
   const lock = new PerSessionLock();
   return function handleMessage(
@@ -44,7 +51,7 @@ export function createMessageHandler(orchestrator: ChatOrchestrator) {
       return lock.run(session.sessionId, () => answerInTurn(ws, session, orchestrator, validation, signal));
     }
     // An async action runs up to its first await at once, so a ping is answered now and a throw stays a rejection.
-    return wsErrorHandler(ws, async () => answerFrame(ws, validation));
+    return wsErrorHandler(ws, () => answerFrame(ws, session, validation, deps, signal));
   };
 }
 
@@ -90,18 +97,36 @@ async function answerUserMessage(
 ): Promise<void> {
   const message = validation.valid ? validation.data : undefined;
   if (message?.type === 'user_message') return handleUserMessage(ws, session, orchestrator, message.content, signal);
-  answerFrame(ws, validation);
+  // Only an invalid user_message frame reaches here: a valid frame of any other type never enters the lock.
+  reportInvalid(ws, validation);
 }
 
-function answerFrame(ws: WebSocket, validation: ValidationResult): void {
-  if (!validation.valid) {
-    log.warn('message', 'validation failed', {error: validation.error});
-    sendError(ws, ErrorCodes.INVALID_MESSAGE, validation.error);
-    return;
-  }
+// Reports a frame the validator refused, and says whether it did, so each caller can stop there.
+function reportInvalid(ws: WebSocket, validation: ValidationResult): validation is ValidationFailure {
+  if (validation.valid) return false;
+
+  log.warn('message', 'validation failed', {error: validation.error});
+  sendError(ws, ErrorCodes.INVALID_MESSAGE, validation.error);
+  return true;
+}
+
+// Off the per-session lock: neither frame here is a turn, and a list that queued behind a streaming answer looks broken.
+async function answerFrame(
+  ws: WebSocket,
+  session: ChatSession,
+  validation: ValidationResult,
+  deps: MessageHandlerDeps | undefined,
+  signal: AbortSignal | undefined
+): Promise<void> {
+  if (reportInvalid(ws, validation)) return;
 
   const message = validation.data;
   if (message.type === 'ping') handlePing(ws, message.timestamp);
+  // Abandoned when its socket has closed; otherwise answered even by a handler with no store, since silence is no answer.
+  if (message.type !== 'list_conversations' || signal?.aborted) return;
+
+  // The session's own user, never a user the frame names: the frame has no field for one.
+  await answerConversationList(ws, session, message, deps);
 }
 
 // Read from the raw frame, so a user_message that fails validation still gets its stream_end.
@@ -116,10 +141,12 @@ async function wsErrorHandler(ws: WebSocket, action: () => Promise<void>): Promi
     const message = error instanceof Error ? error.message : 'Unknown error';
     const code = error instanceof AIError ? error.code : 'UNKNOWN';
     log.error('message', 'handling error', {error: message, code});
-    if (error instanceof AIError && error.code === 'RATE_LIMITED') {
-      sendError(ws, ErrorCodes.RATE_LIMITED, 'AI service is busy, please try again');
+    if (error instanceof AIError) {
+      const {code: clientCode, message: sentence} = clientErrorFor(error);
+      sendError(ws, clientCode, sentence);
       return;
     }
+    // Only a throw that is no AIError is the engine's own defect, the one condition a provider never produces.
     sendError(ws, ErrorCodes.SERVER_ERROR, 'Failed to process message');
   }
 }
@@ -142,7 +169,7 @@ async function handleUserMessage(
     thinkingIndex: null,
     assistantIndex: null,
     suppressOutput: false,
-    sentAssistantIndices: [],
+    blankableIndices: [],
   };
 
   let textChunkCount = 0;
@@ -220,7 +247,15 @@ function handleTextSegment(ws: WebSocket, session: ChatSession, state: StreamSta
     return;
   }
   commitAndClear(ws, session, state, 'thinkingIndex');
-  streamSegment(ws, session, state, 'assistantIndex', createAssistantEntry, segment.content);
+  // Stamped at creation: the entry's first upsert is the only frame that carries it whole to the client.
+  streamSegment(
+    ws,
+    session,
+    state,
+    'assistantIndex',
+    () => createAssistantEntry(session.activePersona),
+    segment.content
+  );
 }
 
 function streamSegment(
@@ -262,11 +297,11 @@ function commitAndClear(ws: WebSocket, session: ChatSession, state: StreamState,
   commitEntry(session, index);
   state[key] = null;
 
-  // Only what the client received can be retracted, and only assistant entries.
+  // Only what the client received can be retracted; a thought as much as an answer, since both are the model's words.
   if (state.suppressOutput) return;
 
   sendCommit(ws, index);
-  if (key === 'assistantIndex') state.sentAssistantIndices.push(index);
+  state.blankableIndices.push(index);
 }
 
 function processToolUseChunk(
@@ -276,6 +311,7 @@ function processToolUseChunk(
 ): void {
   const toolEntry = createToolEntry(toolCall.name, toolCall.input);
   const toolIndex = appendEntry(session, toolEntry);
+  // Exempt from suppression by design: no model response, and without it nothing would show before stream_end.
   sendUpsert(ws, toolIndex, toolEntry);
 }
 
@@ -289,18 +325,19 @@ function processToolResultChunk(ws: WebSocket, clientMessages: OutgoingMessage[]
   }
 }
 
-// Retracts what the client saw: every assistant entry sent so far is re-sent blank.
+// Retracts what the client saw: every thinking and assistant entry sent so far is re-sent blank.
 function processSuppressChunk(ws: WebSocket, session: ChatSession, state: StreamState): void {
   // Closed as streamed so far: an open answer is then retracted like a sent one, and what follows opens new entries.
   commitOpenEntries(ws, session, state);
-  log.debug('stream', 'suppression activated', {blankingEntries: state.sentAssistantIndices});
+  // Indices only: the entries' text is what suppression hides, so it never reaches a log line either.
+  log.info('stream', 'suppression activated', {blankingEntries: state.blankableIndices});
 
-  for (const idx of state.sentAssistantIndices) {
+  for (const idx of state.blankableIndices) {
     sendUpsert(ws, idx, {...session.entries[idx], content: ''} as SessionEntry);
     markSuppressed(session, idx);
   }
 
-  state.sentAssistantIndices = [];
+  state.blankableIndices = [];
   state.suppressOutput = true;
 }
 

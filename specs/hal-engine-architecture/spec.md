@@ -75,7 +75,7 @@ hal-engine is designed around pluggable interfaces that let consumers customize 
 
 ### SessionStore
 
-Controls where session data is stored: the default `InMemorySessionStore` keeps sessions in a `Map` ([validated by: creates and retrieves a session](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L10)). Implement this interface to persist sessions in Redis, a database, or any other backing store. The store is generic -- pass your own session type extending `BaseSession`.
+Controls where session data is stored: the default `InMemorySessionStore` keeps sessions in a `Map` ([validated by: creates and retrieves a session](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L13)). Implement this interface to persist sessions in Redis, a database, or any other backing store. The store is generic -- pass your own session type extending `BaseSession`.
 
 <!-- doc-block: src/types/sessionStore.ts#SessionStore -->
 ```typescript
@@ -98,12 +98,20 @@ interface SessionStore<T extends BaseSession = ChatSession> {
 }
 ```
 
-- `create` records the optional `authHeaders` and `workspaceId` on the session it returns, so a tool can later reach upstream services as the caller ([validated by: creates session with options](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L19)).
-- `get` returns `undefined` for a session id the store does not hold, rather than throwing ([validated by: returns undefined for unknown session](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L31)).
-- `delete` removes the session and reports `true` ([validated by: deletes a session](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L35)).
-- `delete` reports `false` for an id the store was not holding ([validated by: returns false when deleting nonexistent session](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L42)).
-- `count` reflects creates and deletes as they happen ([validated by: tracks count correctly](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L46)).
-- `clear` empties the store, leaving `count` at zero and every previous id unresolvable ([validated by: clears all sessions](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L60)).
+- `create` records the optional `authHeaders` and `workspaceId` on the session it returns, so a tool can later reach upstream services as the caller ([validated by: creates session with options](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L29)).
+- `ChatSession.createdAt` is written by the store, not the engine: `InMemorySessionStore.create` stamps it, ISO 8601, at the time of the call ([validated by: stamps createdAt at create as the ISO 8601 time of the call, 2026-10-20T08:00:00.000Z on a clock set to it](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L78)).
+- `MongoSessionStore` sets `createdAt` from the creation time it writes to the document, on the session `create` returns and on one a second store reads back ([validated by: sets createdAt to the document's creation time, 2026-10-20T08:00:00.000Z, on create and on a second store's read](../../src/infrastructure/stores/mongo/mongoCreatedAt.test.ts#L10)).
+- A document that holds no creation time reads back with no `createdAt` key ([validated by: reads a document that holds no createdAt back as a session with no createdAt key](../../src/infrastructure/stores/mongo/mongoCreatedAt.test.ts#L23)).
+- The field is optional, so a session stored before it existed completes a turn unchanged ([validated by: completes a turn unchanged on a session with no createdAt, as one stored before the field existed would be](../../src/orchestration/entryFactories.test.ts#L23)).
+- A consumer may type its own sessions with `createdAt` required and implement `SessionStore` over them ([validated by: lets a consumer type its sessions with createdAt required and implement SessionStore over them](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L87)).
+- `assertScalarUserId`, exported for a consumer's own store, refuses a user id that is not a string or a finite number, naming its kind rather than its contents ([validated by: is refused by assertScalarUserId for an operator object, undefined, null, an array, NaN and Infinity](../../src/infrastructure/stores/scalarUserId.test.ts#L10)).
+- `InMemorySessionStore` refuses such an id in `create`, `listFor` and `latestFor` ([validated by: is refused by InMemorySessionStore create, listFor and latestFor, which hold nothing afterwards](../../src/infrastructure/stores/scalarUserId.test.ts#L33)).
+- `MongoSessionStore` refuses it in the same three methods before any query reaches the collection, so a caller of its own, a maintenance script or an HTTP route, gets the same refusal as the WebSocket path ([validated by: is refused by MongoSessionStore create, listFor and latestFor before any query reaches the collection](../../src/infrastructure/stores/scalarUserId.test.ts#L53)).
+- `get` returns `undefined` for a session id the store does not hold, rather than throwing ([validated by: returns undefined for unknown session](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L41)).
+- `delete` removes the session and reports `true` ([validated by: deletes a session](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L45)).
+- `delete` reports `false` for an id the store was not holding ([validated by: returns false when deleting nonexistent session](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L52)).
+- `count` reflects creates and deletes as they happen ([validated by: tracks count correctly](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L56)).
+- `clear` empties the store, leaving `count` at zero and every previous id unresolvable ([validated by: clears all sessions](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L70)).
 - `save` is the optional write signal the engine calls once per processed user message, detailed in [the session write signal spec](../hal-engine-session-write-signal/spec.md); a store that omits it, as `InMemorySessionStore` does, is unaffected ([validated by: logs nothing for a store that implements no save](../../src/orchestration/sessionSave.test.ts#L67)).
 
 ### WsAuthenticator
@@ -123,7 +131,7 @@ interface AuthenticatedUser {
 }
 ```
 
-The connection handler takes `id` as the session's `userId` and picks up `workspaceId` when the returned user carries one. Separately, and regardless of what this function reads, the engine forwards the first `Sec-WebSocket-Protocol` value that is not the `hal.v1` marker as `Bearer <token>` in the session's `authHeaders.authorization`, so a tool can proxy the caller's credentials upstream. The client offers two values, `hal.v1, <access-token>`, and the server answers only `hal.v1`.
+The connection handler takes `id` as the session's `userId` and picks up `workspaceId` when the returned user carries one. The request it receives has already been checked for a credential conflict: an upgrade whose `Authorization` header and subprotocol carry different credentials is refused with `400` before this function runs, so whichever carrier it reads, the credential it validates is the one the engine forwards in the session's `authHeaders.authorization`, the header or the first `Sec-WebSocket-Protocol` value that is not the `hal.v1` marker as `Bearer <token>`, for a tool to proxy the caller's credentials upstream ([validated by: refuses Bearer attacker-token beside a victim-token subprotocol with 400 before wsAuth runs, and neither value reaches the response or a log line](../../src/transport/handshake.test.ts#L180)). The client offers two values, `hal.v1, <access-token>`, and the server answers only `hal.v1`.
 
 ### AIProvider
 
@@ -137,8 +145,8 @@ interface AIProvider {
 }
 ```
 
-- `sendMessage` streams responses for user-facing output ([validated by: streams word-by-word response echoing user input](../../src/providers/mock/mockProvider.test.ts#L7)).
-- `generateStructured` returns typed JSON for internal AI decisions, such as evaluation, classification and structured extraction ([validated by: returns default values matching schema shape](../../src/providers/mock/mockProvider.test.ts#L72)).
+- `sendMessage` streams responses for user-facing output ([validated by: streams word-by-word response echoing user input](../../src/providers/mock/mockProvider.test.ts#L8)).
+- `generateStructured` returns typed JSON for internal AI decisions, such as evaluation, classification and structured extraction ([validated by: returns default values matching schema shape](../../src/providers/mock/mockProvider.test.ts#L73)).
 
 ### PromptStore
 
@@ -192,7 +200,7 @@ interface PromptBuilderConfig {
 
 ### OrchestratorHooks
 
-Async lifecycle hooks for customizing the orchestration flow. Every hook is optional and receives the current session, and an orchestrator built with none behaves exactly as one built with an empty set ([validated by: works without any hooks configured](../../src/orchestration/chatOrchestrator.test.ts#L447)). Install hooks through `HalEngineConfig.orchestrator.hooks`; `createHalEngine` forwards the set to the orchestrator ([validated by: forwards an orchestrator hook, so one passed through the config actually fires](../../src/config.test.ts#L20)).
+Async lifecycle hooks for customizing the orchestration flow. Every hook is optional and receives the current session, and an orchestrator built with none behaves exactly as one built with an empty set ([validated by: works without any hooks configured](../../src/orchestration/chatOrchestrator.test.ts#L447)). Install hooks through `HalEngineConfig.orchestrator.hooks`; `createHalEngine` forwards the set to the orchestrator ([validated by: forwards an orchestrator hook, so one passed through the config actually fires](../../src/config.test.ts#L25)).
 
 <!-- doc-block: src/orchestration/chatOrchestrator.ts#OrchestratorHooks -->
 ```typescript
@@ -224,6 +232,7 @@ beforeSession → beforeUserInput → afterUserInput → beforeModelResponse →
 - `beforeUserInput` can modify that message by returning a different string ([validated by: modifies user message when returning different value](../../src/orchestration/chatOrchestrator.test.ts#L214)).
 - `afterUserInput` receives the message as `beforeUserInput` left it, not as the client sent it ([validated by: receives user message after any beforeUserInput modification](../../src/orchestration/chatOrchestrator.test.ts#L229)).
 - `beforeModelResponse` can replace the system prompt, for example loading it from a `PromptStore` ([validated by: replaces system prompt with returned value](../../src/orchestration/chatOrchestrator.test.ts#L246)).
+- `beforeModelResponse` can also set `session.activePersona`, and every assistant entry created for that turn carries it, since the hook runs before the first one exists ([validated by: stamps 'p-two' when beforeModelResponse changes the session's activePersona from 'p-one' mid-turn](../../src/transport/ws/assistantPersona.test.ts#L98)).
 - `afterModelResponse` receives the collected response text and the usage the provider reported ([validated by: receives collected response text and usage](../../src/orchestration/chatOrchestrator.test.ts#L261)).
 - `afterModelResponse` does not run when the stream throws, so it never reports a response that was not delivered ([validated by: not called when stream throws](../../src/orchestration/chatOrchestrator.test.ts#L281)).
 - `onError` receives the session and the error ([validated by: called with session and error when stream fails](../../src/orchestration/chatOrchestrator.test.ts#L303)).
@@ -316,7 +325,7 @@ Four frame types, not three.
 | `entry_commit` | an entry is finalised                            | `applyCommit()`                       |
 | `entry_skip`   | an entry exists server-side but is not forwarded | none -- the client advances its index |
 
-`entry_skip` is what a suppressed assistant response produces. The entry stays in the session so the model's next turn sees it, and the client is told to move past that index without rendering anything. The WebSocket protocol spec covers the index arithmetic in its § 8.2.
+`entry_skip` is what a suppressed model response, thinking or assistant, produces. The entry stays in the session so the model's next turn sees it, and the client is told to move past that index without rendering anything. The WebSocket protocol spec covers the index arithmetic in its § 8.2.
 
 The client's `applyUpsert`/`applyDelta`/`applyCommit` return new arrays and never mutate. The server's three do the opposite. That asymmetry is deliberate: the server owns one session object for the life of a connection, while the client re-renders from a fresh array.
 
@@ -359,6 +368,7 @@ Here is what the message handler does when a tool call comes through:
 
 ### Across rounds
 
+- A tool call's `signature`, an opaque token its provider needs back, is copied onto its `tool_use` block for the next round, and a call without one gets no `signature` key ([validated by: puts sig-1 on the signed call's tool_use block and no signature key on the unsigned one](../../src/orchestration/orchestratorHelpers.test.ts#L29)).
 - A call to a tool name the model invented is answered rather than raised, with a result naming it and the registered tools, and the turn goes on ([validated by: answers a call to a tool name the model invented, and the turn goes on to its answer](../../src/orchestration/chatOrchestrator.test.ts#L757)).
 - So is a call whose executor throws: it gets a result saying the call failed, its message reaches only the log, as [tool-executor-throw](../hal-engine-tool-executor-throw/spec.md) specifies, and the turn goes on ([validated by: answers a call whose executor threw, and the turn goes on to its answer with afterModelResponse and no onError](../../src/orchestration/chatOrchestrator.test.ts#L768)).
 - The loop ends as soon as a round stops with `end_turn`, and nothing further is asked of the provider ([validated by: stops after one round when nothing asked for a tool](../../src/orchestration/chatOrchestrator.test.ts#L501)).
@@ -388,7 +398,7 @@ The parser is stateful and handles partial tags at chunk boundaries. For example
 The message handler routes these segments to different entries:
 
 - `thinking` segments go into a `ThinkingEntry` (collapsible in the UI)
-- `text` segments go into an `AssistantEntry` (rendered as markdown)
+- `text` segments go into an `AssistantEntry` (rendered as markdown), stamped with the session's `activePersona` as its `persona` when one is set ([validated by: sends the assistant entry_upsert with persona 'support' when the session's activePersona is support](../../src/transport/ws/assistantPersona.test.ts#L84)).
 
 When a thinking block closes, the handler commits the `ThinkingEntry` before starting (or continuing) the `AssistantEntry`.
 
@@ -432,16 +442,34 @@ When a connection drops, the frontend reconnects automatically:
 `createApp` exposes two callbacks that let a consumer mount routes alongside the engine's own routes without hand-building an Express application.
 
 - `HalAppOptions.rootRoutes?: (router: Router) => void` — a callback invoked with a fresh `Router` and mounted at the root of the app, after the `basePath` router and before the catch-all `404`, so a handler registered there can serve `GET /` while `GET {basePath}/health` still answers. ([validated by: mounts a rootRoutes handler at / before the catch-all 404](../../src/transport/createApp.test.ts#L128))
-- A `rootRoutes` route at a path that also appears under the `basePath` prefix answers independently: `GET /health` goes to the root handler and `GET {basePath}/health` goes to the engine's health route. ([validated by: lets rootRoutes at /health and the basePath health answer independently](../../src/transport/createApp.test.ts#L143))
-- `HalEngineConfig.transport.additionalRoutes` is forwarded to `createApp`, so a route registered there mounts under `basePath` in the server the engine builds, and not at the root. ([validated by: forwards transport.additionalRoutes to createApp so the route mounts under basePath](../../src/config.test.ts#L210))
-- Neither `additionalRoutes` nor `rootRoutes` is covered by `auth.http`; both receive requests before any authentication middleware the engine installs, so a consumer applies its own middleware inside the callback. ([validated by: leaves additionalRoutes and rootRoutes open while auth.http still guards the chat routes](../../src/config.test.ts#L229))
-- Both callbacks inherit the CORS, JSON body-parsing, and cookie-parsing middleware that `createApp` mounts unconditionally. ([validated by: gives additionalRoutes and rootRoutes the parsed JSON body, the cookies and the CORS headers](../../src/config.test.ts#L254))
-- A `transport.errorHandler` receives what a route throws, whether synchronously or as a rejected promise, and the response it writes is the one the client gets, instead of Express's default HTML page. ([validated by: hands transport.errorHandler a route's synchronous throw and its rejected promise, and answers with its response](../../src/config.test.ts#L277))
-- `engine.app` cannot be extended after `createHalEngine` returns: `createApp` registers a terminal `404` catch-all before returning, and Express matches routes in registration order, so a route added afterwards always returns `404`. ([validated by: answers 404 for a route added to engine.app after createHalEngine returns](../../src/config.test.ts#L298))
+- A `rootRoutes` route at a path that also appears under the `basePath` prefix answers independently: `GET /health` goes to the root handler and `GET {basePath}/health` goes to the engine's health route. ([validated by: lets rootRoutes at /health and the basePath health answer independently](../../src/transport/createApp.test.ts#L149))
+- `HalEngineConfig.transport.additionalRoutes` is forwarded to `createApp`, so a route registered there mounts under `basePath` in the server the engine builds, and not at the root. ([validated by: forwards transport.additionalRoutes to createApp so the route mounts under basePath](../../src/config.test.ts#L215))
+- Neither `additionalRoutes` nor `rootRoutes` is covered by `auth.http`; both receive requests before any authentication middleware the engine installs, so a consumer applies its own middleware inside the callback. ([validated by: leaves additionalRoutes and rootRoutes open while auth.http still guards the chat routes](../../src/config.test.ts#L234))
+- Both callbacks inherit the CORS, JSON body-parsing, and cookie-parsing middleware that `createApp` mounts unconditionally. ([validated by: gives additionalRoutes and rootRoutes the parsed JSON body, the cookies and the CORS headers](../../src/config.test.ts#L259))
+- A `transport.errorHandler` receives what a route throws, whether synchronously or as a rejected promise, and the response it writes is the one the client gets, instead of Express's default HTML page. ([validated by: hands transport.errorHandler a route's synchronous throw and its rejected promise, and answers with its response](../../src/config.test.ts#L282))
+- `engine.app` cannot be extended after `createHalEngine` returns: `createApp` registers a terminal `404` catch-all before returning, and Express matches routes in registration order, so a route added afterwards always returns `404`. ([validated by: answers 404 for a route added to engine.app after createHalEngine returns](../../src/config.test.ts#L303))
 
-The default error behaviour: with no `errorHandler` supplied and `NODE_ENV` unset or not `production`, an unhandled error in any route returns `500 text/html` containing the stack trace (`finalhandler` default). Supply `errorHandler` or set `NODE_ENV=production` to avoid leaking stack content.
+**The default error handler.** `createApp` always registers one last, after any `errorHandler` a consumer supplies, so nothing a route throws reaches Express's HTML page, and no response body carries an error's message or stack ([validated by: answers a truncated JSON body to POST /hal/chats with 400 {"error":"Bad Request"} as JSON, with no HTML or stack](../../src/transport/httpErrorHandler.test.ts#L48), [validated by: answers a synchronous throw and a rejected promise of boom-secret-42 with 500 {"error":"Internal Server Error"}, keeping the message out of the response](../../src/transport/httpErrorHandler.test.ts#L62)). It answers by the first row that applies:
 
-**GDPR.** Anything a forwarded route logs or returns is outside every control the engine applies to conversation content. The default HTML error page can leak request content into a response body and into `stderr`; the one-line mitigation is `NODE_ENV=production` or supplying `errorHandler`.
+| The error                                                            | Status      | Body `error`                                      |
+| -------------------------------------------------------------------- | ----------- | ------------------------------------------------- |
+| carries `status` or `statusCode` in 400–599 with a standard phrase   | that status | Node's phrase from `http.STATUS_CODES`, e.g. `Not Found` |
+| an `AIError` coded `RATE_LIMITED`                                    | 429         | `AI service is busy, please try again`            |
+| an `AIError` coded `SERVICE_UNAVAILABLE`                             | 503         | `AI service temporarily unavailable`              |
+| an `AIError` coded `TIMEOUT`                                         | 504         | `AI service timed out`                            |
+| an `AIError` with any other code                                     | 502         | `AI service temporarily unavailable`              |
+| anything else                                                        | 500         | `Internal Server Error`                           |
+
+- The four `AIError` rows are read from `src/transport/errorMapping.ts`, the one table the WebSocket error frame also reads, so a status here and a `code` there never disagree ([validated by: is the only non-test file under src/transport that maps a provider error code, rateLimit.ts aside](../../src/transport/errorMapping.test.ts#L67)).
+- An explicit status wins over the `AIError` code, and one outside 400–599 or without a standard phrase, such as 302, 700 or 499, answers 500 ([validated by: honours status 404 and statusCode 403 with their standard phrases, and answers status 302, 700 and 499 with 500](../../src/transport/httpErrorHandler.test.ts#L100), [validated by: answers AIError codes RATE_LIMITED 429, SERVICE_UNAVAILABLE 503, TIMEOUT 504 and every other code 502, each with its fixed sentence](../../src/transport/httpErrorHandler.test.ts#L76)).
+- The demo chat routes keep no mapping of their own: an orchestrator failure on `POST {basePath}/chats/:id/messages` reaches the default handler, so a `PROVIDER_ERROR` still answers 502 ([validated by: answers POST /hal/chats/:id/messages with 502 {"error":"AI service temporarily unavailable"} when the orchestrator rejects with a PROVIDER_ERROR](../../src/transport/httpErrorHandler.test.ts#L197)).
+- A consumer's `errorHandler` runs first, and a response it writes stands, with nothing from the default; one that calls `next(err)` or throws lands on the default and answers 500, leaking neither error ([validated by: leaves the response to a consumer errorHandler that answers 418, logging nothing of its own](../../src/transport/httpErrorHandler.test.ts#L117), [validated by: answers 500 {"error":"Internal Server Error"} when a consumer errorHandler passes the error on with next(err) or throws its own, leaking neither error](../../src/transport/httpErrorHandler.test.ts#L129)).
+- Once a route has written any of its response, the default writes nothing more and hands the error to Express, which destroys the socket, so the client keeps exactly the bytes already sent ([validated by: adds nothing to a response a route already began with partial before throwing, and logs the error once](../../src/transport/httpErrorHandler.test.ts#L147), [validated by: hands an error raised after the headers were sent to next and writes nothing more](../../src/transport/httpErrorHandler.test.ts#L213)).
+- Every error it handles is logged once at `error` level through `log` as `{method, path, status, code, message, stack}`. `path` is `req.path`, so a query string never reaches the line ([validated by: logs method, path, status, code, message and stack, and keeps the query string token=abc123 out of every field](../../src/transport/httpErrorHandler.test.ts#L179)).
+
+**GDPR.** No error response body carries an error's message or stack: both go only to the `error` log line, through `log` to stderr. A provider's message can echo request content, because an unmapped Bedrock error (`bedrockErrorMap.ts`) and every Vertex error (`mapVertexError`) carry the vendor SDK's own message. That log line, like anything a forwarded route logs or returns, is outside every control the engine applies to conversation content.
+
+**NIS-2 (Art. 21), operational resilience.** 429, 503 and 504 are the statuses a provider condition produces, 502 is the vendor failing otherwise, and 500 is never a provider condition. A consumer's failover path can therefore tell a vendor outage from a defect in its own routes by status alone, without parsing a body.
 
 **NIS-2 (Art. 21), access controls.** A route added through either option is unauthenticated by default. The consumer applies its own middleware inside the callback.
 
@@ -449,12 +477,12 @@ The default error behaviour: with no `errorHandler` supplied and `NODE_ENV` unse
 
 `createHalEngine` assembles every layer of the engine from the supplied configuration and exposes the result through a single object.
 
-- `orchestrator.hooks` passed in the configuration are forwarded to the orchestrator, so a hook fires during the message lifecycle exactly as if it had been passed to `createChatOrchestrator` directly. ([validated by: forwards an orchestrator hook, so one passed through the config actually fires](../../src/config.test.ts#L20))
-- `transport.port` is forwarded to the HTTP server: the server listens on the port the configuration declares. ([validated by: forwards transport.port, so the server listens where the config said](../../src/config.test.ts#L37))
-- An explicit port argument passed to `engine.start(port)` wins over `transport.port`, so the caller can override the configured port at runtime without changing the configuration. ([validated by: lets an explicit start(port) win over the configured one](../../src/config.test.ts#L48))
-- When a `logger` is supplied in the configuration, the engine routes its own log lines through it, so the caller receives the same lines they would otherwise see on `stdout`. ([validated by: delivers the package's own log lines to a supplied logger](../../src/config.test.ts#L66))
-- When no `logger` is named in the configuration, the engine leaves any already-installed logger in place, so a caller that set a logger before calling `createHalEngine` keeps their choice. ([validated by: leaves an already-supplied logger in place when the config names none](../../src/config.test.ts#L79))
-- When `start()` cannot bind the port (for example because another process holds it), it rejects the returned promise rather than emitting an unhandled `error` event, so the caller can handle the failure in a `catch` block. ([validated by: rejects instead of taking the process down with an unhandled error event](../../src/config.test.ts#L196))
+- `orchestrator.hooks` passed in the configuration are forwarded to the orchestrator, so a hook fires during the message lifecycle exactly as if it had been passed to `createChatOrchestrator` directly. ([validated by: forwards an orchestrator hook, so one passed through the config actually fires](../../src/config.test.ts#L25))
+- `transport.port` is forwarded to the HTTP server: the server listens on the port the configuration declares. ([validated by: forwards transport.port, so the server listens where the config said](../../src/config.test.ts#L42))
+- An explicit port argument passed to `engine.start(port)` wins over `transport.port`, so the caller can override the configured port at runtime without changing the configuration. ([validated by: lets an explicit start(port) win over the configured one](../../src/config.test.ts#L53))
+- When a `logger` is supplied in the configuration, the engine routes its own log lines through it, so the caller receives the same lines they would otherwise see on `stdout`. ([validated by: delivers the package's own log lines to a supplied logger](../../src/config.test.ts#L71))
+- When no `logger` is named in the configuration, the engine leaves any already-installed logger in place, so a caller that set a logger before calling `createHalEngine` keeps their choice. ([validated by: leaves an already-supplied logger in place when the config names none](../../src/config.test.ts#L84))
+- When `start()` cannot bind the port (for example because another process holds it), it rejects the returned promise rather than emitting an unhandled `error` event, so the caller can handle the failure in a `catch` block. ([validated by: rejects instead of taking the process down with an unhandled error event](../../src/config.test.ts#L201))
 
 ## Provider resilience
 
@@ -473,14 +501,40 @@ An `AIProvider` can fail transiently — a rate-limited vendor, a request that i
 - `idleChunkTimeoutMs` bounds a stalled stream once output has begun: it surfaces as an `AIError` with code `TIMEOUT` and is not retried, because output has already reached the caller, and the abandoned attempt's signal is aborted and its iterator’s `return()` called so the generator is released ([validated by: throws a TIMEOUT AIError, aborts and returns the stalled attempt, and does not retry when the stream stalls after its first chunk](../../src/providers/withRetry.test.ts#L220)).
 - Backoff is exponential with full jitter capped at `maxDelayMs`: the wait before attempt two falls within `[0, baseDelayMs]` and before attempt three within `[0, 2 × baseDelayMs]` ([validated by: backs off with full jitter, bounding attempt two to baseDelay and attempt three to twice it](../../src/providers/withRetry.test.ts#L275)).
 - `generateStructured` is wrapped by the same attempt-and-backoff loop; it returns a `Promise` rather than a stream, so the first-chunk rule does not apply and a retry there is unconditionally safe ([validated by: retries generateStructured under the same attempt-and-backoff loop](../../src/providers/withRetry.test.ts#L321)).
-- An engine configured with no `resilience` block processes a message exactly as it does today, so the field is optional in fact and not only in the type ([validated by: processes a message unchanged when the config declares no resilience block](../../src/config.test.ts#L116)).
-- An engine configured with a `resilience` block answers the same message with the same reply, so wrapping the provider is invisible to a turn that does not fail ([validated by: processes a message to the same reply when the config declares a resilience block](../../src/config.test.ts#L122)).
+- An engine configured with no `resilience` block processes a message exactly as it does today, so the field is optional in fact and not only in the type ([validated by: processes a message unchanged when the config declares no resilience block](../../src/config.test.ts#L121)).
+- An engine configured with a `resilience` block answers the same message with the same reply, so wrapping the provider is invisible to a turn that does not fail ([validated by: processes a message to the same reply when the config declares a resilience block](../../src/config.test.ts#L127)).
 
-Each retry re-sends the entire conversation — every message verbatim — to the model vendor again, so `maxAttempts` multiplies the volume of personal data crossing any jurisdictional boundary the deployment sits across. Aborting an abandoned attempt stops the vendor sending on Bedrock but not on Vertex, where the abandoned request still runs to completion beside its retry (specs/hal-engine-providers/spec.md § Cancellation). The decorator logs the attempt number, the `AIError.code` and the delay only; it never logs message content, the system prompt, tool arguments, or any auth header field, consistent with the engine redacting nothing elsewhere.
+Each retry re-sends the entire conversation — every message verbatim — to the model vendor again, so `maxAttempts` multiplies the volume of personal data crossing any jurisdictional boundary the deployment sits across. Aborting an abandoned attempt closes the request on both shipped providers, Vertex since 0.8.0, though Vertex may still finish generating what it was asked (specs/hal-engine-providers/spec.md § Cancellation). The decorator logs the attempt number, the `AIError.code` and the delay only; it never logs message content, the system prompt, tool arguments, or any auth header field, consistent with the engine redacting nothing elsewhere.
+
+### Fail-over (tier two)
+
+`withFallback(primary, fallbacks, policy?)` tries a second vendor when the first is down. `HalEngineConfig.fallbackProviders` is a sibling of `resilience`, not a member of it, and `createHalEngine` composes the two as `withFallback(withRetry(primary), [withRetry(fallback), ...])`: each provider carries its own retry, and the fallback decorator sees only the exhausted result. Both are re-exported from `src/index.ts` with `FallbackPolicy`.
+
+- With no `fallbackProviders` and no `resilience`, the provider the orchestrator receives is the identical reference `createProvider` returned, with no wrapper in the path ([validated by: is the identical reference createProvider returned when neither fallbackProviders nor resilience is set](../../src/config.test.ts#L368)).
+- Every fallback is built at construction, like the primary, so a misconfigured one fails at startup and not during an outage; retry is innermost per provider, so a primary down for every attempt is retried to exhaustion before the fallback answers ([validated by: retries each provider innermost, then fails over: a primary down for every attempt answers from the fallback](../../src/config.test.ts#L374)).
+- A primary that fails before its first chunk hands the turn to the next provider, and the caller receives exactly that provider's chunks ([validated by: streams exactly the secondary's chunks when the primary throws SERVICE_UNAVAILABLE before its first chunk](../../src/providers/withFallback.test.ts#L50)).
+- Once a chunk has reached the caller the turn belongs to that vendor: a later failure propagates, since an answer half-streamed by one model cannot be restarted by another ([validated by: does not fail over once a chunk has reached the caller: the chunk, then the throw, and the secondary uncalled](../../src/providers/withFallback.test.ts#L65)).
+- **NIS-2 (Art. 21), operational resilience.** What routes to a fallback is predictable from the `AIError` alone: `SERVICE_UNAVAILABLE`, `TIMEOUT`, `RATE_LIMITED`, the codes a provider mints for a fault it cannot classify (`BEDROCK_ERROR`, `PROVIDER_ERROR`, `UNKNOWN_ERROR`) and any `AIError` marked retryable, which the retry tier has already spent against that vendor ([validated by: fails over on BEDROCK_ERROR, PROVIDER_ERROR, UNKNOWN_ERROR, RATE_LIMITED, TIMEOUT and any retryable AIError](../../src/providers/withFallback.test.ts#L104)).
+- `AUTH_ERROR`, `ACCESS_DENIED` and `VALIDATION_ERROR` are configuration faults and propagate from the provider that raised them, since a second vendor would fail the same request the same way with the conversation sent twice ([validated by: propagates AUTH_ERROR, ACCESS_DENIED and VALIDATION_ERROR from the primary with the secondary uncalled](../../src/providers/withFallback.test.ts#L87)).
+- A throw that is no `AIError` is an engine or consumer defect, not an outage, and propagates unchanged ([validated by: propagates a plain Error boom unchanged with the secondary uncalled](../../src/providers/withFallback.test.ts#L132)).
+- Each provider is tried once, in order, and when every one fails the caller receives the last provider's own `AIError`, so the error-code table maps it and no new code is minted ([validated by: calls each of three providers failing on TIMEOUT once, in order, and throws the third's AIError instance](../../src/providers/withFallback.test.ts#L146)).
+- Every provider receives the same `SendMessageParams` object: the same messages, system prompt, tools and signal ([validated by: hands the secondary the primary's own SendMessageParams: the same messages, system prompt, tools and signal](../../src/providers/withFallback.test.ts#L168)).
+- `generateStructured` fails over under the same code rules; it returns a `Promise`, so no first-chunk rule applies ([validated by: fails over generateStructured under the same rules: SERVICE_UNAVAILABLE routes on, AUTH_ERROR propagates](../../src/providers/withFallback.test.ts#L184)).
+- A caller's abort during one provider's attempt ends the turn quietly and never starts the next provider ([validated by: ends quietly without starting the secondary when the caller aborts during the primary's attempt](../../src/providers/withFallback.test.ts#L203)).
+- Each failover logs one `warn` under `provider`, with the failing provider's label, such as its config `type`, the `AIError.code` and its position in the chain, and never message content, the system prompt, a tool argument or an auth header field ([validated by: logs each failover once under provider with the failing provider's label, code and position, and no content](../../src/providers/withFallback.test.ts#L222)).
+- A sustained Vertex `503`, retried to exhaustion, reaches the fallback: the Vertex classifier maps it to a retryable `SERVICE_UNAVAILABLE`, so the retry tier retries it and the fallback tier routes it ([validated by: routes a sustained Vertex 503, retried to exhaustion, to the fallback provider, whose answer the caller receives](../../src/vertexToolLoop.test.ts#L112)).
+
+**GDPR, transfer volume.** A failover re-sends the entire conversation, every message verbatim, to a *second* vendor. A deployer configuring `fallbackProviders` has a second processor to account for, possibly in a different jurisdiction from the first, and the conversation is sent in full to each vendor tried.
+
+Fail-over is stateless and per request. It keeps no memory of a vendor being down, so every turn tries the primary first; a circuit breaker that skips a known-down vendor is a different feature with its own state.
 
 ### Decision
 
-Retry is tier one of the resilience path: transient provider blips are absorbed here, before a sustained outage is handed to _Fail over to a second provider when one is sustainedly unavailable_, which owns the failover decision once this tier has given up. Widening what a provider classifies as retryable (the Vertex classifier matches only `429` / `RESOURCE_EXHAUSTED`, so a `503` is not retried under this policy) is provider behaviour with its own scope and belongs with that failover work, not here. Cancelling the underlying HTTP request of an abandoned attempt is out of scope and tracked as _Carry a cancellation signal into the provider SDK_: `return()` releases the generator but cannot abort the in-flight request today.
+Retry is tier one of the resilience path, absorbing transient blips against one vendor; fail-over is tier two, routing a sustained outage to the next vendor once tier one has given up. A consumer may configure either independently: `resilience` alone retries one vendor, and `fallbackProviders` alone fails over on the first outage without retrying. The Vertex classifier maps `503` and `UNAVAILABLE` to a retryable `SERVICE_UNAVAILABLE`, and `504`, `DEADLINE_EXCEEDED` and a fetch timeout to a retryable `TIMEOUT`, so both tiers act on a Vertex outage. The prompt mask composes outside both, so one binding covers every vendor an attempt reaches ([prompt mask](../hal-engine-prompt-mask/spec.md)).
+
+## Prompt masking
+
+`HalEngineConfig.privacy.mask` wraps the composed provider in `withMask`, the outermost layer, so the model vendor sees the consumer's tokens and everything downstream of the provider, the tool executors, the hooks, the stored session and the wire, sees real values ([prompt mask](../hal-engine-prompt-mask/spec.md)). `generateStructured` is unmasked. Its limits are honest ones: the mask cannot recognise what its detector does not describe, free-text user input is a residual exposure, a token the model does not echo verbatim reaches the user as a token, and per-call binding means neither the vendor nor the deployer can correlate tokens across turns.
 
 ## Source Files
 

@@ -75,8 +75,10 @@ export class ToolRegistry {
     return compiled;
   }
 
+  /** Registers a tool under the name it resolves to now; @throws Error('Duplicate tool name: <name>') when that name is taken, leaving the first tool as it was. */
   register(definition: ToolDefinitionSource, execute: ToolExecutor): void {
     const resolved = this.resolveDefinition(definition);
+    if (this.tools.has(resolved.name)) throw new Error(`Duplicate tool name: ${resolved.name}`);
     if (typeof definition !== 'function') {
       this.staticValidators.set(resolved.name, this.compileSchema(resolved.inputSchema, resolved.name));
     }

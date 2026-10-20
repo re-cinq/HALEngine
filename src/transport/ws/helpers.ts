@@ -13,7 +13,8 @@ function targetOf(url: string): URL | undefined {
   }
 }
 
-const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+// Exported so a cursor's session id is held to the same shape the upgrade reads one in.
+export const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
 // The `sessionId` query parameter, never a path segment; anything outside the id charset reads as none.
 export function sessionIdFromUpgrade(url: string, basePath: string): string | undefined {

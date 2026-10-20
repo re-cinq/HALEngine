@@ -170,6 +170,8 @@ toolRegistry.register(weatherTool, executeWeather);
 
 That is it. The `ToolRegistry` feeds all registered tool definitions to the chat orchestrator, which passes them to the AI provider. When the model invokes the tool, the registry looks up the executor by name and runs it.
 
+A tool's `name` is its key in the registry, so names must be unique. Registering a second tool under a name already registered throws `Duplicate tool name: <name>` and leaves the first tool registered, so a copy-pasted name fails at startup instead of silently hiding a tool. Give each tool its own name.
+
 ## What happens automatically
 
 Once a tool is registered, the following work without any additional code:

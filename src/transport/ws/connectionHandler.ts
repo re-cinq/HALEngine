@@ -6,10 +6,10 @@ import type {WsAuthenticator} from '../../types/auth.js';
 import type {SessionStore} from '../../types/sessionStore.js';
 import type {ConnectedMessage} from '../../types/messages.js';
 import type {AuthenticatedUser, ChatSession} from '../../types/session.js';
-import {ErrorCodes} from '../../types/session.js';
+import {ErrorCodes, isScalarUserId, userIdKind} from '../../types/session.js';
 import {sendError} from './sender.js';
 import {isValidWsPath, rejectSocket, parseWsData, sessionIdFromUpgrade, newSessionRequested} from './helpers.js';
-import {credentialFromSubprotocol} from './subprotocol.js';
+import {presentedCredential} from './credential.js';
 import {replayEntries, resumableSession, resumeFields} from './sessionResume.js';
 import type {ConnectInfo, SessionResumeOptions} from './sessionResume.js';
 import {log} from '../../shared/logger.js';
@@ -44,6 +44,9 @@ export interface ConnectionHandlerDeps {
   resume?: SessionResumeOptions;
 }
 export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandlerDeps) {
+  // Once per engine, not per upgrade: a client naming an id it cannot use must not let anyone flood the log.
+  let reportedIgnoredId = false;
+
   return function handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
     // Nothing may throw out of this listener: the `upgrade` event has no catch above it, so a throw ends the process.
     if (!request.headers.host || !isValidWsPath(request.url || '', deps.basePath)) {
@@ -51,9 +54,28 @@ export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandl
       return;
     }
 
+    // Before wsAuth: two different credentials would let one be authenticated and the other forwarded to every tool.
+    const credential = presentedCredential(request);
+    if (!credential.ok) {
+      // Neither value: either may be somebody's live token.
+      log.warn('ws', 'upgrade refused: the Authorization header and the subprotocol carry different credentials');
+      rejectSocket(socket, '400 Bad Request');
+      return;
+    }
+    const authorization = credential.value;
+
+    // Set as the upgrade callback's first statement: past it the socket speaks WebSocket, and an HTTP reply would corrupt it.
+    let upgraded: ExtWebSocket | undefined;
+
     authenticate(deps.wsAuth, request)
       .then(user => {
         if (!user) {
+          rejectSocket(socket, '401 Unauthorized');
+          return;
+        }
+        // The id is the only thing separating one user's conversations from another's in every store query.
+        if (!isScalarUserId(user.id)) {
+          log.error('ws', 'authenticator returned a user id the engine cannot use', {idKind: userIdKind(user.id)});
           rejectSocket(socket, '401 Unauthorized');
           return;
         }
@@ -67,23 +89,30 @@ export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandl
         }
 
         wss.handleUpgrade(request, socket, head, ws => {
-          const extWs = ws as ExtWebSocket;
+          upgraded = ws as ExtWebSocket;
+          const extWs = upgraded;
           extWs.userId = user.id;
           extWs.workspaceId = user['workspaceId'] as string | number | undefined;
           extWs.authHeaders = {
             cookie: request.headers.cookie,
-            authorization: request.headers.authorization || bearerFromWebSocketProtocol(request),
+            authorization,
             host: (request.headers['x-forwarded-host'] as string | undefined) ?? request.headers.host,
           };
           extWs.isAlive = true;
+          const named = sessionIdFromUpgrade(request.url || '', deps.basePath);
           if (deps.resume?.enabled) {
-            extWs.requestedSessionId = sessionIdFromUpgrade(request.url || '', deps.basePath);
+            extWs.requestedSessionId = named;
             extWs.startNewSession = newSessionRequested(request.url || '', deps.basePath);
+          }
+          if (!deps.resume?.enabled && named !== undefined && !reportedIgnoredId) {
+            reportedIgnoredId = true;
+            log.warn('ws', 'a client named a session id but resume is off, so it was ignored');
           }
           wss.emit('connection', extWs, request);
         });
       })
       .catch((error: unknown) => {
+        if (upgraded) return closeAfterUpgrade(upgraded, error);
         // The type alone: an authenticator's message can carry the credential it was checking.
         log.error('ws', 'authenticator failed', {errorType: error instanceof Error ? error.name : typeof error});
         rejectSocket(socket, '500 Internal Server Error');
@@ -91,20 +120,33 @@ export function createUpgradeHandler(wss: WebSocketServer, deps: ConnectionHandl
   };
 }
 
+// RFC 6455 § 7.4.1: 1011 is the server's own unexpected condition; close is a no-op on a socket the client already closed.
+function closeAfterUpgrade(ws: ExtWebSocket, error: unknown): void {
+  log.error('ws', 'connection failed after the handshake', {error: messageOf(error)});
+  // Resumed before closing: a paused socket never reads the close frame it would be waiting for.
+  ws.resume();
+  ws.close(1011, 'Internal server error');
+}
+
 // Async, so a synchronous throw becomes a rejection (answered 500) and a user returned without a promise still resolves.
 async function authenticate(wsAuth: WsAuthenticator, request: IncomingMessage): Promise<AuthenticatedUser | null> {
   return wsAuth(request);
 }
 
-function bearerFromWebSocketProtocol(req: IncomingMessage): string | undefined {
-  const token = credentialFromSubprotocol(req.headers['sec-websocket-protocol']);
-  return token ? `Bearer ${token}` : undefined;
+/** The connect frame's text when the deployer sets none, kept so a consumer that configures nothing gets today's frame. */
+export const DEFAULT_CONNECT_MESSAGE = 'Connected to HAL Engine';
+
+/** What every new socket's connected frame carries besides its session id. */
+export interface ConnectionOptions {
+  examplePrompts: string[];
+  /** The frame's `message`; a deployer serving EU users may carry the AI Act Art. 50(1) disclosure here, and a per-session resolver could later take this field's place. */
+  connectMessage?: string;
 }
 
-export function createConnectionHandler(deps: ConnectionHandlerDeps, examplePrompts: string[]) {
+export function createConnectionHandler(deps: ConnectionHandlerDeps, options: ConnectionOptions) {
   return function handleConnection(ws: ExtWebSocket): void {
     // The listener stays synchronous: an async one rejects into the emitter, and node ends the process on that.
-    openSession(deps, examplePrompts, ws).catch((error: unknown) => {
+    openSession(deps, options, ws).catch((error: unknown) => {
       log.error('ws', 'connection setup failed', {error: messageOf(error)});
       // Resumed before closing: a paused socket never reads the close frame it would be waiting for.
       ws.resume();
@@ -116,7 +158,7 @@ export function createConnectionHandler(deps: ConnectionHandlerDeps, exampleProm
 // The sockets open on each session, oldest first: a resumed session can be open on more than one at once.
 const openSockets = new WeakMap<ChatSession, ExtWebSocket[]>();
 
-async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[], ws: ExtWebSocket): Promise<void> {
+async function openSession(deps: ConnectionHandlerDeps, options: ConnectionOptions, ws: ExtWebSocket): Promise<void> {
   // A requested id is never adopted for a new session: that would be session fixation.
   let sessionId = uuidv4();
   const state = {closed: false, settled: false, notified: false, delivered: false};
@@ -176,8 +218,8 @@ async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[]
   const connected: ConnectedMessage = {
     type: 'connected',
     sessionId,
-    message: 'Connected to HAL Engine',
-    examplePrompts,
+    message: options.connectMessage ?? DEFAULT_CONNECT_MESSAGE,
+    examplePrompts: options.examplePrompts,
     ...resumeFields(deps.resume, outcome),
   };
   // A socket that died between the check above and this frame must not leave the session it was created for behind.

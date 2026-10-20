@@ -20,6 +20,7 @@ const DOCS = [
   'docs/getting-started.md',
   'docs/adding-a-tool.md',
   'docs/adding-a-message-type.md',
+  'docs/implementing-a-provider.md',
   'docs/coding-practices.md',
   'specs/hal-engine-architecture/spec.md',
   'specs/hal-engine-providers/spec.md',

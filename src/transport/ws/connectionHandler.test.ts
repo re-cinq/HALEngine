@@ -1,39 +1,28 @@
 import {jest} from '@jest/globals';
 import {
   createConnectionHandler,
-  createUpgradeHandler,
+  DEFAULT_CONNECT_MESSAGE,
   type ConnectionHandlerDeps,
   type ExtWebSocket,
 } from './connectionHandler.js';
-import type {IncomingMessage} from 'http';
-import type {Duplex} from 'stream';
-import type {WebSocketServer} from 'ws';
-import type {ChatSession, AuthenticatedUser} from '../../types/session.js';
+import type {ChatSession} from '../../types/session.js';
 import type {SessionStore} from '../../types/sessionStore.js';
 import type {WsAuthenticator} from '../../types/auth.js';
 import {captureErrors} from '../../shared/logCaptureTestSupport.js';
+import {recordingSocket} from './recordingSocketTestSupport.js';
 
 // Pins the lifecycle hooks: that onConnect is called at all, when, and that neither hook can kill a connection.
 
 // Drains the microtask queue the hook is deferred onto.
 const settle = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 
-type HarnessOptions = Partial<Pick<ConnectionHandlerDeps, 'onConnect' | 'onDisconnect' | 'sessionStore'>>;
+type HarnessOptions = Partial<Pick<ConnectionHandlerDeps, 'onConnect' | 'onDisconnect' | 'sessionStore'>> & {
+  connectMessage?: string;
+};
 
-const harness = (options: HarnessOptions = {}) => {
-  const sent: string[] = [];
-  const listeners = new Map<string, (arg?: unknown) => void>();
-
-  const ws = {
-    userId: 'u1',
-    isAlive: true,
-    send: (raw: string) => sent.push(raw),
-    on: (event: string, fn: (arg?: unknown) => void) => listeners.set(event, fn),
-    // The handler pauses the socket across an awaited create and resumes once its listeners are attached.
-    pause: () => undefined,
-    resume: () => undefined,
-    close: () => undefined,
-  } as unknown as ExtWebSocket;
+const harness = ({connectMessage, ...options}: HarnessOptions = {}) => {
+  const socket = recordingSocket({userId: 'u1', isAlive: true});
+  const ws = socket.ws as ExtWebSocket;
 
   const deleted: string[] = [];
   const sessionStore = {
@@ -49,19 +38,50 @@ const harness = (options: HarnessOptions = {}) => {
     ...options,
   } as unknown as ConnectionHandlerDeps;
 
-  const connect = () => createConnectionHandler(deps, [])(ws);
+  const connect = () => createConnectionHandler(deps, {examplePrompts: [], connectMessage})(ws);
 
   return {
     connect,
-    sent,
+    sent: socket.sent,
     deleted,
     handleMessage: deps.handleMessage as jest.Mock,
-    close: () => listeners.get('close')?.(),
-    receive: (frame: string) => listeners.get('message')?.(frame),
+    close: socket.close,
+    receive: socket.receive,
   };
 };
 
 describe('the websocket connection handler', () => {
+  describe('the connected frame', () => {
+    it('sends DEFAULT_CONNECT_MESSAGE in a frame byte-identical to the release before when no connectMessage is set', async () => {
+      const {connect, sent, close} = harness();
+
+      connect();
+      await settle();
+      close();
+      await settle();
+
+      const expected = new RegExp(
+        `^\\{"type":"connected","sessionId":"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}","message":"${DEFAULT_CONNECT_MESSAGE}","examplePrompts":\\[\\]\\}$`
+      );
+      expect(expected.test(JSON.stringify(sent[0]))).toBe(true);
+    });
+
+    it('sends a set connectMessage character for character, diacritics included, as the first frame with type and examplePrompts unchanged', async () => {
+      const disclosure = 'Du skriver med en AI-assistent, ikke et menneske. Æ, ø og å.';
+      const {connect, sent, close} = harness({connectMessage: disclosure});
+
+      connect();
+      await settle();
+      close();
+      await settle();
+
+      expect({count: sent.length, first: sent[0]}).toMatchObject({
+        count: 1,
+        first: {type: 'connected', message: disclosure, examplePrompts: []},
+      });
+    });
+  });
+
   describe('onConnect', () => {
     it('is called once for an accepted connection, with the session the socket was given', async () => {
       const seen: ChatSession[] = [];
@@ -70,7 +90,7 @@ describe('the websocket connection handler', () => {
       connect();
       await settle();
 
-      const frame = JSON.parse(sent[0]) as {type: string; sessionId: string};
+      const frame = sent[0] as {type: string; sessionId: string};
       expect({calls: seen.length, sessionId: seen[0]?.sessionId}).toEqual({calls: 1, sessionId: frame.sessionId});
     });
 
@@ -83,14 +103,14 @@ describe('the websocket connection handler', () => {
       second.connect();
       await settle();
 
-      const id = (raw: string) => (JSON.parse(raw) as {sessionId: string}).sessionId;
+      const id = (frame: unknown) => (frame as {sessionId: string}).sessionId;
       expect(id(first.sent[0]) === id(second.sent[0])).toBe(false);
     });
 
     // Counted inside the hook: the connected frame is sent after an awaited create, so no synchronous read sees it.
     it('runs after the connected frame is sent, not before it', async () => {
       const framesAtHook: number[] = [];
-      let frames: string[] = [];
+      let frames: unknown[] = [];
       const {connect, sent} = harness({onConnect: () => void framesAtHook.push(frames.length)});
       frames = sent;
 
@@ -147,7 +167,7 @@ describe('the websocket connection handler', () => {
 
       connect();
       await settle();
-      const {sessionId} = JSON.parse(sent[0]) as {sessionId: string};
+      const {sessionId} = sent[0] as {sessionId: string};
       close();
       await settle();
 
@@ -225,7 +245,7 @@ describe('the websocket connection handler', () => {
 
       receive('{"type": "user_message", "content": ');
 
-      const types = sent.slice(1).map(raw => (JSON.parse(raw) as {type: string; code?: string}).code ?? 'no code');
+      const types = sent.slice(1).map(frame => ('code' in frame ? frame.code : undefined) ?? 'no code');
       const {calls} = handleMessage.mock;
       expect({afterConnected: types, dispatched: calls.length}).toEqual({
         afterConnected: ['INVALID_FORMAT'],
@@ -321,7 +341,7 @@ describe('a session store that fails to release', () => {
       basePath: '/hal',
     } as unknown as ConnectionHandlerDeps;
 
-    createConnectionHandler(deps, [])(ws);
+    createConnectionHandler(deps, {examplePrompts: []})(ws);
     return calls;
   };
 

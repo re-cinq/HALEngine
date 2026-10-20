@@ -27,19 +27,21 @@ describe('the in-memory store latest session', () => {
     expect(store.latestFor('u1')?.sessionId).toBe('older');
   });
 
-  it('falls back to creation time for sessions with no entries, the one created later winning a tie', () => {
+  it('falls back to creation time for sessions with no entries, the one created later winning', () => {
     const store = new InMemorySessionStore();
     store.create('early', 'u1');
     jest.setSystemTime(later(1000));
     store.create('late', 'u1');
-    const tied = new InMemorySessionStore();
-    tied.create('first', 'u2');
-    tied.create('second', 'u2');
 
-    expect({byCreation: store.latestFor('u1')?.sessionId, tie: tied.latestFor('u2')?.sessionId}).toEqual({
-      byCreation: 'late',
-      tie: 'second',
-    });
+    expect(store.latestFor('u1')?.sessionId).toBe('late');
+  });
+
+  it('breaks a tie between two sessions created in the same millisecond by the larger session id, zeta over alpha', () => {
+    const store = new InMemorySessionStore();
+    store.create('zeta', 'u1');
+    store.create('alpha', 'u1');
+
+    expect(store.latestFor('u1')?.sessionId).toBe('zeta');
   });
 
   it("returns nothing for a user whose only session aged out, nor another user's live one", () => {

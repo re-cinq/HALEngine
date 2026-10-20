@@ -1,6 +1,6 @@
 // The demo REST chat API: its whole state is the `chats` Map below, one per router and lost on restart.
 
-// `_sessionStore` is unused by design - this router keeps that Map and builds each ChatSession inline.
+// POST /chats calls sessionStore.create so a save after erasure of the conversation writes nothing back.
 
 // A chat id from POST /chats is not a WebSocket session id: the socket mints its own and stores that.
 
@@ -12,7 +12,6 @@ import type {ChatOrchestrator} from '../../orchestration/chatOrchestrator.js';
 import type {SessionStore} from '../../types/sessionStore.js';
 import type {AuthenticatedRequest, HttpAuthMiddleware} from '../../types/auth.js';
 import type {AuthenticatedUser} from '../../types/session.js';
-import {AIError} from '../../types/ai.js';
 import {log} from '../../shared/logger.js';
 import type {ChatSession, SessionEntry} from '../../types/session.js';
 
@@ -32,7 +31,7 @@ interface Chat {
 }
 export function createChatRoutes(
   orchestrator: ChatOrchestrator,
-  _sessionStore: SessionStore,
+  sessionStore: SessionStore,
   authMiddleware?: HttpAuthMiddleware
 ): Router {
   const router = Router();
@@ -45,17 +44,21 @@ export function createChatRoutes(
       deny(res, 'no auth middleware is configured');
     });
 
-  router.post('/', auth, (req: AuthenticatedRequest, res: Response) => {
+  router.post('/', auth, async (req: AuthenticatedRequest, res: Response) => {
     const user = requireUser(req, res);
     if (!user) return;
 
     const chatId = randomUUID();
     const createdAt = new Date().toISOString();
 
+    const workspaceId = optionalId(user.workspaceId);
+    // Stored before it is listed, so a store that refuses the write leaves no chat behind that it never held.
+    await sessionStore.create(chatId, user.id, {workspaceId});
+
     chats.set(chatId, {
       id: chatId,
       userId: user.id,
-      workspaceId: optionalId(user.workspaceId),
+      workspaceId,
       messages: [],
       createdAt,
     });
@@ -90,36 +93,28 @@ export function createChatRoutes(
     };
     chat.messages.push(userMessage);
 
-    try {
-      const session: ChatSession = {
-        sessionId: chat.id,
-        userId: chat.userId,
-        workspaceId: chat.workspaceId,
-        authHeaders: {
-          cookie: req.headers.cookie,
-          authorization: req.headers.authorization,
-          host: (req.headers['x-forwarded-host'] as string) || req.headers.host,
-        },
-        entries: chatMessagesToEntries(chat.messages),
-      };
+    const session: ChatSession = {
+      sessionId: chat.id,
+      userId: chat.userId,
+      workspaceId: chat.workspaceId,
+      authHeaders: {
+        cookie: req.headers.cookie,
+        authorization: req.headers.authorization,
+        host: (req.headers['x-forwarded-host'] as string) || req.headers.host,
+      },
+      entries: chatMessagesToEntries(chat.messages),
+    };
 
-      const aiContent = await orchestrator.processMessage(session);
-      const assistantMessage: ChatMessage = {
-        id: randomUUID(),
-        role: 'assistant',
-        content: aiContent,
-        timestamp: new Date().toISOString(),
-      };
-      chat.messages.push(assistantMessage);
+    const aiContent = await orchestrator.processMessage(session);
+    const assistantMessage: ChatMessage = {
+      id: randomUUID(),
+      role: 'assistant',
+      content: aiContent,
+      timestamp: new Date().toISOString(),
+    };
+    chat.messages.push(assistantMessage);
 
-      res.status(201).json({userMessage, assistantMessage});
-    } catch (error) {
-      if (error instanceof AIError) {
-        res.status(502).json({error: 'AI service temporarily unavailable'});
-        return;
-      }
-      throw error;
-    }
+    res.status(201).json({userMessage, assistantMessage});
   });
 
   return router;

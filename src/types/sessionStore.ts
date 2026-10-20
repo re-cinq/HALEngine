@@ -12,12 +12,19 @@ export interface BaseSession {
 export type SessionLookup<T extends BaseSession = ChatSession> =
   {status: 'active'; session: T} | {status: 'expired'; userId: string | number} | {status: 'missing'};
 
+/** Thrown by a store that cannot list conversations at all, so a deployment fault reads as one rather than a failed read. */
+export class StoreCannotList extends Error {
+  readonly name = 'StoreCannotList';
+}
+
 /** What a conversation list needs of one session: never its entries, and never its credentials. */
 export interface SessionSummary {
   sessionId: string;
   createdAt: Date;
   updatedAt: Date;
   entryCount: number;
+  /** The conversation's opening question as a label, only when asked for, and absent when it opens with no user entry (specs/hal-engine-conversation-list/spec.md). */
+  preview?: string;
 }
 
 /** Where a page of conversations resumes from: the last row the caller saw, which a `SessionSummary` satisfies. */
@@ -31,6 +38,8 @@ export interface SessionCursor {
 export interface SessionListOptions {
   limit?: number;
   before?: SessionCursor;
+  /** Whether each summary carries a `preview`; `false` by default, because a plain summary carries no conversation content. */
+  preview?: boolean;
 }
 
 export interface SessionCreateOptions {

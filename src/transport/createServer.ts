@@ -9,6 +9,7 @@ import {createUpgradeHandler, createConnectionHandler, ExtWebSocket} from './ws/
 import {createMessageHandler} from './ws/messageHandler.js';
 import {selectSubprotocol} from './ws/subprotocol.js';
 import type {ConnectInfo, SessionResumeOptions} from './ws/sessionResume.js';
+import type {ConversationHistoryOptions} from './ws/conversationList.js';
 import {log} from '../shared/logger.js';
 
 export interface HalServerOptions {
@@ -20,9 +21,12 @@ export interface HalServerOptions {
   basePath?: string;
   port?: number;
   heartbeatIntervalMs?: number;
+  /** The connected frame's `message`; unset, `DEFAULT_CONNECT_MESSAGE`. */
+  connectMessage?: string;
   onConnect?: (session: import('../types/session.js').ChatSession, connection: ConnectInfo) => void | Promise<void>;
   onDisconnect?: (sessionId: string) => void | Promise<void>;
   resume?: SessionResumeOptions;
+  history?: ConversationHistoryOptions;
 }
 
 export interface HalServer {
@@ -40,7 +44,20 @@ export function createServer(options: HalServerOptions): HalServer {
     handleProtocols: selectSubprotocol,
   });
 
-  const handleMessage = createMessageHandler(options.orchestrator);
+  // A list whose rows cannot be opened is a deployment slip worth saying out loud, not worth refusing to start over.
+  if (options.history?.enabled && !options.resume?.enabled) {
+    log.warn('server', 'conversation history is on but resume is off, so a listed conversation cannot be rejoined');
+  }
+
+  // Asking for a label on a list this server does not serve: inert, and silence would read as previews being on.
+  if (options.history?.preview === true && !options.history.enabled) {
+    log.warn('server', 'conversation previews are on but conversation history is off, so no list is served at all');
+  }
+
+  const handleMessage = createMessageHandler(options.orchestrator, {
+    sessionStore: options.sessionStore,
+    history: options.history,
+  });
   const examplePrompts = options.toolRegistry?.getExamplePrompts() ?? [];
 
   const deps = {
@@ -54,7 +71,7 @@ export function createServer(options: HalServerOptions): HalServer {
   };
 
   const handleUpgrade = createUpgradeHandler(wss, deps);
-  const handleConnection = createConnectionHandler(deps, examplePrompts);
+  const handleConnection = createConnectionHandler(deps, {examplePrompts, connectMessage: options.connectMessage});
 
   const server = http.createServer(options.app);
 

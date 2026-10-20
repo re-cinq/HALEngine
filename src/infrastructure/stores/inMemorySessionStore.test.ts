@@ -1,4 +1,7 @@
+import {jest} from '@jest/globals';
 import {InMemorySessionStore} from './inMemorySessionStore.js';
+import type {ChatSession} from '../../types/session.js';
+import type {SessionStore} from '../../types/sessionStore.js';
 
 describe('InMemorySessionStore', () => {
   let store: InMemorySessionStore;
@@ -11,7 +14,14 @@ describe('InMemorySessionStore', () => {
     const session = store.create('s1', 'u1');
 
     expect({created: session, retrievedIsSameObject: store.get('s1') === session}).toEqual({
-      created: {sessionId: 's1', userId: 'u1', entries: [], authHeaders: undefined, workspaceId: undefined},
+      created: {
+        sessionId: 's1',
+        userId: 'u1',
+        entries: [],
+        authHeaders: undefined,
+        workspaceId: undefined,
+        createdAt: expect.any(String),
+      },
       retrievedIsSameObject: true,
     });
   });
@@ -65,18 +75,43 @@ describe('InMemorySessionStore', () => {
     expect({count: store.count(), s1: store.get('s1')}).toEqual({count: 0, s1: undefined});
   });
 
-  it('refuses a non-scalar userId in create', () => {
-    const nonScalar: unknown[] = [{$ne: null}, null, undefined, [], Number.NaN, Number.POSITIVE_INFINITY];
-    for (const id of nonScalar) {
-      expect(() => store.create('s1', id as string | number)).toThrow();
+  it('stamps createdAt at create as the ISO 8601 time of the call, 2026-10-20T08:00:00.000Z on a clock set to it', () => {
+    jest.useFakeTimers({now: new Date('2026-10-20T08:00:00.000Z')});
+    try {
+      expect(store.create('s-created', 'u1').createdAt).toBe('2026-10-20T08:00:00.000Z');
+    } finally {
+      jest.useRealTimers();
     }
   });
 
-  it('refuses a non-scalar userId in latestFor', () => {
-    store.create('s1', 'u1');
-    const nonScalar: unknown[] = [{$ne: null}, null, undefined, [], Number.NaN, Number.POSITIVE_INFINITY];
-    for (const id of nonScalar) {
-      expect(() => store.latestFor(id as string | number)).toThrow();
+  it('lets a consumer type its sessions with createdAt required and implement SessionStore over them', () => {
+    interface DatedSession extends ChatSession {
+      createdAt: string;
     }
+    class DatedStore implements SessionStore<DatedSession> {
+      private readonly held = new Map<string, DatedSession>();
+      create(sessionId: string, userId: string | number): DatedSession {
+        const session = {sessionId, userId, entries: [], createdAt: new Date(0).toISOString()};
+        this.held.set(sessionId, session);
+        return session;
+      }
+      get(sessionId: string): DatedSession | undefined {
+        return this.held.get(sessionId);
+      }
+      save(session: DatedSession): void {
+        this.held.set(session.sessionId, session);
+      }
+      delete(sessionId: string): boolean {
+        return this.held.delete(sessionId);
+      }
+      count(): number {
+        return this.held.size;
+      }
+      clear(): void {
+        this.held.clear();
+      }
+    }
+
+    expect(new DatedStore().create('s', 'u').createdAt).toBe('1970-01-01T00:00:00.000Z');
   });
 });

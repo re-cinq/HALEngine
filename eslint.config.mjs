@@ -85,7 +85,8 @@ export default tseslint.config(
       // docs drift. The same exclusion a jscpd config would carry; it lives
       // here rather than in a .jscpd.json because the rule reads `ignore` from
       // its own options and never from a config file.
-      're-lint/no-duplicate-code': ['error', {ignore: ['**/*.md']}],
+      // src/testing/frames.ts is written by `npm run record:frames`: its scenarios share opening frames by construction.
+      're-lint/no-duplicate-code': ['error', {ignore: ['**/*.md', 'src/testing/frames.ts']}],
       're-lint/callee-below-caller': 'error',
       're-lint/declare-near-use': 'error',
       're-lint/default-export-matches-filename': 'error',

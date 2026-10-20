@@ -40,21 +40,22 @@ const sessionCarryingCredentials = (): ChatSession => ({
 describe('what a persisted session may not contain', () => {
   const collectionFor = mongoCollection();
 
-  it('holds no credential key at any depth of the stored document', async () => {
+  const loadStored = async () => {
     const store = new MongoSessionStore({collection: collectionFor()});
-
+    await store.create('s1', 'u1');
     await store.save(sessionCarryingCredentials());
-    const stored = await collectionFor().findOne({_id: 's1'});
+    return collectionFor().findOne({_id: 's1'});
+  };
+
+  it('holds no credential key at any depth of the stored document', async () => {
+    const stored = await loadStored();
     const keys = keysOf(JSON.parse(JSON.stringify(stored)) as unknown);
 
     expect(keys.filter(key => ['authheaders', 'authorization', 'cookie', 'host'].includes(key))).toEqual([]);
   });
 
   it('keeps everything that is not a credential, so the redaction is not simply emptying the document', async () => {
-    const store = new MongoSessionStore({collection: collectionFor()});
-
-    await store.save(sessionCarryingCredentials());
-    const stored = await collectionFor().findOne({_id: 's1'});
+    const stored = await loadStored();
 
     expect({
       entries: stored?.entries.length,
