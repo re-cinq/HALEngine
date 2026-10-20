@@ -76,6 +76,13 @@ A client that offers a bare token without the marker, the shape `0.2.x` document
 
 The server MUST validate the token via the configured `WsAuthenticator` before completing the upgrade. If authentication fails, the server MUST reject the connection with HTTP 401.
 
+The `id` of the user a `WsAuthenticator` resolves is the only thing separating one user's conversations from another's in every store query, so the engine refuses a value it cannot use as an identity rather than passing it to a database:
+
+- An `id` that is not a string or a finite number is answered `401`, the same as `null`, and no session is created. A decoded token can hand back an object, and a Mongo filter reads `{$ne: null}` as every user ([validated by: answers 401 to a wsAuth resolving {id: {$ne: null}}, and creates no session](../../src/transport/scalarUserId.test.ts#L41)).
+- `undefined`, `null`, an array, `NaN` and `Infinity` are refused the same way, while a string and a finite number connect ([validated by: answers 401 for undefined, null, an array, NaN and Infinity, while a string and a finite number connect](../../src/transport/scalarUserId.test.ts#L45)).
+- The refusal is logged at `error` under `ws` as an authenticator fault, naming the id's kind and none of its contents, which can carry whatever the token held ([validated by: logs the refusal at error with the id's kind and none of its contents](../../src/transport/scalarUserId.test.ts#L54)).
+- **GDPR / NIS-2.** The vector is closed end to end: a socket authenticated as `{$ne: null}` against a store holding other users' conversations is refused before any store method runs ([validated by: never reaches listFor for a socket authenticated as {$ne: null} against a store holding two other users' conversations](../../src/transport/scalarUserId.test.ts#L70)).
+
 No upgrade request can end the server process: the `upgrade` event has nothing above it to catch a throw, so every refusal is an HTTP status instead.
 
 - An upgrade whose `Host` header is missing or empty (RFC 6455 §4.1 requires one), or whose request-target is not a URL, such as `//`, is answered with HTTP 400 ([validated by: answers an empty Host, a missing Host and a // target with 400 instead of throwing out of the upgrade listener](../../src/transport/malformedUpgrade.test.ts#L68)).

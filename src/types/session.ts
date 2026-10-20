@@ -65,3 +65,22 @@ export interface AuthenticatedUser {
   id: string | number;
   [key: string]: unknown;
 }
+
+/** Whether a user id is one a store can filter on: a string or a finite number, never an object such as `{$ne: null}`, which a Mongo filter reads as every user. */
+export function isScalarUserId(userId: unknown): userId is string | number {
+  return typeof userId === 'string' || (typeof userId === 'number' && Number.isFinite(userId));
+}
+
+/** The kind of an unusable user id, for a log line or an error: never its contents, which can carry whatever a token held. */
+export function userIdKind(userId: unknown): string {
+  if (userId === null) return 'null';
+  if (Array.isArray(userId)) return 'array';
+  if (typeof userId === 'number') return Number.isNaN(userId) ? 'NaN' : 'Infinity';
+  return typeof userId;
+}
+
+/** Refuses a user id that is not a string or a finite number, before any store query is built from it. */
+export function assertScalarUserId(userId: unknown): asserts userId is string | number {
+  if (isScalarUserId(userId)) return;
+  throw new TypeError(`user id must be a string or a finite number, not ${userIdKind(userId)}`);
+}

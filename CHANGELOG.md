@@ -8,6 +8,10 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+### Security
+
+- **An authenticated id the engine cannot use as an identity is refused.** A `wsAuth` that resolves a user whose `id` is not a string or a finite number, such as an object a token decoded to, is now answered `401` and logged as an authenticator fault naming only the id's kind. Before, the value reached the session store as a query filter, and on `MongoSessionStore` `{$ne: null}` matched every user's conversations. The shipped stores also refuse such an id in `create`, `listFor` and `latestFor`, and `assertScalarUserId` is exported for your own. A deployment whose authenticator returns a non-scalar id now fails to connect where it previously connected with a broken identity.
+
 ### Added
 
 - **`transport.connectMessage`, the text of the connect frame.** Every socket's first frame carried the hardcoded `Connected to HAL Engine`; set `transport.connectMessage` and it carries your text instead, character for character. A deployer serving EU users may put its AI Act Article 50(1) disclosure there, since for a client that opens the WebSocket directly that frame is the first interaction; your own front end still discloses on its own. Unset, the frame is unchanged; a blank value fails construction. No wire type changes. See `specs/hal-engine-connect-message/spec.md`.
