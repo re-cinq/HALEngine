@@ -130,7 +130,7 @@ A `ToolExecutor` is an async function that takes the tool input and returns eith
 type ToolExecutor = (input: Record<string, unknown>, context?: ToolContext) => Promise<string | ToolResponse>;
 ```
 
-The optional `context` provides `userId`, `sessionId`, `workspaceId`, and `authHeaders` for tools that need to make authenticated API calls, and `signal`, which the orchestrator aborts when it abandons the call: at its `toolTimeoutMs` deadline, with a `TimeoutError` as the reason, or when the turn is abandoned because its socket closed. Pass it to `fetch`, or to whatever client your tool uses, so the call's own request stops too:
+The optional `context` provides `userId`, `sessionId`, `workspaceId`, `authHeaders` and `user` for tools that need to make authenticated API calls, and `signal`, which the orchestrator aborts when it abandons the call: at its `toolTimeoutMs` deadline, with a `TimeoutError` as the reason, or when the turn is abandoned because its socket closed. Pass it to `fetch`, or to whatever client your tool uses, so the call's own request stops too:
 
 <!-- doc-block: none -- an executor a reader writes against their own API, which this package does not ship -->
 ```typescript
@@ -142,6 +142,8 @@ const getOrder: ToolExecutor = async (input, context) => {
   return JSON.stringify(await response.json());
 };
 ```
+
+`context.user` is everything your `auth.ws` returned for the connection: a role, a customer id, whatever it resolved, so a tool needs no second lookup keyed on `userId`. It is a shallow copy made for each call, so treat it as read-only: assigning to it changes nothing outside the call, but nested objects are still shared. It is set only over a WebSocket connection; a tool reached through the REST chat routes gets `context.user` undefined and reads `context.userId`. The engine reads nothing from it beyond `id` and `workspaceId`, so any authorization on other claims is yours. A credential you attach to `user` reaches every tool, whatever headers you forward to tools, so it bypasses any header allowlist you set: forward a credential through `authHeaders` instead. Under GDPR, `user` is a processing step: the claims resolved at connect reach every tool call for the connection's life, are held in memory only, never logged and never sent to the client, and are left out of anything a session store persists.
 
 A tool that ignores the signal is still bounded, since the orchestrator stops waiting at the deadline either way, but its request keeps running, and keeps sending whatever it carries, after the round has moved on.
 

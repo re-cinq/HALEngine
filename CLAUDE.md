@@ -181,6 +181,8 @@ interface ChatSession {
   workspaceId?: string | number;
   /** Set by the consumer before or during beforeModelResponse; every assistant entry created for that turn carries it as its persona. */
   activePersona?: string;
+  /** What `auth.ws` returned for the newest open socket: connection-scoped, never persisted, and re-derived on every upgrade. */
+  user?: AuthenticatedUser;
 }
 ```
 

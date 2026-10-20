@@ -63,6 +63,7 @@ export class MongoSessionStore implements SessionStore {
       userId,
       entries: [],
       authHeaders: options?.authHeaders,
+      user: options?.user,
       workspaceId: options?.workspaceId,
     };
     const collection = await this.collection();

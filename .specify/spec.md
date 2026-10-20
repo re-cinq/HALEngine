@@ -45,7 +45,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 - Custom WebSocket authentication via `WsAuthenticator` function
 - Express middleware-based HTTP authentication via `HttpAuthMiddleware`, which must attach a `user` to the `AuthenticatedRequest`
 - Session binding to authenticated users
-- User context propagated throughout request lifecycle
+- User context propagated throughout request lifecycle: over a WebSocket connection, everything `auth.ws` returned reaches each tool call as `context.user`, beside `userId` and `workspaceId`; over the REST chat routes only `userId` and `workspaceId` do, since they have no `AuthenticatedUser` to carry
 
 ### 5. Session Management
 

@@ -45,6 +45,8 @@ export interface SessionListOptions {
 export interface SessionCreateOptions {
   authHeaders?: ChatSession['authHeaders'];
   workspaceId?: string | number;
+  /** Held on the session in memory for its connection; a store must not write it. */
+  user?: ChatSession['user'];
 }
 
 export interface SessionStore<T extends BaseSession = ChatSession> {

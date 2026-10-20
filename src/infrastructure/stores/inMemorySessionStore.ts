@@ -39,6 +39,7 @@ export class InMemorySessionStore implements SessionStore {
       userId,
       entries: [],
       authHeaders: options?.authHeaders,
+      user: options?.user,
       workspaceId: options?.workspaceId,
     };
     this.sessions.set(sessionId, {session, createdAt: Date.now()});

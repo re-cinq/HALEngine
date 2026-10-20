@@ -43,6 +43,12 @@ One consequence worth planning for: a conversation reloaded in a fresh process h
 re-authenticates. That is the correct trade-off — a bearer token stored beside a conversation
 outlives the request it was issued for — and it matches what the transport does on socket close.
 
+`ChatSession.user`, everything `auth.ws` returned for the newest open socket, is never persisted
+either. It is connection-scoped: `MongoSessionStore` writes only the fields it lists, so `user`
+never reaches a document and a session read back carries none, and the transport re-derives it
+from the next upgrade. A store you write yourself must leave it out the same way, since it can
+hold any claim your authenticator resolved, a role, an account id, or a token.
+
 ## Retention
 
 `eraseOlderThan(cutoff)` is a method you call. The engine ships no scheduler, because a

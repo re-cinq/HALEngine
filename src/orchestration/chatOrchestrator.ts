@@ -308,6 +308,8 @@ function contextFor(session: ChatSession, signal: AbortSignal): ToolContext {
     sessionId: session.sessionId,
     workspaceId: session.workspaceId,
     authHeaders: session.authHeaders,
+    // Copied per call: an executor that assigns to its user must not reach the session or a sibling call's copy.
+    user: session.user === undefined ? undefined : {...session.user},
     signal,
   };
 }
