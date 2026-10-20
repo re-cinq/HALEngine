@@ -14,6 +14,9 @@ The red bar is CI's to show; the CI job that runs the tests is "Test (with cover
 
 - [x] Apply `assertScalarUserId` in `InMemorySessionStore.listFor`
 - [x] Apply `assertScalarUserId` in `MongoSessionStore.listFor`
+- [x] Add spec links for acceptance test cases in `hal-engine-websocket-protocol/spec.md`
+- [x] Fix duplicate code between `mongoScalarId.test.ts` and acceptance test
+- [x] Fix broken spec links in `hal-engine-connect-message/spec.md`
 
 ## Out of scope
 
