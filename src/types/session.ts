@@ -13,6 +13,8 @@ export interface AssistantEntry {
   truncated?: true;
   /** Present only when a tool suppressed the response and the client was shown this entry blank or not at all. */
   suppressed?: true;
+  /** The consumer's identifier of the persona that wrote this entry; the engine never resolves or validates it, and it must carry no personal data. */
+  persona?: string;
 }
 
 export interface ThinkingEntry {
@@ -55,6 +57,8 @@ export interface ChatSession {
     host?: string;
   };
   workspaceId?: string | number;
+  /** Set by the consumer before or during beforeModelResponse; every assistant entry created for that turn carries it as its persona. */
+  activePersona?: string;
 }
 
 export interface AuthenticatedUser {

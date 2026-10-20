@@ -4,8 +4,10 @@ export function createUserEntry(content: string): SessionEntry {
   return {role: 'user', content, timestamp: new Date().toISOString()};
 }
 
-export function createAssistantEntry(): SessionEntry {
-  return {role: 'assistant', content: '', timestamp: new Date().toISOString(), isStreaming: true};
+// No persona key at all when none is given, so a consumer who never opted in stores no stray field.
+export function createAssistantEntry(persona?: string): SessionEntry {
+  const entry: SessionEntry = {role: 'assistant', content: '', timestamp: new Date().toISOString(), isStreaming: true};
+  return persona === undefined ? entry : {...entry, persona};
 }
 
 export function createThinkingEntry(): SessionEntry {

@@ -32,7 +32,7 @@ interface StreamState {
 }
 
 type StateIndexKey = 'thinkingIndex' | 'assistantIndex';
-type EntryFactory = typeof createThinkingEntry | typeof createAssistantEntry;
+type EntryFactory = () => SessionEntry;
 /** What the handler needs besides the orchestrator: the store a conversation list reads, and whether one is served. */
 export type MessageHandlerDeps = ConversationListDeps;
 
@@ -247,7 +247,15 @@ function handleTextSegment(ws: WebSocket, session: ChatSession, state: StreamSta
     return;
   }
   commitAndClear(ws, session, state, 'thinkingIndex');
-  streamSegment(ws, session, state, 'assistantIndex', createAssistantEntry, segment.content);
+  // Stamped at creation: the entry's first upsert is the only frame that carries it whole to the client.
+  streamSegment(
+    ws,
+    session,
+    state,
+    'assistantIndex',
+    () => createAssistantEntry(session.activePersona),
+    segment.content
+  );
 }
 
 function streamSegment(
