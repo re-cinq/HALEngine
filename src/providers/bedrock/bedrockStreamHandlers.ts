@@ -2,6 +2,34 @@ import type {ConverseStreamOutput} from '@aws-sdk/client-bedrock-runtime';
 import {AIError} from '../../types/ai.js';
 import type {MessageChunk, UsageMetadata} from '../../types/ai.js';
 
+// Here, not in bedrockProvider.ts, whose published declarations its SDK type would reach; the stop waits, as AWS counts after messageStop.
+export async function* parseStreamEvents(
+  stream: AsyncIterable<ConverseStreamOutput>,
+  signal: AbortSignal | undefined
+): AsyncGenerator<MessageChunk> {
+  let acc = emptyToolAccumulator();
+  let stop: MessageChunk | null = null;
+  let usage: UsageMetadata | undefined;
+
+  for await (const event of stream) {
+    if (signal?.aborted) return;
+    const text = handleTextDelta(event);
+    if (text) yield text;
+
+    acc = handleToolStart(event, acc);
+    acc = handleToolInputDelta(event, acc);
+
+    const [nextAcc, toolChunk] = handleContentBlockStop(event, acc);
+    acc = nextAcc;
+    if (toolChunk) yield toolChunk;
+
+    stop = handleMessageStop(event) ?? stop;
+    usage = extractUsageFromMetadata(event) ?? usage;
+  }
+  if (signal?.aborted || stop?.type !== 'stop') return;
+  yield usage ? {...stop, usage} : stop;
+}
+
 export interface ToolAccumulator {
   currentToolCall: {id: string; name: string} | null;
   toolInput: string;

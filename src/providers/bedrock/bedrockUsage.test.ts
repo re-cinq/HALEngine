@@ -1,6 +1,5 @@
 import type {ConverseStreamOutput} from '@aws-sdk/client-bedrock-runtime';
-import {parseStreamEvents} from './bedrockProvider.js';
-import {extractUsageFromMetadata} from './bedrockStreamHandlers.js';
+import {extractUsageFromMetadata, parseStreamEvents} from './bedrockStreamHandlers.js';
 import {collectChunks} from '../providerTestSupport.js';
 
 // Plain objects in the shape the Converse stream sends: the parser needs no client and no SDK mock.
