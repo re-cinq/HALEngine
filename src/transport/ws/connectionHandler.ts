@@ -118,10 +118,20 @@ async function authenticate(wsAuth: WsAuthenticator, request: IncomingMessage): 
   return wsAuth(request);
 }
 
-export function createConnectionHandler(deps: ConnectionHandlerDeps, examplePrompts: string[]) {
+/** The connect frame's text when the deployer sets none, kept so a consumer that configures nothing gets today's frame. */
+export const DEFAULT_CONNECT_MESSAGE = 'Connected to HAL Engine';
+
+/** What every new socket's connected frame carries besides its session id. */
+export interface ConnectionOptions {
+  examplePrompts: string[];
+  /** The frame's `message`; a deployer serving EU users may carry the AI Act Art. 50(1) disclosure here, and a per-session resolver could later take this field's place. */
+  connectMessage?: string;
+}
+
+export function createConnectionHandler(deps: ConnectionHandlerDeps, options: ConnectionOptions) {
   return function handleConnection(ws: ExtWebSocket): void {
     // The listener stays synchronous: an async one rejects into the emitter, and node ends the process on that.
-    openSession(deps, examplePrompts, ws).catch((error: unknown) => {
+    openSession(deps, options, ws).catch((error: unknown) => {
       log.error('ws', 'connection setup failed', {error: messageOf(error)});
       // Resumed before closing: a paused socket never reads the close frame it would be waiting for.
       ws.resume();
@@ -133,7 +143,7 @@ export function createConnectionHandler(deps: ConnectionHandlerDeps, exampleProm
 // The sockets open on each session, oldest first: a resumed session can be open on more than one at once.
 const openSockets = new WeakMap<ChatSession, ExtWebSocket[]>();
 
-async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[], ws: ExtWebSocket): Promise<void> {
+async function openSession(deps: ConnectionHandlerDeps, options: ConnectionOptions, ws: ExtWebSocket): Promise<void> {
   // A requested id is never adopted for a new session: that would be session fixation.
   let sessionId = uuidv4();
   const state = {closed: false, settled: false, notified: false, delivered: false};
@@ -193,8 +203,8 @@ async function openSession(deps: ConnectionHandlerDeps, examplePrompts: string[]
   const connected: ConnectedMessage = {
     type: 'connected',
     sessionId,
-    message: 'Connected to HAL Engine',
-    examplePrompts,
+    message: options.connectMessage ?? DEFAULT_CONNECT_MESSAGE,
+    examplePrompts: options.examplePrompts,
     ...resumeFields(deps.resume, outcome),
   };
   // A socket that died between the check above and this frame must not leave the session it was created for behind.

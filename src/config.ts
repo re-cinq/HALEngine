@@ -37,6 +37,8 @@ export interface HalEngineConfig {
     corsOrigin?: string | string[];
     basePath?: string;
     heartbeatIntervalMs?: number;
+    /** Every new socket's first frame, the connected frame, carries this as its `message`; unset, `DEFAULT_CONNECT_MESSAGE`. A deployer serving EU users may carry the AI Act Art. 50(1) disclosure here; the engine only sends it, and a front end the deployer builds discloses on its own. */
+    connectMessage?: string;
     additionalRoutes?: HalAppOptions['additionalRoutes'];
     rootRoutes?: HalAppOptions['rootRoutes'];
     errorHandler?: HalAppOptions['errorHandler'];
@@ -70,6 +72,7 @@ export interface HalEngine extends HalServer {
 export function createHalEngine(config: HalEngineConfig): HalEngine {
   // Before anything else builds, so a supplied logger receives this engine's first line.
   if (config.logger) setLogger(config.logger);
+  refuseBlankConnectMessage(config.transport?.connectMessage);
 
   const toolRegistry = config.tools ?? new ToolRegistry();
   const sessionStore = config.session ?? new InMemorySessionStore();
@@ -105,6 +108,7 @@ export function createHalEngine(config: HalEngineConfig): HalEngine {
     basePath,
     port: config.transport?.port,
     heartbeatIntervalMs: config.transport?.heartbeatIntervalMs,
+    connectMessage: config.transport?.connectMessage,
     onConnect: config.onConnect,
     onDisconnect: config.onDisconnect,
     resume: config.transport?.resume,
@@ -117,6 +121,14 @@ export function createHalEngine(config: HalEngineConfig): HalEngine {
     orchestrator,
     toolRegistry,
   };
+}
+
+// A blank message set on purpose is indistinguishable from the default having been dropped, so it fails construction.
+function refuseBlankConnectMessage(connectMessage: string | undefined): void {
+  if (connectMessage === undefined || connectMessage.trim() !== '') return;
+  throw new Error(
+    'transport.connectMessage is blank: set the text the connected frame should carry, or leave it unset'
+  );
 }
 
 /** The provider the orchestrator receives: retry innermost per provider, then the fallback chain; with neither configured, exactly what `create` returned. */
