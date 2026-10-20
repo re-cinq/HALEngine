@@ -28,7 +28,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 - Dynamic tool registration via `ToolRegistry`
 - JSON Schema tool definitions, declared per tool and forwarded to the model; `ToolRegistry.execute` validates input against the declared schema before the executor runs — a schema-invalid call returns a `ToolResponse` describing the failure to the model rather than throwing, extra properties pass through to the executor unmodified, and `DEFAULT_MAX_TOOL_ROUNDS = 5` bounds the retry cycle
 - Parallel tool execution within configurable tool loops
-- Tool response normalization (supports both simple strings and structured content)
+- Tool response normalization: an executor returns a `string` or a `ToolResponse`, and `normalizeToolResponse` turns a string into the latter
 - Context-aware tool execution: the executor receives the caller's identity (`userId`, `sessionId`, `workspaceId`) and the auth headers the session carries, forwarded from the WebSocket upgrade or the HTTP chat request, not the conversation history
 - Configurable maximum tool loop iterations (default: 5)
 
@@ -105,8 +105,8 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 - `UserEntry`: Text message from user
 - `AssistantEntry`: AI-generated response with tool calls
 - `ThinkingEntry`: Internal reasoning (parsed from models that support thinking)
-- `ToolEntry`: Tool execution metadata and results
-- `SessionEntry`: Marker for session lifecycle events
+- `ToolEntry`: The tool call the model requested, its name and input; it carries no result
+- `SessionEntry`: The union of the four entry types, `UserEntry | AssistantEntry | ThinkingEntry | ToolEntry`
 
 ### AI Communication Model
 
@@ -119,21 +119,22 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 - `ToolResultContent`: Structured tool result representation
 
 **ToolDefinition**:
-<!-- doc-block: none -- a JSON message payload, not a TypeScript declaration -->
+<!-- doc-block: none -- the members of ToolDefinition in src/types/ai.ts, listed here rather than quoted -->
 ```typescript
 {
   name: string;
   description: string;
-  inputSchema: JSONSchema;
+  inputSchema: Record<string, unknown>; // JSON Schema, forwarded to the model
+  promptInstructions?: string;
+  examplePrompts?: string[];
 }
 ```
 
-**Tool Response Variants**:
+**Tool Response Forms**:
 
-- String: Direct text response
-- Object with `content`: Rich structured content
-- Object with `entries`: Multiple message entries
-- Normalized to internal format via `normalizeToolResponse()`
+- A `string`: the text the model receives as the tool's result
+- A `ToolResponse`: its `result` is what the model receives; its other fields are listed in `src/orchestration/tools/registry.ts` and specified in `specs/hal-engine-tool-responses/spec.md`, not copied here, since a list mirrored in two places goes stale when either changes
+- `normalizeToolResponse()` turns a `string` into `{result: string}`, so the orchestrator handles one shape
 
 ---
 
@@ -219,10 +220,10 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 
 ### 6. Tool Response Normalization
 
-- Tool executors return `string`, object with `content`, or object with `entries`
-- Framework normalizes all variants to internal representation
-- Tool results are validated against original tool definition schema
-- Malformed responses result in error entries
+- Tool executors return a `string` or a `ToolResponse` (`src/orchestration/tools/registry.ts`, `specs/hal-engine-tool-responses/spec.md`); `normalizeToolResponse` turns a string into `{result: string}`
+- No tool result is validated, in either direction: `ToolDefinition` declares no schema for a result, only for the input
+- A malformed response produces no entry and no error: an executor returning an object with no `result` reaches the provider as a tool result whose content is `undefined`, copied unchecked from `response.result` where `executeToolCalls` in `src/orchestration/chatOrchestrator.ts` builds the `tool_result` blocks
+- **GDPR.** The registry hands an executor's `result` to the orchestrator unmodified: nothing in it inspects, truncates or redacts the result, so a consumer that must bound what a tool result sends to a model provider places that control in the tool itself, or in a `privacy.mask`, outside the registry
 
 ### 7. Provider Compatibility
 
