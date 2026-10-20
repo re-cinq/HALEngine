@@ -2,6 +2,10 @@ import {jest} from '@jest/globals';
 import {createChatOrchestrator} from './orchestration/chatOrchestrator.js';
 import {ToolRegistry} from './orchestration/tools/registry.js';
 import {PromptBuilder} from './infrastructure/builders/promptBuilder.js';
+import {withFallback} from './providers/withFallback.js';
+import {withRetry} from './providers/withRetry.js';
+import {createMockProvider} from './providers/mock/index.js';
+import type {MessageChunk} from './types/ai.js';
 
 // Only what the assertion reads back from the orchestrator's second request.
 interface VertexRequest {
@@ -102,4 +106,26 @@ it('closes the tool loop on its own chunks: the call runs its tool and the next 
     requests: 2,
     answered: [{functionResponse: {name: 'lookup', response: {result: 'found'}}}],
   });
+});
+
+// A sustained Vertex outage through the decorators as createHalEngine composes them: the shipped classifier decides the route.
+it('routes a sustained Vertex 503, retried to exhaustion, to the fallback provider, whose answer the caller receives', async () => {
+  generateContentStream.mockRejectedValue(Object.assign(new Error('{"error":{"code":503}}'), {status: 503}));
+  const vertex = createVertexProvider({type: 'vertex', projectId: 'p', location: 'eu', modelId: 'gemini-3'});
+  const retry = {maxAttempts: 2, baseDelayMs: 0};
+  const provider = withFallback(withRetry(vertex, retry), [withRetry(createMockProvider(), retry)]);
+
+  const chunks: MessageChunk[] = [];
+  for await (const chunk of provider.sendMessage({messages: [{role: 'user', content: 'hi'}], systemPrompt: 's'})) {
+    chunks.push(chunk);
+  }
+
+  const {calls} = generateContentStream.mock;
+  expect({
+    vertexAttempts: calls.length,
+    answer: chunks
+      .filter(chunk => chunk.type === 'text')
+      .map(chunk => chunk.text)
+      .join(''),
+  }).toEqual({vertexAttempts: 2, answer: 'Mock response to: "hi" '});
 });

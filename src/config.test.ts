@@ -1,7 +1,10 @@
 import net from 'node:net';
 import request from 'supertest';
 import type {Request, Response} from 'express';
-import {createHalEngine} from './config.js';
+import {composeProvider, createHalEngine} from './config.js';
+import type {ProviderConfig} from './providers/providerFactory.js';
+import {AIError} from './types/ai.js';
+import type {AIProvider, MessageChunk} from './types/ai.js';
 import {log, setLogger} from './shared/logger.js';
 import type {Logger} from './shared/logger.js';
 import type {ChatSession} from './types/session.js';
@@ -332,5 +335,59 @@ describe('createHalEngine session store forwarding', () => {
     await engine.orchestrator.processMessage(session.create('s1', 'u1') as ChatSession);
 
     expect(saved).toEqual(['s1']);
+  });
+});
+
+describe('composeProvider, the provider createHalEngine hands its orchestrator', () => {
+  const answering = (reply: string): AIProvider => ({
+    async *sendMessage(): AsyncGenerator<MessageChunk> {
+      yield {type: 'text', text: reply};
+      yield {type: 'stop', stopReason: 'end_turn'};
+    },
+    generateStructured: async <T>() => ({}) as T,
+  });
+  const unavailable = (calls: {count: number}): AIProvider => ({
+    async *sendMessage(): AsyncGenerator<MessageChunk> {
+      calls.count++;
+      yield* [];
+      // eslint-disable-next-line re-lint/no-flag-params -- AIError's retryable flag; see adrs/ADR-006-lint-suppressions.md
+      throw new AIError('down', 'SERVICE_UNAVAILABLE', true);
+    },
+    generateStructured: async <T>() => ({}) as T,
+  });
+  const textOf = async (provider: AIProvider) => {
+    let text = '';
+    for await (const chunk of provider.sendMessage({messages: [{role: 'user', content: 'hi'}], systemPrompt: 's'})) {
+      if (chunk.type === 'text') text += chunk.text;
+    }
+    return text;
+  };
+
+  it('is the identical reference createProvider returned when neither fallbackProviders nor resilience is set', () => {
+    const built = answering('primary');
+
+    expect(composeProvider({provider: {type: 'mock'}}, () => built)).toBe(built);
+  });
+
+  it('retries each provider innermost, then fails over: a primary down for every attempt answers from the fallback', async () => {
+    const primaryCalls = {count: 0};
+    const fallbackConfig: ProviderConfig = {type: 'vertex', projectId: 'p', location: 'eu', modelId: 'gemini-3'};
+    const built: ProviderConfig[] = [];
+    const create = (config: ProviderConfig) => {
+      built.push(config);
+      return config === fallbackConfig ? answering('from the fallback') : unavailable(primaryCalls);
+    };
+
+    const provider = composeProvider(
+      {provider: {type: 'mock'}, resilience: {maxAttempts: 2, baseDelayMs: 0}, fallbackProviders: [fallbackConfig]},
+      create
+    );
+    const builtAtComposition = built.length;
+
+    expect({builtAtComposition, text: await textOf(provider), primaryAttempts: primaryCalls.count}).toEqual({
+      builtAtComposition: 2,
+      text: 'from the fallback',
+      primaryAttempts: 2,
+    });
   });
 });

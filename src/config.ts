@@ -4,10 +4,12 @@ import type {PromptBuilderConfig} from './infrastructure/builders/promptBuilder.
 import type {ContextConfig} from './orchestration/conversationContext.js';
 import type {ProviderConfig} from './providers/providerFactory.js';
 import {withRetry} from './providers/withRetry.js';
+import {withFallback} from './providers/withFallback.js';
 import type {RetryPolicy} from './providers/withRetry.js';
 import type {Logger} from './shared/logger.js';
 import {setLogger} from './shared/logger.js';
 import type {ChatSession} from './types/session.js';
+import type {AIProvider} from './types/ai.js';
 import type {HalServer} from './transport/createServer.js';
 import type {ConnectInfo} from './transport/ws/sessionResume.js';
 import {PromptBuilder} from './infrastructure/builders/promptBuilder.js';
@@ -25,6 +27,8 @@ import type {ConversationHistoryOptions} from './transport/ws/conversationList.j
 export interface HalEngineConfig {
   provider: ProviderConfig;
   resilience?: RetryPolicy;
+  /** Tried in order, once each, when the provider before it is unavailable; each is built at construction like the primary and gets its own `resilience` retry. */
+  fallbackProviders?: ProviderConfig[];
   prompt: PromptBuilderConfig;
   tools?: ToolRegistry;
   session?: SessionStore;
@@ -71,8 +75,7 @@ export function createHalEngine(config: HalEngineConfig): HalEngine {
   const sessionStore = config.session ?? new InMemorySessionStore();
   const basePath = config.transport?.basePath ?? '/hal';
 
-  const baseProvider = createProvider(config.provider);
-  const provider = config.resilience ? withRetry(baseProvider, config.resilience) : baseProvider;
+  const provider = composeProvider(config);
   const promptBuilder = new PromptBuilder(config.prompt);
   const orchestrator = createChatOrchestrator(provider, promptBuilder, toolRegistry, {
     maxToolRounds: config.orchestrator?.maxToolRounds,
@@ -114,4 +117,19 @@ export function createHalEngine(config: HalEngineConfig): HalEngine {
     orchestrator,
     toolRegistry,
   };
+}
+
+/** The provider the orchestrator receives: retry innermost per provider, then the fallback chain; with neither configured, exactly what `create` returned. */
+export function composeProvider(
+  config: Pick<HalEngineConfig, 'provider' | 'resilience' | 'fallbackProviders'>,
+  create: (providerConfig: ProviderConfig) => AIProvider = createProvider
+): AIProvider {
+  const resilient = (provider: AIProvider): AIProvider =>
+    config.resilience ? withRetry(provider, config.resilience) : provider;
+  const primary = resilient(create(config.provider));
+  const fallbacks = config.fallbackProviders ?? [];
+  if (fallbacks.length === 0) return primary;
+  // Every fallback is built now, so a misconfigured one fails at startup rather than during an outage.
+  const chain = fallbacks.map(fallback => resilient(create(fallback)));
+  return withFallback(primary, chain, {labels: [config.provider.type, ...fallbacks.map(fallback => fallback.type)]});
 }

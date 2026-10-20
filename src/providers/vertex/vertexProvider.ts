@@ -222,10 +222,25 @@ function mapVertexError(error: unknown): AIError {
     // eslint-disable-next-line re-lint/no-flag-params -- AIError's retryable flag; see adrs/ADR-006-lint-suppressions.md
     return new AIError(message, 'RATE_LIMITED', true);
   }
+  // A vendor that is down or out of time is an outage, retryable, so the retry tier and then a fallback can route it.
+  if (status === 503 || message.includes('503') || message.includes('UNAVAILABLE')) {
+    // eslint-disable-next-line re-lint/no-flag-params -- AIError's retryable flag; see adrs/ADR-006-lint-suppressions.md
+    return new AIError(message, 'SERVICE_UNAVAILABLE', true);
+  }
+  if (ranOutOfTime(status, message, error)) {
+    // eslint-disable-next-line re-lint/no-flag-params -- AIError's retryable flag; see adrs/ADR-006-lint-suppressions.md
+    return new AIError(message, 'TIMEOUT', true);
+  }
   if (status === 401 || status === 403 || /401|403|PERMISSION_DENIED/.test(message)) {
     return new AIError(message, 'AUTH_ERROR');
   }
   return new AIError(message, 'PROVIDER_ERROR');
+}
+
+// A 504, a DEADLINE_EXCEEDED body, or fetch's TimeoutError: a deadline the request hit, not an abort anyone chose.
+function ranOutOfTime(status: number | undefined, message: string, error: unknown): boolean {
+  if (status === 504 || (error instanceof Error && error.name === 'TimeoutError')) return true;
+  return message.includes('504') || message.includes('DEADLINE_EXCEEDED');
 }
 
 function statusOf(error: unknown): number | undefined {
