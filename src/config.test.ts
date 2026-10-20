@@ -1,7 +1,9 @@
 import net from 'node:net';
 import request from 'supertest';
 import type {Request, Response} from 'express';
+import {WebSocket} from 'ws';
 import {composeProvider, createHalEngine} from './config.js';
+import {HAL_WS_SUBPROTOCOL} from './transport/ws/subprotocol.js';
 import type {ProviderConfig} from './providers/providerFactory.js';
 import {AIError} from './types/ai.js';
 import type {AIProvider, MessageChunk} from './types/ai.js';
@@ -389,5 +391,47 @@ describe('composeProvider, the provider createHalEngine hands its orchestrator',
       text: 'from the fallback',
       primaryAttempts: 2,
     });
+  });
+});
+
+describe('createHalEngine transport.connectMessage', () => {
+  it('throws at construction, naming transport.connectMessage, for a blank one; unset or absent constructs normally', () => {
+    const outcomes = [{transport: {connectMessage: '   '}}, {transport: {connectMessage: undefined}}, {}].map(extra => {
+      try {
+        createHalEngine({...base, ...extra});
+        return 'constructed';
+      } catch (error) {
+        return (error as Error).message.includes('transport.connectMessage') ? 'refused, naming the field' : 'refused';
+      }
+    });
+
+    expect(outcomes).toEqual(['refused, naming the field', 'constructed', 'constructed']);
+  });
+
+  it('carries transport.connectMessage to the first frame a real client receives', async () => {
+    const disclosure = 'Du skriver med en AI-assistent. Æ, ø og å.';
+    const engine = createHalEngine({
+      ...base,
+      auth: {ws: (async () => ({id: 'u1'})) as WsAuthenticator},
+      transport: {connectMessage: disclosure},
+    });
+    await engine.start(0);
+    const {port} = engine.server.address() as net.AddressInfo;
+
+    const disconnected = new Promise<void>(resolve => {
+      engine.wss.once('connection', socket => socket.once('close', () => setImmediate(resolve)));
+    });
+    const first = await new Promise<unknown>(resolve => {
+      const client = new WebSocket(`ws://127.0.0.1:${port}/hal/ws/c1`, [HAL_WS_SUBPROTOCOL]);
+      client.once('message', frame => {
+        client.close();
+        resolve(JSON.parse(String(frame)));
+      });
+    });
+    // The server logs the disconnect on its own close; waiting for it keeps that line inside this test.
+    await disconnected;
+    await engine.stop();
+
+    expect(first).toMatchObject({type: 'connected', message: disclosure});
   });
 });

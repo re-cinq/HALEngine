@@ -21,6 +21,8 @@ export interface HalServerOptions {
   basePath?: string;
   port?: number;
   heartbeatIntervalMs?: number;
+  /** The connected frame's `message`; unset, `DEFAULT_CONNECT_MESSAGE`. */
+  connectMessage?: string;
   onConnect?: (session: import('../types/session.js').ChatSession, connection: ConnectInfo) => void | Promise<void>;
   onDisconnect?: (sessionId: string) => void | Promise<void>;
   resume?: SessionResumeOptions;
@@ -69,7 +71,7 @@ export function createServer(options: HalServerOptions): HalServer {
   };
 
   const handleUpgrade = createUpgradeHandler(wss, deps);
-  const handleConnection = createConnectionHandler(deps, examplePrompts);
+  const handleConnection = createConnectionHandler(deps, {examplePrompts, connectMessage: options.connectMessage});
 
   const server = http.createServer(options.app);
 

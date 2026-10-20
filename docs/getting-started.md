@@ -185,6 +185,8 @@ const engine = createHalEngine({
     // basePath defaults to '/hal' and the heartbeat to 30s.
     basePath: '/hal',
     heartbeatIntervalMs: 30_000,
+    // The connected frame's text, sent before any entry; a deployer serving EU users may carry its AI disclosure here.
+    connectMessage: 'You are chatting with an AI assistant.',
     // additionalRoutes mounts under basePath and rootRoutes at /, neither gated by auth.http; errorHandler replaces Express's default HTML error page.
     additionalRoutes: router => router.get('/ping', (_req, res) => res.json({ok: true})),
     rootRoutes: router => router.get('/', (_req, res) => res.send('<h1>Hello</h1>')),

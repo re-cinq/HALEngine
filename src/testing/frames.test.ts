@@ -3,6 +3,7 @@ import {join} from 'node:path';
 import {recordedFrames} from './frames.js';
 import {INTERNAL_DETAIL, recordFrames} from './recordFrames.js';
 import {setLogger} from '../shared/logger.js';
+import {DEFAULT_CONNECT_MESSAGE} from '../transport/ws/connectionHandler.js';
 
 const quiet = () => undefined;
 beforeAll(() => setLogger({debug: quiet, info: quiet, warn: quiet, error: quiet}));
@@ -64,7 +65,7 @@ describe('recordedFrames', () => {
       timestamps: [...new Set(values('timestamp'))],
       sessionIds: [...new Set(values('sessionId'))],
     }).toEqual({
-      opened: [{type: 'connected', sessionId: '<session-id>', message: 'Connected to HAL Engine', examplePrompts: []}],
+      opened: [{type: 'connected', sessionId: '<session-id>', message: DEFAULT_CONNECT_MESSAGE, examplePrompts: []}],
       timestamps: ['<ts>'],
       sessionIds: ['<session-id>'],
     });

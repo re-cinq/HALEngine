@@ -1,5 +1,10 @@
 import {jest} from '@jest/globals';
-import {createConnectionHandler, type ConnectionHandlerDeps, type ExtWebSocket} from './connectionHandler.js';
+import {
+  createConnectionHandler,
+  DEFAULT_CONNECT_MESSAGE,
+  type ConnectionHandlerDeps,
+  type ExtWebSocket,
+} from './connectionHandler.js';
 import type {ChatSession} from '../../types/session.js';
 import type {SessionStore} from '../../types/sessionStore.js';
 import {captureErrors} from '../../shared/logCaptureTestSupport.js';
@@ -10,9 +15,11 @@ import {recordingSocket} from './recordingSocketTestSupport.js';
 // Drains the microtask queue the hook is deferred onto.
 const settle = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 
-type HarnessOptions = Partial<Pick<ConnectionHandlerDeps, 'onConnect' | 'onDisconnect' | 'sessionStore'>>;
+type HarnessOptions = Partial<Pick<ConnectionHandlerDeps, 'onConnect' | 'onDisconnect' | 'sessionStore'>> & {
+  connectMessage?: string;
+};
 
-const harness = (options: HarnessOptions = {}) => {
+const harness = ({connectMessage, ...options}: HarnessOptions = {}) => {
   const socket = recordingSocket({userId: 'u1', isAlive: true});
   const ws = socket.ws as ExtWebSocket;
 
@@ -30,7 +37,7 @@ const harness = (options: HarnessOptions = {}) => {
     ...options,
   } as unknown as ConnectionHandlerDeps;
 
-  const connect = () => createConnectionHandler(deps, [])(ws);
+  const connect = () => createConnectionHandler(deps, {examplePrompts: [], connectMessage})(ws);
 
   return {
     connect,
@@ -43,6 +50,37 @@ const harness = (options: HarnessOptions = {}) => {
 };
 
 describe('the websocket connection handler', () => {
+  describe('the connected frame', () => {
+    it('sends DEFAULT_CONNECT_MESSAGE in a frame byte-identical to the release before when no connectMessage is set', async () => {
+      const {connect, sent, close} = harness();
+
+      connect();
+      await settle();
+      close();
+      await settle();
+
+      const expected = new RegExp(
+        `^\\{"type":"connected","sessionId":"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}","message":"${DEFAULT_CONNECT_MESSAGE}","examplePrompts":\\[\\]\\}$`
+      );
+      expect(expected.test(JSON.stringify(sent[0]))).toBe(true);
+    });
+
+    it('sends a set connectMessage character for character, diacritics included, as the first frame with type and examplePrompts unchanged', async () => {
+      const disclosure = 'Du skriver med en AI-assistent, ikke et menneske. Æ, ø og å.';
+      const {connect, sent, close} = harness({connectMessage: disclosure});
+
+      connect();
+      await settle();
+      close();
+      await settle();
+
+      expect({count: sent.length, first: sent[0]}).toMatchObject({
+        count: 1,
+        first: {type: 'connected', message: disclosure, examplePrompts: []},
+      });
+    });
+  });
+
   describe('onConnect', () => {
     it('is called once for an accepted connection, with the session the socket was given', async () => {
       const seen: ChatSession[] = [];
@@ -302,7 +340,7 @@ describe('a session store that fails to release', () => {
       basePath: '/hal',
     } as unknown as ConnectionHandlerDeps;
 
-    createConnectionHandler(deps, [])(ws);
+    createConnectionHandler(deps, {examplePrompts: []})(ws);
     return calls;
   };
 

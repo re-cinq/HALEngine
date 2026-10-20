@@ -111,7 +111,7 @@ async function connectionOpened(): Promise<OutgoingMessage[]> {
     basePath: '/hal',
   } as unknown as ConnectionHandlerDeps;
   const socket = recordingSocket({userId: 'recorder', isAlive: true});
-  createConnectionHandler(deps, [])(socket.ws as ExtWebSocket);
+  createConnectionHandler(deps, {examplePrompts: []})(socket.ws as ExtWebSocket);
   // The frame follows an awaited create, so the recording waits a macrotask for it.
   await new Promise(resolve => setImmediate(resolve));
   socket.close();
