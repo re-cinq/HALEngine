@@ -37,7 +37,7 @@ const harness = ({connectMessage, ...options}: HarnessOptions = {}) => {
     ...options,
   } as unknown as ConnectionHandlerDeps;
 
-  const connect = () => createConnectionHandler(deps, {examplePrompts: [], connectMessage})(ws);
+  const connect = () => createConnectionHandler(deps, {getExamplePrompts: () => [], connectMessage})(ws);
 
   return {
     connect,
@@ -340,7 +340,7 @@ describe('a session store that fails to release', () => {
       basePath: '/hal',
     } as unknown as ConnectionHandlerDeps;
 
-    createConnectionHandler(deps, {examplePrompts: []})(ws);
+    createConnectionHandler(deps, {getExamplePrompts: () => []})(ws);
     return calls;
   };
 

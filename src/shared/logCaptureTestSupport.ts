@@ -27,3 +27,12 @@ export function captureLog(): {errors: Array<Record<string, unknown>>; warnings:
 
   return {errors, warnings};
 }
+
+/** Installs a logger that keeps every line at every level, for a test proving a value reaches no log at all. */
+export function keepEveryLine(): Array<Record<string, unknown>> {
+  const lines: Array<Record<string, unknown>> = [];
+  const keep = (category: string, message: string, fields?: Record<string, unknown>): void =>
+    void lines.push({category, message, ...fields});
+  setLogger({debug: keep, info: keep, warn: keep, error: keep});
+  return lines;
+}

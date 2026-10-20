@@ -129,7 +129,8 @@ export const DEFAULT_CONNECT_MESSAGE = 'Connected to HAL Engine';
 
 /** What every new socket's connected frame carries besides its session id. */
 export interface ConnectionOptions {
-  examplePrompts: string[];
+  /** Called for each connected frame, so the prompts reflect the registry when that socket connects. */
+  getExamplePrompts: () => string[];
   /** The frame's `message`; a deployer serving EU users may carry the AI Act Art. 50(1) disclosure here, and a per-session resolver could later take this field's place. */
   connectMessage?: string;
 }
@@ -210,7 +211,7 @@ async function openSession(deps: ConnectionHandlerDeps, options: ConnectionOptio
     type: 'connected',
     sessionId,
     message: options.connectMessage ?? DEFAULT_CONNECT_MESSAGE,
-    examplePrompts: options.examplePrompts,
+    examplePrompts: options.getExamplePrompts(),
     ...resumeFields(deps.resume, outcome),
   };
   // A socket that died between the check above and this frame must not leave the session it was created for behind.
