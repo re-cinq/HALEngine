@@ -29,7 +29,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 - JSON Schema tool definitions, declared per tool and forwarded to the model; `ToolRegistry.execute` validates input against the declared schema before the executor runs — a schema-invalid call returns a `ToolResponse` describing the failure to the model rather than throwing, extra properties pass through to the executor unmodified, and `DEFAULT_MAX_TOOL_ROUNDS = 5` bounds the retry cycle
 - Parallel tool execution within configurable tool loops
 - Tool response normalization: an executor returns a `string` or a `ToolResponse`, and `normalizeToolResponse` turns a string into the latter
-- Context-aware tool execution: the executor receives the caller's identity (`userId`, `sessionId`, `workspaceId`) and the auth headers the session carries, forwarded from the WebSocket upgrade or the HTTP chat request, not the conversation history
+- Context-aware tool execution: the executor receives the caller's identity (`userId`, `sessionId`, `workspaceId`) and the caller headers `auth.forwardHeaders` allows, captured from the WebSocket upgrade or the HTTP chat request, not the conversation history. The intended default forwards no header: an unset `auth.forwardHeaders` still forwards `cookie`, `authorization` and `host` until 0.10.0, with a warning, and forwards none from then
 - Configurable maximum tool loop iterations (default: 5)
 
 ### 3. Real-Time Streaming

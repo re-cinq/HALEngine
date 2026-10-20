@@ -5,6 +5,7 @@ export {createApp} from './transport/createApp.js';
 export type {HalAppOptions} from './transport/createApp.js';
 export {createServer} from './transport/createServer.js';
 export type {HalServerOptions, HalServer} from './transport/createServer.js';
+export type {ForwardableHeader} from './transport/authHeaders.js';
 export {createChatRoutes} from './transport/routes/chats.js';
 export {HAL_WS_SUBPROTOCOL, credentialFromSubprotocol} from './transport/ws/subprotocol.js';
 export {recordedFrames} from './testing/frames.js';
