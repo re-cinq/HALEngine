@@ -56,8 +56,10 @@ at `create`, and `MongoSessionStore` from the creation time it writes to each do
 read back from MongoDB carries the time it was first created. A `SessionStore` you implement is the
 other producer of `createdAt`. Both are ISO 8601, and ISO 8601 values may arrive in different forms - `Z`-suffixed UTC
 or a numeric offset such as `+01:00` - that parse to the same instant but sort differently as
-strings, so parse before comparing. Both are optional on the types: a session or entry stored before
-0.9 has neither.
+strings, so parse before comparing. Both are optional on the types: a thinking entry stored before
+0.9 has no `timestamp`, and a session has no `createdAt` when its store holds no creation time for
+it. `MongoSessionStore` has written one to every document since 0.4.0, so its sessions carry
+`createdAt` even when they were stored before 0.9.
 
 **GDPR.** A creation time attached to an identified user's conversation is personal data like the
 rest of the session, a retained metadata category of its own; the fields exist precisely so a
