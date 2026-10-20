@@ -1,7 +1,13 @@
 import type {ConverseStreamOutput} from '@aws-sdk/client-bedrock-runtime';
 import {AIError} from '../../types/ai.js';
 import {requireOptionalPeer} from '../requireOptionalPeer.js';
-import type {AIProvider, MessageChunk, SendMessageParams, StructuredOutputParams} from '../../types/ai.js';
+import type {
+  AIProvider,
+  MessageChunk,
+  SendMessageParams,
+  StructuredOutputParams,
+  UsageMetadata,
+} from '../../types/ai.js';
 import {
   emptyToolAccumulator,
   handleTextDelta,
@@ -9,6 +15,7 @@ import {
   handleToolInputDelta,
   handleContentBlockStop,
   handleMessageStop,
+  extractUsageFromMetadata,
 } from './bedrockStreamHandlers.js';
 import {mapBedrockError} from './bedrockErrorMap.js';
 import {mapMessage, mapToolConfig} from './bedrockMessageMapper.js';
@@ -72,12 +79,14 @@ export function createBedrockProvider(config: BedrockConfig): AIProvider {
   };
 }
 
-// The abort closes the HTTP/2 stream, but events already received could still be read, so each one checks first.
-async function* parseStreamEvents(
+// Each event checks the abort first; the stop chunk waits for the end, since AWS sends token counts after messageStop.
+export async function* parseStreamEvents(
   stream: AsyncIterable<ConverseStreamOutput>,
   signal: AbortSignal | undefined
 ): AsyncGenerator<MessageChunk> {
   let acc = emptyToolAccumulator();
+  let stop: MessageChunk | null = null;
+  let usage: UsageMetadata | undefined;
 
   for await (const event of stream) {
     if (signal?.aborted) return;
@@ -91,7 +100,9 @@ async function* parseStreamEvents(
     acc = nextAcc;
     if (toolChunk) yield toolChunk;
 
-    const stop = handleMessageStop(event);
-    if (stop) yield stop;
+    stop = handleMessageStop(event) ?? stop;
+    usage = extractUsageFromMetadata(event) ?? usage;
   }
+  if (signal?.aborted || stop?.type !== 'stop') return;
+  yield usage ? {...stop, usage} : stop;
 }

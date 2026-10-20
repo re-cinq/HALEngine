@@ -1,6 +1,6 @@
 import type {ConverseStreamOutput} from '@aws-sdk/client-bedrock-runtime';
 import {AIError} from '../../types/ai.js';
-import type {MessageChunk} from '../../types/ai.js';
+import type {MessageChunk, UsageMetadata} from '../../types/ai.js';
 
 export interface ToolAccumulator {
   currentToolCall: {id: string; name: string} | null;
@@ -49,6 +49,17 @@ export function handleContentBlockStop(
 export function handleMessageStop(event: ConverseStreamOutput): MessageChunk | null {
   if (!event.messageStop) return null;
   return {type: 'stop', stopReason: event.messageStop.stopReason ?? 'end_turn'};
+}
+
+/** The token counts a metadata event reports, and nothing else from it: its trace can carry content derived from user input. */
+export function extractUsageFromMetadata(event: ConverseStreamOutput): UsageMetadata | undefined {
+  const usage = event.metadata?.usage;
+  if (!usage) return undefined;
+  const {inputTokens, outputTokens, totalTokens} = usage;
+  // No numbers at all is an honest absence, not a confident zero in a cost column.
+  if ([inputTokens, outputTokens, totalTokens].every(count => count === undefined)) return undefined;
+  // The vendor's own total, never a recomputed sum: it may count cache tokens this engine does not model.
+  return {inputTokens: inputTokens ?? 0, outputTokens: outputTokens ?? 0, totalTokens: totalTokens ?? 0};
 }
 
 function parseToolInput(raw: string): Record<string, unknown> {
