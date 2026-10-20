@@ -222,7 +222,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 
 - Tool executors return a `string` or a `ToolResponse` (`src/orchestration/tools/registry.ts`, `specs/hal-engine-tool-responses/spec.md`); `normalizeToolResponse` turns a string into `{result: string}`
 - No tool result is validated, in either direction: `ToolDefinition` declares no schema for a result, only for the input
-- A malformed response produces no entry and no error: an executor returning an object with no `result` reaches the provider as a tool result whose content is `undefined`, copied unchecked from `response.result` where `executeToolCalls` in `src/orchestration/chatOrchestrator.ts` builds the `tool_result` blocks
+- A malformed response produces no entry: an executor whose return value carries no `result` reaches the provider as a tool result whose content is `undefined`, copied unchecked from `response.result` where `executeToolCalls` in `src/orchestration/chatOrchestrator.ts` builds the `tool_result` blocks; what the provider then does with it is the vendor's
 - **GDPR.** The registry hands an executor's `result` to the orchestrator unmodified: nothing in it inspects, truncates or redacts the result, so a consumer that must bound what a tool result sends to a model provider places that control in the tool itself, or in a `privacy.mask`, outside the registry
 
 ### 7. Provider Compatibility
