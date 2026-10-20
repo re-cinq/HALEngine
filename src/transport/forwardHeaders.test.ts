@@ -6,6 +6,7 @@ import type {ForwardableHeader} from './authHeaders.js';
 import {createApp} from './createApp.js';
 import {HAL_WS_SUBPROTOCOL} from './ws/subprotocol.js';
 import {setLogger} from '../shared/logger.js';
+import {keepEveryLine} from '../shared/logCaptureTestSupport.js';
 import {startEngineWith, stopEngines} from './wsTestSupport.js';
 import {whoamiOrchestrator} from './whoamiTestSupport.js';
 
@@ -93,10 +94,7 @@ describe('the caller headers a tool receives', () => {
   });
 
   it('writes neither the authorization nor the cookie value to any log line at any level across a whole connection', async () => {
-    const lines: unknown[] = [];
-    const keep = (category: string, message: string, fields?: Record<string, unknown>) =>
-      void lines.push({category, message, ...fields});
-    setLogger({debug: keep, info: keep, warn: keep, error: keep});
+    const lines = keepEveryLine();
 
     const context = await socketTurn(undefined);
 
