@@ -1,11 +1,15 @@
 import {jest} from '@jest/globals';
+import {WebSocketServer} from 'ws';
+import {IncomingMessage} from 'http';
+import {Duplex} from 'stream';
 import {
   createConnectionHandler,
+  createUpgradeHandler,
   DEFAULT_CONNECT_MESSAGE,
   type ConnectionHandlerDeps,
   type ExtWebSocket,
 } from './connectionHandler.js';
-import type {ChatSession} from '../../types/session.js';
+import type {AuthenticatedUser, ChatSession} from '../../types/session.js';
 import type {SessionStore} from '../../types/sessionStore.js';
 import type {WsAuthenticator} from '../../types/auth.js';
 import {captureErrors} from '../../shared/logCaptureTestSupport.js';
