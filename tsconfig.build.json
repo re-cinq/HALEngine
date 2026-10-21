@@ -21,6 +21,8 @@
     "src/transport/ws/recordingSocketTestSupport.ts",
     "src/transport/whoamiTestSupport.ts",
     "src/providers/maskTestSupport.ts",
+    "src/infrastructure/stores/sessionStoreTestSupport.ts",
+    "src/infrastructure/stores/mongo/mongoFakeCollection.ts",
     "src/testing/recordFrames.ts",
     "src/testing/writeFrames.ts"
   ]

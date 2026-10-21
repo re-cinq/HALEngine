@@ -8,6 +8,10 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Two test fixtures no longer ship.** `sessionStoreTestSupport.js` and `mongoFakeCollection.js` were emitted to `dist/` since 0.6.0. Nothing in the package imported them and the `exports` map kept them unreachable, so they were dead weight in the tarball. A test now fails the build of any file only tests reach.
+
 ## [0.9.0] - 2026-10-21
 
 **Upgrading from 0.8.x.** No exported signature changes, but some behaviour does:
