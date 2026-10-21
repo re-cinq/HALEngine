@@ -8,6 +8,10 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-21
+
+**Upgrading from 0.9.x.** If a tool reads `context.authHeaders`, set `auth.forwardHeaders` to the headers it needs, for example `auth: {ws, forwardHeaders: ['authorization']}`: an unset list now forwards none. A list you already set, `[]` included, behaves as before, and nothing else changes for a consumer.
+
 ### Changed
 
 - **An unset `auth.forwardHeaders` now forwards no caller header to tools.** In 0.9.0 an unset list still handed every tool the caller's `cookie`, `authorization` and forwarded `host`, and warned once at startup that this would change; now no header is captured unless you list it, and the warning is gone. **Migration note:** a tool that reads `context.authHeaders` gets `undefined` until you list the header it needs, for example `auth: {ws, forwardHeaders: ['authorization']}`. A list you already set, `[]` included, behaves exactly as before.
@@ -436,7 +440,8 @@ path from `0.1.0` on the registry — only from the git specifier.
 - Resolved a high-severity advisory in `ws`, a direct runtime dependency. The full dependency audit went
   from 18 advisories (1 critical, 6 high) to 3 (2 moderate, 1 low), none at high or above.
 
-[Unreleased]: https://github.com/re-cinq/HALEngine/compare/v0.9.0...main
+[Unreleased]: https://github.com/re-cinq/HALEngine/compare/v0.10.0...main
+[0.10.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.10.0
 [0.9.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.9.0
 [0.8.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.8.0
 [0.7.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.7.0
