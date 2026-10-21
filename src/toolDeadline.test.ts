@@ -139,7 +139,7 @@ describe('a deadline per tool call', () => {
     });
   });
 
-  it('hands each call in a round its own context and signal, while authHeaders stays one shared object', async () => {
+  it("hands each call in a round its own context, signal and copy of authHeaders, none of them the session's own object", async () => {
     const contexts: Array<ToolContext | undefined> = [];
     const keep: ToolExecutor = async (_input, context) => {
       contexts.push(context);
@@ -154,8 +154,14 @@ describe('a deadline per tool call', () => {
       ownContexts: first !== second,
       ownSignals:
         first?.signal instanceof AbortSignal && second?.signal instanceof AbortSignal && first.signal !== second.signal,
-      sharedAuthHeaders: first?.authHeaders === t.session.authHeaders && second?.authHeaders === t.session.authHeaders,
-    }).toEqual({ownContexts: true, ownSignals: true, sharedAuthHeaders: true});
+      ownHeaders: first?.authHeaders !== t.session.authHeaders && second?.authHeaders !== first?.authHeaders,
+      headers: [first?.authHeaders, second?.authHeaders],
+    }).toEqual({
+      ownContexts: true,
+      ownSignals: true,
+      ownHeaders: true,
+      headers: [t.session.authHeaders, t.session.authHeaders],
+    });
   });
 
   it('bounds a beforeToolCall policy that never answers by the same deadline', async () => {

@@ -318,13 +318,13 @@ function skipAbandoned(tc: ToolCall): ToolResponse {
   return {result: `The ${tc.name} call was abandoned before it started and was not performed.`};
 }
 
-// One per call, so each carries its own signal and a tool that edits a field cannot reach its siblings; authHeaders stays shared.
+// One per call, so each carries its own signal and its own copy of the caller's headers, which no sibling's edit can reach.
 function contextFor(session: ChatSession, signal: AbortSignal): ToolContext {
   return {
     userId: session.userId,
     sessionId: session.sessionId,
     workspaceId: session.workspaceId,
-    authHeaders: session.authHeaders,
+    authHeaders: session.authHeaders === undefined ? undefined : {...session.authHeaders},
     // Copied per call: an executor that assigns to its user must not reach the session or a sibling call's copy.
     user: session.user === undefined ? undefined : {...session.user},
     signal,

@@ -147,6 +147,8 @@ const getOrder: ToolExecutor = async (input, context) => {
 
 `context.authHeaders` holds only the caller headers you list in `auth.forwardHeaders`, from `'cookie'`, `'authorization'` and `'host'`, and is `undefined` when that leaves none. Every tool sees the same selection, so list only what your tools need, and leave out anything a tool that calls a third party should not carry: a tool from any source receives what you list. Unset, the list still forwards all three, with a warning at startup, and from 0.10.0 an unset list forwards none, so a tool that reads `context.authHeaders.authorization` must have `'authorization'` listed. For one tool that must not see them, wrap its executor and pass it a context without `authHeaders`. Under GDPR the capture is a processing step: the listed headers live on `ChatSession` for the connection's life, are never logged, and are never written by `MongoSessionStore`; with `forwardHeaders: []` none is held.
 
+`context.authHeaders` is a copy made for each call, and an executor must not mutate it: a change would reach nothing outside its own call, neither the session nor another tool in the same round.
+
 A tool that ignores the signal is still bounded, since the orchestrator stops waiting at the deadline either way, but its request keeps running, and keeps sending whatever it carries, after the round has moved on.
 
 - Return `JSON.stringify(result)` for most tools -- the result gets added to the conversation as a tool result message
