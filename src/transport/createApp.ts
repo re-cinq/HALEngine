@@ -18,7 +18,7 @@ export interface HalAppOptions {
   additionalRoutes?: (router: Router) => void;
   rootRoutes?: (router: Router) => void;
   errorHandler?: express.ErrorRequestHandler;
-  /** The caller headers a tool reached through the chat routes may receive; unset, all three until 0.10.0. */
+  /** The caller headers a tool reached through the chat routes may receive; unset, none. */
   forwardHeaders?: readonly ForwardableHeader[];
 }
 

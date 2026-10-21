@@ -1,5 +1,6 @@
 import {filterAuthHeaders, forwardedHeaders} from './authHeaders.js';
 import {setLogger} from '../shared/logger.js';
+import {keepEveryLine} from '../shared/logCaptureTestSupport.js';
 
 const CAPTURED = {cookie: 'sid=cookie-7f3a', authorization: 'Bearer token-9c2e', host: 'tenant-4b1d.example'};
 
@@ -24,26 +25,12 @@ describe('filterAuthHeaders', () => {
 });
 
 describe('forwardedHeaders', () => {
-  it('forwards all three while unset and warns once per process naming auth.forwardHeaders and 0.10.0, keeping a set list, an empty one too, silently', () => {
-    const warnings: unknown[] = [];
-    const quiet = () => undefined;
-    setLogger({
-      debug: quiet,
-      info: quiet,
-      warn: (category, message, fields) => void warnings.push({category, ...fields}),
-      error: quiet,
-    });
+  it('forwards none while unset and logs nothing, and keeps a set list, an empty one too, as given', () => {
+    const lines = keepEveryLine();
 
     const unset = [forwardedHeaders(undefined), forwardedHeaders(undefined)];
     const set = [forwardedHeaders([]), forwardedHeaders(['cookie'])];
 
-    expect({unset, set, warnings}).toEqual({
-      unset: [
-        ['cookie', 'authorization', 'host'],
-        ['cookie', 'authorization', 'host'],
-      ],
-      set: [[], ['cookie']],
-      warnings: [{category: 'auth', setting: 'auth.forwardHeaders', forwardsNoneFrom: '0.10.0'}],
-    });
+    expect({unset, set, lines}).toEqual({unset: [[], []], set: [[], ['cookie']], lines: []});
   });
 });
