@@ -25,11 +25,11 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 
 ### 2. Tool System
 
-- Dynamic tool registration via `ToolRegistry`
+- Dynamic tool registration via `ToolRegistry`: a tool registered at any time can be executed, is advertised to the model and named in its system prompt from the next turn, and is offered in the connect frame of every later connection. The registry, empty by default, is re-read at the start of each turn and at each connection rather than once at construction, so a consumer may fill it after construction. Leaving a tool unadvertised is not an access control; a capability that must not be used is refused at execution
 - JSON Schema tool definitions, declared per tool and forwarded to the model; `ToolRegistry.execute` validates input against the declared schema before the executor runs — a schema-invalid call returns a `ToolResponse` describing the failure to the model rather than throwing, extra properties pass through to the executor unmodified, and `DEFAULT_MAX_TOOL_ROUNDS = 5` bounds the retry cycle
 - Parallel tool execution within configurable tool loops
-- Tool response normalization (supports both simple strings and structured content)
-- Context-aware tool execution: the executor receives the caller's identity (`userId`, `sessionId`, `workspaceId`) and the auth headers the session carries, forwarded from the WebSocket upgrade or the HTTP chat request, not the conversation history
+- Tool response normalization: an executor returns a `string` or a `ToolResponse`, and `normalizeToolResponse` turns a string into the latter
+- Context-aware tool execution: the executor receives the caller's identity (`userId`, `sessionId`, `workspaceId`) and the caller headers `auth.forwardHeaders` allows, captured from the WebSocket upgrade or the HTTP chat request, not the conversation history. The intended default forwards no header: an unset `auth.forwardHeaders` still forwards `cookie`, `authorization` and `host` until 0.10.0, with a warning, and forwards none from then
 - Configurable maximum tool loop iterations (default: 5)
 
 ### 3. Real-Time Streaming
@@ -45,7 +45,7 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 - Custom WebSocket authentication via `WsAuthenticator` function
 - Express middleware-based HTTP authentication via `HttpAuthMiddleware`, which must attach a `user` to the `AuthenticatedRequest`
 - Session binding to authenticated users
-- User context propagated throughout request lifecycle
+- User context propagated throughout request lifecycle: over a WebSocket connection, everything `auth.ws` returned reaches each tool call as `context.user`, beside `userId` and `workspaceId`; over the REST chat routes only `userId` and `workspaceId` do, since they have no `AuthenticatedUser` to carry
 
 ### 5. Session Management
 
@@ -105,8 +105,8 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 - `UserEntry`: Text message from user
 - `AssistantEntry`: AI-generated response with tool calls
 - `ThinkingEntry`: Internal reasoning (parsed from models that support thinking)
-- `ToolEntry`: Tool execution metadata and results
-- `SessionEntry`: Marker for session lifecycle events
+- `ToolEntry`: The tool call the model requested, its name and input; it carries no result
+- `SessionEntry`: The union of the four entry types, `UserEntry | AssistantEntry | ThinkingEntry | ToolEntry`
 
 ### AI Communication Model
 
@@ -119,21 +119,22 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 - `ToolResultContent`: Structured tool result representation
 
 **ToolDefinition**:
-<!-- doc-block: none -- a JSON message payload, not a TypeScript declaration -->
+<!-- doc-block: none -- the members of ToolDefinition in src/types/ai.ts, listed here rather than quoted -->
 ```typescript
 {
   name: string;
   description: string;
-  inputSchema: JSONSchema;
+  inputSchema: Record<string, unknown>; // JSON Schema, forwarded to the model
+  promptInstructions?: string;
+  examplePrompts?: string[];
 }
 ```
 
-**Tool Response Variants**:
+**Tool Response Forms**:
 
-- String: Direct text response
-- Object with `content`: Rich structured content
-- Object with `entries`: Multiple message entries
-- Normalized to internal format via `normalizeToolResponse()`
+- A `string`: the text the model receives as the tool's result
+- A `ToolResponse`: its `result` is what the model receives; its other fields are listed in `src/orchestration/tools/registry.ts` and specified in `specs/hal-engine-tool-responses/spec.md`, not copied here, since a list mirrored in two places goes stale when either changes
+- `normalizeToolResponse()` turns a `string` into `{result: string}`, so the orchestrator handles one shape
 
 ---
 
@@ -219,10 +220,10 @@ Providers are abstractly defined via the `AIProvider` interface and instantiated
 
 ### 6. Tool Response Normalization
 
-- Tool executors return `string`, object with `content`, or object with `entries`
-- Framework normalizes all variants to internal representation
-- Tool results are validated against original tool definition schema
-- Malformed responses result in error entries
+- Tool executors return a `string` or a `ToolResponse` (`src/orchestration/tools/registry.ts`, `specs/hal-engine-tool-responses/spec.md`); `normalizeToolResponse` turns a string into `{result: string}`
+- No tool result is validated, in either direction: `ToolDefinition` declares no schema for a result, only for the input
+- A malformed response produces no entry: an executor whose return value carries no `result` reaches the provider as a tool result whose content is `undefined`, copied unchecked from `response.result` where `executeToolCalls` in `src/orchestration/chatOrchestrator.ts` builds the `tool_result` blocks; what the provider then does with it is the vendor's
+- **GDPR.** The registry hands an executor's `result` to the orchestrator unmodified: nothing in it inspects, truncates or redacts the result, so a consumer that must bound what a tool result sends to a model provider places that control in the tool itself, or in a `privacy.mask`, outside the registry
 
 ### 7. Provider Compatibility
 

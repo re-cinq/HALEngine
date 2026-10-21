@@ -10,7 +10,8 @@ export interface PromptBuilderOptions {
   additionalContext?: string;
 }
 
-const DEFAULT_TOOL_PREAMBLE = `When users ask questions that relate to available tools, USE THE PROVIDED TOOLS to get accurate, real-time information.
+/** The tool preamble the prompt carries when the config sets no `toolPreamble`, and only while some tool has instructions. */
+export const DEFAULT_TOOL_PREAMBLE = `When users ask questions that relate to available tools, USE THE PROVIDED TOOLS to get accurate, real-time information.
 
 IMPORTANT:
 - Always use tools for specific data rather than guessing.

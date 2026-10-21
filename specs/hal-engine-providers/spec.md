@@ -97,6 +97,19 @@ This package reads neither. `src/providers/bedrock/bedrockProvider.ts:28` constr
 
 A `tool_use` block's `signature`, which only Vertex reads, is left out of the Converse request ([validated by: sends a tool_use block carrying signature sig-1 to Bedrock as a toolUse without it](../../src/providers/bedrock/bedrockProvider.test.ts#L66)).
 
+### Token usage
+
+Bedrock reports token counts on the `stop` chunk's `usage`, read from the stream's `metadata` event. AWS sends that event after `messageStop`, so the provider holds the `stop` chunk until the stream ends.
+
+- `extractUsageFromMetadata` is pure: it returns a metadata event's three counts, `undefined` without one, and leaves the event untouched ([validated by: reads the three counts off a metadata event, undefined without one, leaving the event as it was](../../src/providers/bedrock/bedrockUsage.test.ts#L19)).
+- A stream ending `messageStop` then `metadata` yields its text and then one `stop` chunk carrying that usage ([validated by: carries the usage of a metadata event after messageStop on the one stop chunk, after the text](../../src/providers/bedrock/bedrockUsage.test.ts#L29)).
+- The order of the two events does not matter: `metadata` before `messageStop` yields the identical chunks ([validated by: yields the identical chunks when the metadata event arrives before messageStop](../../src/providers/bedrock/bedrockUsage.test.ts#L36)).
+- A stream with no metadata event yields a `stop` chunk with no `usage` key at all ([validated by: puts no usage key at all on the stop chunk of a stream with no metadata event](../../src/providers/bedrock/bedrockUsage.test.ts#L40)).
+- A metadata event carrying no counts reports no `usage`, an honest absence rather than a confident zero in a cost column; one carrying only some counts reports `0` for the rest ([validated by: reports no usage for a metadata event with no counts, and zeroes the counts a partial one leaves out](../../src/providers/bedrock/bedrockUsage.test.ts#L46)).
+- `totalTokens` is the vendor's own figure, never recomputed from the other two, since it may include cache tokens this engine does not model ([validated by: reports the vendor's totalTokens of 1300 as given, never a recomputed 1000](../../src/providers/bedrock/bedrockUsage.test.ts#L56)).
+- **Data boundary.** Only `usage` is read off the metadata event, never `metrics` or `trace`, which can carry guardrail content derived from user input ([validated by: keeps metrics and trace out of the stop chunk, which carries exactly the three usage fields](../../src/providers/bedrock/bedrockUsage.test.ts#L62)).
+- A tool round keeps its shape: the `tool_use` chunk comes before the `stop` chunk, which carries that round's usage ([validated by: yields a tool round's tool_use chunk before its stop, the stop carrying that round's usage](../../src/providers/bedrock/bedrockUsage.test.ts#L74)).
+
 See [spike-bedrock-integration.md](../../docs/spikes/spike-bedrock-integration.md) for detailed cost analysis, token limits, and error handling patterns.
 
 ## Google Vertex AI
@@ -270,9 +283,9 @@ const engine = createHalEngine({
 });
 ```
 
-- `sendMessage` streams `Mock response to: "<last user message>"` one word at a time ([validated by: streams word-by-word response echoing user input](../../src/providers/mock/mockProvider.test.ts#L7)).
-- The stream closes with a `stop` chunk carrying fixed usage metadata, so usage plumbing can be exercised without a real provider ([validated by: ends with stop chunk containing usage metadata](../../src/providers/mock/mockProvider.test.ts#L16)).
-- A last message whose content is not a string falls back to `Hello` rather than failing ([validated by: handles non-string content in last message](../../src/providers/mock/mockProvider.test.ts#L28)).
+- `sendMessage` streams `Mock response to: "<last user message>"` one word at a time ([validated by: streams word-by-word response echoing user input](../../src/providers/mock/mockProvider.test.ts#L8)).
+- The stream closes with a `stop` chunk carrying fixed usage metadata, so usage plumbing can be exercised without a real provider ([validated by: ends with stop chunk containing usage metadata](../../src/providers/mock/mockProvider.test.ts#L17)).
+- A last message whose content is not a string falls back to `Hello` rather than failing ([validated by: handles non-string content in last message](../../src/providers/mock/mockProvider.test.ts#L29)).
 
 `generateStructured` is the configurable half. `structuredResponses` maps a user message to the exact object to return for it; anything unmatched gets a value built from the response schema's shape.
 
@@ -284,13 +297,31 @@ const provider = createProvider({
 });
 ```
 
-- A matching key returns that object verbatim ([validated by: returns preconfigured response when user text matches](../../src/providers/mock/mockProvider.test.ts#L78)).
-- No match returns the schema's default shape: `''` for a string, `0` for a number, `false` for a boolean, `[]` for an array, and recursively for an object ([validated by: returns default values matching schema shape](../../src/providers/mock/mockProvider.test.ts#L72)).
-- A `structuredResponses` map that holds no entry for this message falls back to the same default shape, rather than failing or returning nothing ([validated by: falls back to default when no preconfigured response matches](../../src/providers/mock/mockProvider.test.ts#L114)).
-- A schema whose top level is not an object is built from the scalar table directly, so a top-level `array` schema returns `[]` ([validated by: returns empty array for array schema](../../src/providers/mock/mockProvider.test.ts#L87)).
-- Each caller gets its own array, so one caller mutating a returned `[]` cannot affect another ([validated by: gives each caller its own array, so one mutating it cannot affect another](../../src/providers/mock/mockProvider.test.ts#L98)).
+- A matching key returns that object verbatim ([validated by: returns preconfigured response when user text matches](../../src/providers/mock/mockProvider.test.ts#L79)).
+- No match returns the schema's default shape: `''` for a string, `0` for a number, `false` for a boolean, `[]` for an array, and recursively for an object ([validated by: returns default values matching schema shape](../../src/providers/mock/mockProvider.test.ts#L73)).
+- A `structuredResponses` map that holds no entry for this message falls back to the same default shape, rather than failing or returning nothing ([validated by: falls back to default when no preconfigured response matches](../../src/providers/mock/mockProvider.test.ts#L115)).
+- A schema whose top level is not an object is built from the scalar table directly, so a top-level `array` schema returns `[]` ([validated by: returns empty array for array schema](../../src/providers/mock/mockProvider.test.ts#L88)).
+- Each caller gets its own array, so one caller mutating a returned `[]` cannot affect another ([validated by: gives each caller its own array, so one mutating it cannot affect another](../../src/providers/mock/mockProvider.test.ts#L99)).
 
-There is no `responses` array and no cycling: the only knob is `structuredResponses`.
+`sendMessage` can be scripted too. `turns` is a queue of answers, one per `sendMessage` call, not per user message, since a tool round is several calls in one turn; it is named `turns`, not `responses`, which older docs promised and no code ever implemented. Each turn emits its `text`, then one `tool_use` chunk per tool call, then a `stop` chunk. Without `turns`, the mock echoes as above.
+
+<!-- doc-block: none -- a composed provider configuration; MockTurn is checked through src/providers/mock/mockProvider.ts by typecheck -->
+```typescript
+const provider = createProvider({
+  type: 'mock',
+  turns: [{toolCalls: [{id: 't1', name: 'echo', input: {q: 'hi'}}]}, {text: 'done'}],
+});
+```
+
+- Driven through the orchestrator, that script calls `sendMessage` twice, yields `tool_use`, `stop`, `text`, `stop`, and the second call carries the tool's result as its last message ([validated by: drives a tool round through createChatOrchestrator in two calls, the second carrying the echo tool's result](../../src/scriptedMock.test.ts#L9)).
+- A turn that calls a tool ends `stopReason: 'tool_use'`, and one that does not ends `'end_turn'`, the reasons Bedrock and Vertex report ([validated by: ends a turn that calls a tool with stopReason tool_use, and one that does not with end_turn](../../src/providers/mock/mockProvider.test.ts#L143)).
+- A turn emits its text, then its tool calls, then its stop, and the text joins back to exactly what was scripted ([validated by: emits a turn's text, then its tool calls, then its stop, the text joining back to exactly what was scripted](../../src/providers/mock/mockProvider.test.ts#L152)).
+- A call past the end of the script throws `mock provider script exhausted: call N of M scripted turns` instead of falling back to the echo, which is how a broken test would still go green ([validated by: throws on the third call against a two-turn script, naming call 3 of 2 scripted turns](../../src/providers/mock/mockProvider.test.ts#L165)).
+- A turn's stop chunk reports the turn's `usage`, or the echo's fixed usage when it sets none ([validated by: reports the fixed usage on a scripted turn that sets none, and exactly the usage a turn sets](../../src/providers/mock/mockProvider.test.ts#L173)).
+- `onSendMessage` runs once per call, before the first chunk, with the parameters the caller built ([validated by: runs onSendMessage once per call, before the first chunk, with the parameters the caller passed](../../src/providers/mock/mockProvider.test.ts#L183)).
+- A scripted tool name is not checked against `params.tools`, so a hallucinated tool name can be reproduced without a cloud account ([validated by: emits a tool_use for a tool no registry holds, checking nothing against params.tools](../../src/providers/mock/mockProvider.test.ts#L201)).
+- `turns` leaves `structuredResponses` as it was ([validated by: answers generateStructured from structuredResponses exactly as before when turns are also set](../../src/providers/mock/mockProvider.test.ts#L214)).
+- `turns` reaches the provider through `createProvider` as well ([validated by: takes turns through createProvider as well as createMockProvider](../../src/providers/mock/mockProvider.test.ts#L231)).
 
 Both entry points honour it: the example above goes through `createProvider`, which once called `createMockProvider()` with no arguments and dropped the map ([validated by: forwards MockConfig, so a configured structured response survives the factory](../../src/providers/providerFactory.test.ts#L17)).
 
@@ -316,7 +347,7 @@ It configures `generateStructured` only, and nothing inside `createHalEngine` ca
 - A signal already aborted when `sendMessage` is called sends nothing to the vendor ([validated by: sends nothing to Vertex when its signal is already aborted](../../src/providers/vertex/vertexProvider.test.ts#L311)).
 - A stream that fails mid-way raises one `PROVIDER_ERROR` after the chunks already read, and leaves no unhandled rejection. `@google/genai` raises the failure from the stream itself and keeps no second copy of the response, so the rejection handler `@google-cloud/vertexai`'s drained copy needed is gone ([validated by: raises one PROVIDER_ERROR after the chunk already read when the stream fails mid-way, and no unhandled rejection](../../src/providers/vertex/vertexProvider.test.ts#L319)).
 
-**Mock** stops at once: an abort after two words leaves two chunks and no `stop` chunk ([validated by: stops yielding once its signal aborts, so an abort after two words leaves two chunks and no stop chunk](../../src/providers/mock/mockProvider.test.ts#L42)).
+**Mock** stops at once: an abort after two words leaves two chunks and no `stop` chunk ([validated by: stops yielding once its signal aborts, so an abort after two words leaves two chunks and no stop chunk](../../src/providers/mock/mockProvider.test.ts#L43)).
 
 ## Implementing a Custom Provider
 

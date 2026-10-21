@@ -61,18 +61,19 @@ The engine shipped `InMemorySessionStore` and nothing else, so a conversation di
 
 - **GDPR data minimisation, Art. 5(1)(c).** No persisted document holds an `authHeaders`, `authorization`, `cookie` or `host` key at any depth, asserted by walking every key of the serialised document rather than checking its top-level fields — depth is the point rather than a flourish, since `ToolEntry.toolInput` is model-supplied data and a token can arrive nested inside a tool's input, so stripping only the top level would be theatre ([validated by: holds no credential key at any depth of the stored document](../../src/infrastructure/stores/mongo/mongoRedaction.test.ts#L50)).
 - The redaction removes credentials and nothing else, so the guarantee is not met by writing an empty document ([validated by: keeps everything that is not a credential, so the redaction is not simply emptying the document](../../src/infrastructure/stores/mongo/mongoRedaction.test.ts#L57)).
-- Sanitising copies rather than mutates, because the live session keeps the credentials the orchestrator hands to tools through `ToolContext` ([validated by: leaves the caller their in-memory credentials, which the tools still need](../../src/infrastructure/stores/mongo/mongoRedaction.test.ts#L66); a conversation reloaded in a fresh process therefore has no `authHeaders`, and a tool that reads them sees nothing until the caller re-authenticates, which is the intended trade-off and matches what the transport already does on socket close).
+- Sanitising copies rather than mutates, because the live session keeps the credentials the orchestrator hands to tools through `ToolContext` ([validated by: leaves the caller their in-memory credentials, which the tools still need](../../src/infrastructure/stores/mongo/mongoRedaction.test.ts#L82); a conversation reloaded in a fresh process therefore has no `authHeaders`, and a tool that reads them sees nothing until the caller re-authenticates, which is the intended trade-off and matches what the transport already does on socket close).
 
 ## The connection is the consumer's
 
-- The store takes a collection, a client with a database name, or a URL with one; nothing in `src/` reads the environment or carries a default host ([validated by: connects from a url the consumer supplied, and closes the client it opened](../../src/infrastructure/stores/mongo/mongoConnection.test.ts#L19)).
-- `close` closes only a client the store opened, so a client the consumer owns stays open and usable afterwards ([validated by: uses a client the consumer owns and leaves it open](../../src/infrastructure/stores/mongo/mongoConnection.test.ts#L29)).
-- The collection name defaults when the consumer names none ([validated by: defaults the collection name when the consumer names none](../../src/infrastructure/stores/mongo/mongoConnection.test.ts#L46)).
-- `createMongoSessionStore` builds the same store from the same options, matching how the providers are exported ([validated by: is built by the factory the package exports, on the same options](../../src/infrastructure/stores/mongo/mongoConnection.test.ts#L58)).
+- The store takes a collection, a client with a database name, or a URL with one; nothing in `src/` reads the environment or carries a default host ([validated by: connects from a url the consumer supplied, and closes the client it opened](../../src/infrastructure/stores/mongo/mongoConnection.test.ts#L18)).
+- `close` closes only a client the store opened, so a client the consumer owns stays open and usable afterwards ([validated by: uses a client the consumer owns and leaves it open](../../src/infrastructure/stores/mongo/mongoConnection.test.ts#L28)).
+- The collection name defaults when the consumer names none ([validated by: defaults the collection name when the consumer names none](../../src/infrastructure/stores/mongo/mongoConnection.test.ts#L45)).
+- `createMongoSessionStore` builds the same store from the same options, matching how the providers are exported ([validated by: is built by the factory the package exports, on the same options](../../src/infrastructure/stores/mongo/mongoConnection.test.ts#L57)).
 
 ## Costing nobody else the driver
 
 - `mongodb` is an optional peer dependency mirrored into `devDependencies`, exactly as the two provider SDKs are, and a consumer with none of the optional peers installed can still import the package root and construct the in-memory store ([validated by: can import the package root and use the in-memory store](../../src/infrastructure/stores/mongo/optionalPeers.test.ts#L20)).
+- The peer range admits driver majors 6 and 7, and a client from either is accepted as the consumer built it, with no cast; the suites run on 7 and CI's `Mongo driver 6` job runs them again on 6 ([validated by: uses a client the consumer owns and leaves it open](../../src/infrastructure/stores/mongo/mongoConnection.test.ts#L28)).
 
 ## Rationale
 

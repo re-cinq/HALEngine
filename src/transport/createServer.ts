@@ -11,6 +11,7 @@ import {selectSubprotocol} from './ws/subprotocol.js';
 import type {ConnectInfo, SessionResumeOptions} from './ws/sessionResume.js';
 import type {ConversationHistoryOptions} from './ws/conversationList.js';
 import {log} from '../shared/logger.js';
+import type {ForwardableHeader} from './authHeaders.js';
 
 export interface HalServerOptions {
   app: Express;
@@ -27,6 +28,8 @@ export interface HalServerOptions {
   onDisconnect?: (sessionId: string) => void | Promise<void>;
   resume?: SessionResumeOptions;
   history?: ConversationHistoryOptions;
+  /** The caller headers a tool may receive; unset, all three until 0.10.0 (specs/hal-engine-tool-header-allowlist/spec.md). */
+  forwardHeaders?: readonly ForwardableHeader[];
 }
 
 export interface HalServer {
@@ -58,7 +61,8 @@ export function createServer(options: HalServerOptions): HalServer {
     sessionStore: options.sessionStore,
     history: options.history,
   });
-  const examplePrompts = options.toolRegistry?.getExamplePrompts() ?? [];
+  // Read at each connection, never once at startup, so a tool registered after the server starts offers its prompts too.
+  const getExamplePrompts = () => options.toolRegistry?.getExamplePrompts() ?? [];
 
   const deps = {
     wsAuth: options.wsAuth,
@@ -68,10 +72,11 @@ export function createServer(options: HalServerOptions): HalServer {
     onConnect: options.onConnect,
     onDisconnect: options.onDisconnect,
     resume: options.resume,
+    forwardHeaders: options.forwardHeaders,
   };
 
   const handleUpgrade = createUpgradeHandler(wss, deps);
-  const handleConnection = createConnectionHandler(deps, {examplePrompts, connectMessage: options.connectMessage});
+  const handleConnection = createConnectionHandler(deps, {getExamplePrompts, connectMessage: options.connectMessage});
 
   const server = http.createServer(options.app);
 

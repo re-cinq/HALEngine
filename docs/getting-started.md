@@ -32,7 +32,7 @@ const engine = createHalEngine({
 await engine.start();
 ```
 
-`ws` receives the WebSocket upgrade request, not a token, so pull whatever you authenticate with off `req.headers` yourself. A browser cannot set `Authorization` on a WebSocket, so it offers its token beside `hal.v1` in `Sec-WebSocket-Protocol`; `credentialFromSubprotocol` reads it the way the engine does, skipping the marker. An upgrade that sends both carriers must send the same credential in each; two different ones are refused with `400` before your function runs, so the credential you validate is the one the engine forwards to tools. Return an `AuthenticatedUser` — `id` is the only required field, and anything else you put on it reaches tools through `ToolContext`. Returning `null` rejects the upgrade with `401`.
+`ws` receives the WebSocket upgrade request, not a token, so pull whatever you authenticate with off `req.headers` yourself. A browser cannot set `Authorization` on a WebSocket, so it offers its token beside `hal.v1` in `Sec-WebSocket-Protocol`; `credentialFromSubprotocol` reads it the way the engine does, skipping the marker. An upgrade that sends both carriers must send the same credential in each; two different ones are refused with `400` before your function runs, so the credential you validate is the one the engine forwards to tools. Return an `AuthenticatedUser` — `id` is the only required field, and anything else you put on it reaches tools through `ToolContext`. Returning `null` rejects the upgrade with `401`. `id` must be a string or a finite number: it is the only thing separating one user's conversations from another's, so an `id` that is anything else — an object a token decoded to, `undefined`, `NaN` — is refused with `401` too, and logged as an authenticator fault naming only its kind.
 
 This starts a server with:
 
@@ -170,6 +170,8 @@ const engine = createHalEngine({
   auth: {
     ws: async () => ({id: 'user-1'}),
     http: authMiddleware,
+    // The caller headers a tool may receive as authHeaders; list only what your tools need, [] for none.
+    forwardHeaders: ['authorization'],
   },
 
   // OPTIONAL: Tool registry

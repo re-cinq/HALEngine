@@ -6,6 +6,7 @@ import type {ChatOrchestrator} from '../orchestration/chatOrchestrator.js';
 import type {SessionStore} from '../types/sessionStore.js';
 import {createChatRoutes} from './routes/chats.js';
 import {httpErrorHandler} from './httpErrorHandler.js';
+import type {ForwardableHeader} from './authHeaders.js';
 
 export interface HalAppOptions {
   corsOrigin?: string | string[];
@@ -17,6 +18,8 @@ export interface HalAppOptions {
   additionalRoutes?: (router: Router) => void;
   rootRoutes?: (router: Router) => void;
   errorHandler?: express.ErrorRequestHandler;
+  /** The caller headers a tool reached through the chat routes may receive; unset, all three until 0.10.0. */
+  forwardHeaders?: readonly ForwardableHeader[];
 }
 
 export function createApp(options: HalAppOptions = {}) {
@@ -42,7 +45,12 @@ export function createApp(options: HalAppOptions = {}) {
   });
 
   if (options.orchestrator && options.sessionStore) {
-    const chatRoutes = createChatRoutes(options.orchestrator, options.sessionStore, options.authMiddleware);
+    const chatRoutes = createChatRoutes(
+      options.orchestrator,
+      options.sessionStore,
+      options.authMiddleware,
+      options.forwardHeaders
+    );
     app.use(`${basePath}/chats`, chatRoutes);
   }
 
