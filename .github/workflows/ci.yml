@@ -176,8 +176,8 @@ jobs:
       - name: Action pins
         run: npm run check:action-pins
 
-  # The peer range admits driver 6 and 7 but devDependencies pins 7, so without
-  # this job nothing would notice the store breaking on 6.
+  # devDependencies pins driver 7, so every other job tests 7 alone; this one
+  # keeps 6, the other half of the peer range, tested.
   mongo-driver-6:
     name: Mongo driver 6
     if: github.event_name != 'schedule'
