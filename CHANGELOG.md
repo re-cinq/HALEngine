@@ -32,6 +32,10 @@ package, not for somebody reading this repository's commit log.
 - **Vertex maps an outage to retryable codes.** A `503` or `UNAVAILABLE` is now `SERVICE_UNAVAILABLE` and a `504`, `DEADLINE_EXCEEDED` or fetch timeout `TIMEOUT`, both marked retryable, where they were a non-retryable `PROVIDER_ERROR`. With `resilience` set, a Vertex outage is now retried; a WebSocket client sees `SERVICE_UNAVAILABLE` or `TIMEOUT` for it instead of `UPSTREAM_ERROR`.
 - **`MongoSessionStore` supports `mongodb` driver 7.** The optional peer range is now `^6.10.0 || ^7.0.0`, so an application already on driver 7 can install this package, where 0.8.0 and earlier failed with `ERESOLVE`. Driver 6 still works and is still tested. A `MongoClient` or collection from either major is accepted as it is, with no cast to `MongoClientLike`. On driver 7, `MONGODB-AWS` authentication no longer reads credentials from the connection string; see `docs/session-stores.md`.
 
+### Fixed
+
+- **Each tool call gets its own copy of the caller's headers.** Every call in a tool round was handed the session's own `authHeaders` object, so a tool that rewrote `context.authHeaders` changed the credential every other call in that round, and every later round, carried. Each call now gets its own copy, so a rewrite stays inside that call. **Migration note:** `ToolContext.authHeaders` is no longer the same object as `session.authHeaders`; a tool that relied on rewriting it to reach its siblings or the session no longer does.
+
 ## [0.8.0] - 2026-10-19
 
 **Upgrading from 0.7.x.** If you use the Vertex provider, install `@google/genai` (`^2.26.0`) in place of `@google-cloud/vertexai`, which you can uninstall. Nothing in `VertexConfig` changes. Google deprecated `@google-cloud/vertexai` on 2025-06-24 and said it would be unavailable after 2026-06-24; it gets no fixes.
