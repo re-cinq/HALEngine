@@ -88,6 +88,8 @@ const startEngine = async (
     sessionStore: store,
     orchestrator,
     resume,
+    // These tests follow which socket lends the session its credential, so they forward it; unset forwards none.
+    forwardHeaders: ['authorization'],
     onConnect: (session, {resumed}) => void connects.push({sessionId: session.sessionId, resumed}),
     onDisconnect: sessionId => void disconnected.push(sessionId),
   });

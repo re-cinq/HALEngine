@@ -28,7 +28,7 @@ export interface HalServerOptions {
   onDisconnect?: (sessionId: string) => void | Promise<void>;
   resume?: SessionResumeOptions;
   history?: ConversationHistoryOptions;
-  /** The caller headers a tool may receive; unset, all three until 0.10.0 (specs/hal-engine-tool-header-allowlist/spec.md). */
+  /** The caller headers a tool may receive; unset, none (specs/hal-engine-tool-header-allowlist/spec.md). */
   forwardHeaders?: readonly ForwardableHeader[];
 }
 

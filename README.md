@@ -139,7 +139,7 @@ interface HalEngineConfig {
   auth: {
     ws: WsAuthenticator; // WebSocket auth function
     http?: HttpAuthMiddleware; // Express auth middleware
-    forwardHeaders?: ForwardableHeader[]; // caller headers a tool receives as authHeaders: 'cookie' | 'authorization' | 'host'; unset forwards all three until 0.10.0, none from then
+    forwardHeaders?: ForwardableHeader[]; // caller headers a tool receives as authHeaders: 'cookie' | 'authorization' | 'host'; unset forwards none
   };
   orchestrator?: {
     maxToolRounds?: number; // Max tool rounds executed (default: 5); at most maxToolRounds + 1 provider calls

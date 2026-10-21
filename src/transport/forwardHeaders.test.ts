@@ -37,6 +37,27 @@ async function socketTurn(forwardHeaders: readonly ForwardableHeader[] | undefin
   return contexts[0];
 }
 
+// One turn through the REST chat routes with all three headers sent; resolves with the context whoami was handed.
+async function restTurn(forwardHeaders: readonly ForwardableHeader[] | undefined): Promise<ToolContext | undefined> {
+  const {orchestrator, contexts} = whoamiOrchestrator();
+  const app = createApp({
+    orchestrator,
+    sessionStore: new InMemorySessionStore(),
+    authMiddleware: (req, _res, next) => {
+      Object.assign(req, {user: {id: 'u1'}});
+      next();
+    },
+    forwardHeaders,
+  });
+
+  const created = await request(app).post('/hal/chats').set(CALLER);
+  await request(app)
+    .post(`/hal/chats/${(created.body as {id: string}).id}/messages`)
+    .set(CALLER)
+    .send({content: 'who am I?'});
+  return contexts[0];
+}
+
 afterEach(stopEngines);
 afterAll(() => setLogger());
 
@@ -52,7 +73,7 @@ describe('the caller headers a tool receives', () => {
     }).toEqual({authHeaders: {authorization: 'Bearer token-9c2e'}, cookie: false, host: false});
   });
 
-  it('hands a tool authHeaders undefined over a real socket when forwardHeaders is empty, the default from 0.10.0', async () => {
+  it('hands a tool authHeaders undefined over a real socket when forwardHeaders is empty', async () => {
     const context = await socketTurn([]);
 
     expect({hasContext: context !== undefined, authHeaders: context?.authHeaders}).toEqual({
@@ -61,42 +82,32 @@ describe('the caller headers a tool receives', () => {
     });
   });
 
-  it('still hands a tool all three over a real socket while forwardHeaders is unset, until 0.10.0', async () => {
+  it('hands a tool authHeaders undefined over a real socket when forwardHeaders is unset', async () => {
     const context = await socketTurn(undefined);
 
-    expect(context?.authHeaders).toEqual({
-      cookie: 'sid=cookie-7f3a',
-      authorization: 'Bearer token-9c2e',
-      host: 'tenant-4b1d.example',
+    expect({hasContext: context !== undefined, authHeaders: context?.authHeaders}).toEqual({
+      hasContext: true,
+      authHeaders: undefined,
     });
   });
 
   it('applies the same filter on POST /chats/:id/messages: authorization alone when forwardHeaders lists only authorization', async () => {
-    const {orchestrator, contexts} = whoamiOrchestrator();
-    const app = createApp({
-      orchestrator,
-      sessionStore: new InMemorySessionStore(),
-      authMiddleware: (req, _res, next) => {
-        Object.assign(req, {user: {id: 'u1'}});
-        next();
-      },
-      forwardHeaders: ['authorization'],
+    expect((await restTurn(['authorization']))?.authHeaders).toEqual({authorization: 'Bearer token-9c2e'});
+  });
+
+  it('hands a tool reached through POST /chats/:id/messages authHeaders undefined when forwardHeaders is unset', async () => {
+    const context = await restTurn(undefined);
+
+    expect({hasContext: context !== undefined, authHeaders: context?.authHeaders}).toEqual({
+      hasContext: true,
+      authHeaders: undefined,
     });
-
-    const created = await request(app).post('/hal/chats').set(CALLER);
-    await request(app)
-      .post(`/hal/chats/${(created.body as {id: string}).id}/messages`)
-      .set(CALLER)
-      .send({content: 'who am I?'});
-
-    const [context] = contexts;
-    expect(context?.authHeaders).toEqual({authorization: 'Bearer token-9c2e'});
   });
 
   it('writes neither the authorization nor the cookie value to any log line at any level across a whole connection', async () => {
     const lines = keepEveryLine();
 
-    const context = await socketTurn(undefined);
+    const context = await socketTurn(['authorization', 'cookie']);
 
     const logged = JSON.stringify(lines);
     expect({

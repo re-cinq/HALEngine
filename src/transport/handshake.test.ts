@@ -43,6 +43,8 @@ const engine = async (wsAuth: WsAuthenticator = admitEveryone) => {
     wsAuth,
     sessionStore: new InMemorySessionStore(),
     orchestrator: {} as ChatOrchestrator,
+    // These tests follow the credential the handshake forwards, so they forward it; unset forwards none.
+    forwardHeaders: ['authorization'],
     onConnect: session => void bearers.push(session.authHeaders?.authorization),
     onDisconnect: disconnected.release,
   });

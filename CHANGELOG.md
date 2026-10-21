@@ -8,6 +8,10 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+### Changed
+
+- **An unset `auth.forwardHeaders` now forwards no caller header to tools.** In 0.9.0 an unset list still handed every tool the caller's `cookie`, `authorization` and forwarded `host`, and warned once at startup that this would change; now no header is captured unless you list it, and the warning is gone. **Migration note:** a tool that reads `context.authHeaders` gets `undefined` until you list the header it needs, for example `auth: {ws, forwardHeaders: ['authorization']}`. A list you already set, `[]` included, behaves exactly as before.
+
 ### Fixed
 
 - **Two test fixtures no longer ship.** `sessionStoreTestSupport.js` and `mongoFakeCollection.js` were emitted to `dist/` since 0.6.0. Nothing in the package imported them and the `exports` map kept them unreachable, so they were dead weight in the tarball. A test now fails the build of any file only tests reach.

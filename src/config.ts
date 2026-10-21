@@ -55,7 +55,7 @@ export interface HalEngineConfig {
   auth: {
     ws: WsAuthenticator;
     http?: HttpAuthMiddleware;
-    /** Which caller headers reach a tool as `authHeaders`; unset, all three, with a warning, until 0.10.0 forwards none. */
+    /** Which caller headers reach a tool as `authHeaders`; unset, none (specs/hal-engine-tool-header-allowlist/spec.md). */
     forwardHeaders?: ForwardableHeader[];
   };
   orchestrator?: {

@@ -222,7 +222,7 @@ Three rules decide what the client receives once suppression is active:
 
 The blanking is logged once, at `info`, as `suppression activated` with the blanked indices and nothing else, since their text is exactly what suppression hides ([validated by: lists thinking index 1 and assistant index 2 at suppression, and no line carries their text](../../src/transport/ws/messageHandler.test.ts#L355)).
 
-Suppression is recorded on the stored entry, so a conversation resumed from a store replays a suppressed entry as `entry_skip`, never as its text ([validated by: replays a suppressed entry as a skip, so the client never sees text a tool suppressed](../../src/transport/sessionResume.test.ts#L335)).
+Suppression is recorded on the stored entry, so a conversation resumed from a store replays a suppressed entry as `entry_skip`, never as its text ([validated by: replays a suppressed entry as a skip, so the client never sees text a tool suppressed](../../src/transport/sessionResume.test.ts#L337)).
 
 **Suppression is sticky for the entire stream.** Once a tool sets `suppressAssistantResponse: true` in any round, all subsequent AI responses in that stream are suppressed -- even if later tool rounds do not set the flag. This is intentional: suppression is a per-message property, not per-round. If the first tool already sent the definitive answer to the client, the AI's commentary in all following rounds is equally redundant. A new user message starts a fresh stream with `suppressOutput: false`.
 
