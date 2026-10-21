@@ -8,9 +8,17 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
-### Security
+## [0.9.0] - 2026-10-21
 
-- **An authenticated id the engine cannot use as an identity is refused.** A `wsAuth` that resolves a user whose `id` is not a string or a finite number, such as an object a token decoded to, is now answered `401` and logged as an authenticator fault naming only the id's kind. Before, the value reached the session store as a query filter, and on `MongoSessionStore` `{$ne: null}` matched every user's conversations. The shipped stores also refuse such an id in `create`, `listFor` and `latestFor`, and `assertScalarUserId` is exported for your own. A deployment whose authenticator returns a non-scalar id now fails to connect where it previously connected with a broken identity.
+**Upgrading from 0.8.x.** No exported signature changes, but some behaviour does:
+
+- **Set `auth.forwardHeaders`.** Unset, every tool still receives the caller's `cookie`, `authorization` and `host`, and the engine warns once at startup; from 0.10.0 an unset list forwards none. List the headers your tools need, or `[]` for none.
+- An `auth.ws` that resolves a user whose `id` is not a string or a finite number is now refused with `401`.
+- A failed tool result now reaches Vertex under `functionResponse.response.error`, and Amazon Nova and Anthropic Claude 3 and 4 models on Bedrock with `toolResult.status: 'error'`. The engine marks the failures it answers itself the same way: a schema rejection, an invented tool name, a deadline, a declined call and a caught throw.
+- `ToolContext.authHeaders` is a copy made for each call, no longer `session.authHeaders` itself.
+- An empty tool registry sends the provider `tools: undefined`, so Bedrock gets no `toolConfig`.
+- A Bedrock `stop` chunk now carries `usage`, and a Vertex `503` or `504` is now retryable.
+- `mongodb` driver 7 is accepted as well as 6.
 
 ### Added
 
@@ -35,6 +43,10 @@ package, not for somebody reading this repository's commit log.
 ### Fixed
 
 - **Each tool call gets its own copy of the caller's headers.** Every call in a tool round was handed the session's own `authHeaders` object, so a tool that rewrote `context.authHeaders` changed the credential every other call in that round, and every later round, carried. Each call now gets its own copy, so a rewrite stays inside that call. **Migration note:** `ToolContext.authHeaders` is no longer the same object as `session.authHeaders`; a tool that relied on rewriting it to reach its siblings or the session no longer does.
+
+### Security
+
+- **An authenticated id the engine cannot use as an identity is refused.** A `wsAuth` that resolves a user whose `id` is not a string or a finite number, such as an object a token decoded to, is now answered `401` and logged as an authenticator fault naming only the id's kind. Before, the value reached the session store as a query filter, and on `MongoSessionStore` `{$ne: null}` matched every user's conversations. The shipped stores also refuse such an id in `create`, `listFor` and `latestFor`, and `assertScalarUserId` is exported for your own. A deployment whose authenticator returns a non-scalar id now fails to connect where it previously connected with a broken identity.
 
 ## [0.8.0] - 2026-10-19
 
@@ -415,7 +427,8 @@ path from `0.1.0` on the registry — only from the git specifier.
 - Resolved a high-severity advisory in `ws`, a direct runtime dependency. The full dependency audit went
   from 18 advisories (1 critical, 6 high) to 3 (2 moderate, 1 low), none at high or above.
 
-[Unreleased]: https://github.com/re-cinq/HALEngine/compare/v0.8.0...main
+[Unreleased]: https://github.com/re-cinq/HALEngine/compare/v0.9.0...main
+[0.9.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.9.0
 [0.8.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.8.0
 [0.7.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.7.0
 [0.6.1]: https://github.com/re-cinq/HALEngine/releases/tag/v0.6.1

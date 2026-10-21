@@ -1,6 +1,6 @@
 {
   "name": "@re-cinq/hal-engine",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "type": "module",
   "description": "A generic AI chat server framework with pluggable providers, tools, and transport",
   "license": "Apache-2.0",
