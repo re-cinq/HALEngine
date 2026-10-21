@@ -11,6 +11,7 @@ package, not for somebody reading this repository's commit log.
 ### Fixed
 
 - **Two test fixtures no longer ship.** `sessionStoreTestSupport.js` and `mongoFakeCollection.js` were emitted to `dist/` since 0.6.0. Nothing in the package imported them and the `exports` map kept them unreachable, so they were dead weight in the tarball. A test now fails the build of any file only tests reach.
+- **Four unused layer index files are gone.** `src/{infrastructure,orchestration,shared,types}/index.ts` re-exported their layers, but nothing imported them and the `exports` map made them unreachable, so they too shipped as dead files. A test now fails the build of any emitted file `src/index.ts` does not reach.
 
 ## [0.9.0] - 2026-10-21
 

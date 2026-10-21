@@ -18,6 +18,15 @@ describe('what the build emits', () => {
       emitted: testOnly.filter(file => !excludedFromBuild(file, exclude)).sort(),
     }).toEqual({sees: true, emitted: []});
   });
+
+  it('emits only what the package root reaches: every file the build emits is imported, at some depth, from src/index.ts', () => {
+    const {exclude} = JSON.parse(readFileSync(join(ROOT, 'tsconfig.build.json'), 'utf8')) as {exclude: string[]};
+    const files = new Set(sourceFiles());
+    const shipped = reachableFrom(['src/index.ts'], files);
+
+    const emitted = [...files].filter(file => !excludedFromBuild(file, exclude));
+    expect(emitted.filter(file => !shipped.has(file)).sort()).toEqual([]);
+  });
 });
 
 // Every .ts file under src/, as a path from the repository root.
