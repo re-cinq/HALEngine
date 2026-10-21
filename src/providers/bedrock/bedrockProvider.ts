@@ -3,7 +3,7 @@ import {requireOptionalPeer} from '../requireOptionalPeer.js';
 import type {AIProvider, MessageChunk, SendMessageParams, StructuredOutputParams} from '../../types/ai.js';
 import {parseStreamEvents} from './bedrockStreamHandlers.js';
 import {mapBedrockError} from './bedrockErrorMap.js';
-import {mapMessage, mapToolConfig} from './bedrockMessageMapper.js';
+import {mapMessage, mapToolConfig, supportsToolResultStatus} from './bedrockMessageMapper.js';
 import {log} from '../../shared/logger.js';
 
 export interface BedrockConfig {
@@ -18,6 +18,7 @@ export function createBedrockProvider(config: BedrockConfig): AIProvider {
     typeof import('@aws-sdk/client-bedrock-runtime')
   >('@aws-sdk/client-bedrock-runtime');
   const client = new BedrockRuntimeClient({region: config.region});
+  const wire = {toolResultStatus: supportsToolResultStatus(config.modelId)};
 
   return {
     async generateStructured<T>(_params: StructuredOutputParams<T>): Promise<T> {
@@ -38,7 +39,7 @@ export function createBedrockProvider(config: BedrockConfig): AIProvider {
         const command = new ConverseStreamCommand({
           modelId: config.modelId,
           system: [{text: systemPrompt}],
-          messages: messages.map(mapMessage),
+          messages: messages.map(message => mapMessage(message, wire)),
           inferenceConfig: {maxTokens: maxTokens ?? config.maxTokens},
           ...(tools && {toolConfig: mapToolConfig(tools)}),
         });

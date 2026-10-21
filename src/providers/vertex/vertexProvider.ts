@@ -187,7 +187,8 @@ function mapMessage(m: Message): Content {
     return {
       functionResponse: {
         name: block.toolUseId,
-        response: {result: block.content},
+        // Vertex has no status field, so a failure travels under the response's error key instead of its result key.
+        response: block.isError === true ? {error: block.content} : {result: block.content},
       },
     };
   });

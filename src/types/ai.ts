@@ -18,6 +18,8 @@ export interface ToolResultContent {
   type: 'tool_result';
   toolUseId: string;
   content: string;
+  /** Set only when the result describes a failure; a provider mapper encodes it on its own wire. */
+  isError?: boolean;
 }
 
 export interface ToolUseMessage {
