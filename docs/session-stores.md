@@ -246,3 +246,11 @@ retention period, and a tombstone index of ids a store no longer holds is reject
 session is reported once and then forgotten. `InMemorySessionStore` implements it that way.
 `MongoSessionStore` does not implement it: its documents do not expire, and one that
 `eraseOlderThan` removed reads `unknown`.
+
+## Driver versions
+
+`MongoSessionStore` runs on `mongodb` 6.10 or later and on 7.x; install whichever your application
+already uses, and pass its `MongoClient` or collection as it is, with no cast. Driver 7 needs Node
+20.19 or later, which this package's own Node 22 floor already covers. One driver 7 change reaches
+the URL you pass: `MONGODB-AWS` no longer takes credentials in the connection string, and needs
+`@aws-sdk/credential-providers` installed to resolve them instead.

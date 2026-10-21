@@ -291,7 +291,7 @@ export class MongoSessionStore implements SessionStore {
 
     // Imported here rather than at the top, so a consumer who installs no driver can still load this package.
     const {MongoClient} = await import('mongodb');
-    const client = new MongoClient(options.url) as unknown as MongoClientLike;
+    const client: MongoClientLike = new MongoClient(options.url);
     this.owned = client;
     return namedCollection(client, options.dbName, name);
   }
