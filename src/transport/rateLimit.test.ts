@@ -1,5 +1,5 @@
 import {jest} from '@jest/globals';
-import {createRateLimiter, rateLimiterFrom} from './rateLimit.js';
+import {createRateLimiter, rateLimiterFrom, RATE_LIMIT_CONFIG_ERROR} from './rateLimit.js';
 
 // specs/hal-engine-rate-limit
 
@@ -49,10 +49,25 @@ describe('createRateLimiter', () => {
     expect(consumeTimes(limiter, 'user:u1', 6).map(verdict => verdict.allowed)).toEqual([...FIVE_ALLOWED, false]);
   });
 
-  it('refuses a limit, window or burst that is not a positive number', () => {
-    expect(() => createRateLimiter({burst: 0})).toThrow(
-      'transport.rateLimit: limit, windowMs and burst must each be a positive number'
-    );
+  it('keeps a key through a whole idle window when burst exceeds limit: {limit: 2, windowMs: 60000, burst: 10} allows two, not ten, after 60000 ms', () => {
+    const limiter = createRateLimiter({limit: 2, windowMs: 60_000, burst: 10});
+    consumeTimes(limiter, 'user:u1', 10);
+    jest.advanceTimersByTime(60_000);
+
+    expect(consumeTimes(limiter, 'user:u1', 3).map(verdict => verdict.allowed)).toEqual([true, true, false]);
+  });
+
+  it('refuses a limit, window or burst that is not a positive finite number, and a burst below 1', () => {
+    const outcomes = [{burst: 0}, {limit: Infinity}, {windowMs: -1}].map(setting => {
+      try {
+        createRateLimiter(setting);
+        return 'built';
+      } catch (error) {
+        return (error as Error).message;
+      }
+    });
+
+    expect(outcomes).toEqual(Array(3).fill(RATE_LIMIT_CONFIG_ERROR));
   });
 });
 

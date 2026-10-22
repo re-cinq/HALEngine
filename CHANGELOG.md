@@ -10,7 +10,7 @@ package, not for somebody reading this repository's commit log.
 
 ### Added
 
-- **An inbound rate limit per user.** `transport.rateLimit` bounds how often one authenticated user may send: 20 requests a minute sustained and 5 at once by default, one budget across the WebSocket and HTTP transports, keyed on the user and never on the address once a user is known. A refused `user_message` is answered in turn with an `error` frame, code `TOO_MANY_REQUESTS` carrying `retryAfterMs`, then `stream_end`, and starts no model call; a refused HTTP request answers 429 with `Retry-After`. `/health` is never refused. `rateLimit: false` turns it off, for a deployment whose gateway already limits. The limiter is in memory and per engine instance: N instances behind a load balancer permit N times the limit.
+- **An inbound rate limit per user.** `transport.rateLimit` bounds how often one authenticated user may send: 20 requests a minute sustained and 5 at once by default, one budget across the WebSocket and HTTP transports, keyed on the user for WebSocket frames and the engine's chat routes, and on the remote address for a consumer's own routes unless it authenticates before the limiter. A refused `user_message` is answered in turn with an `error` frame, code `TOO_MANY_REQUESTS` carrying `retryAfterMs`, then `stream_end`, and starts no model call; a refused HTTP request answers 429 with `Retry-After`. `/health` is never refused. `rateLimit: false` turns it off, for a deployment whose gateway already limits. The limiter is in memory and per engine instance: N instances behind a load balancer permit N times the limit.
 
 ### Changed
 

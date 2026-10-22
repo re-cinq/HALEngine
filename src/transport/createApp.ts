@@ -48,18 +48,19 @@ export function createApp(options: HalAppOptions = {}) {
     });
   });
 
-  // After health, so a liveness probe is never refused, and before every other route, a consumer's own included.
-  if (options.rateLimit) app.use(rateLimitMiddleware(options.rateLimit));
-
   if (options.orchestrator && options.sessionStore) {
     const chatRoutes = createChatRoutes(
       options.orchestrator,
       options.sessionStore,
       options.authMiddleware,
-      options.forwardHeaders
+      options.forwardHeaders,
+      options.rateLimit
     );
     app.use(`${basePath}/chats`, chatRoutes);
   }
+
+  // After health, so a liveness probe is never refused, and after the chat routes, which limit behind their own auth; before everything else.
+  if (options.rateLimit) app.use(rateLimitMiddleware(options.rateLimit));
 
   if (options.additionalRoutes) {
     const router = Router();

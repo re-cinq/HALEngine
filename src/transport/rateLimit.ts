@@ -1,6 +1,6 @@
 import type {NextFunction, RequestHandler, Response} from 'express';
 import type {AuthenticatedRequest} from '../types/auth.js';
-import {ErrorCodes} from '../types/session.js';
+import {ErrorCodes, isScalarUserId} from '../types/session.js';
 import {log} from '../shared/logger.js';
 
 /** One user's request budget: `limit` requests per `windowMs` sustained, `burst` of them at once (specs/hal-engine-rate-limit/spec.md). */
@@ -25,6 +25,9 @@ export const DEFAULT_RATE_LIMIT: Required<RateLimitConfig> = {limit: 20, windowM
 
 export const TOO_MANY_REQUESTS_MESSAGE = 'Too many requests, please slow down';
 
+export const RATE_LIMIT_CONFIG_ERROR =
+  'transport.rateLimit: limit and windowMs must be positive finite numbers, and burst a finite number of at least 1';
+
 const MS_PER_SECOND = 1000;
 
 interface Bucket {
@@ -35,18 +38,18 @@ interface Bucket {
 /** A token bucket per key, in memory only: a key idle for a whole window is dropped, since a full bucket and a missing one answer alike. */
 export function createRateLimiter(config: RateLimitConfig = {}, now: () => number = Date.now): RateLimiter {
   const {limit, windowMs, burst} = {...DEFAULT_RATE_LIMIT, ...config};
-  if (!(limit > 0 && windowMs > 0 && burst > 0)) {
-    throw new Error('transport.rateLimit: limit, windowMs and burst must each be a positive number');
-  }
+  if (!isUsableBudget(limit, windowMs, burst)) throw new Error(RATE_LIMIT_CONFIG_ERROR);
   const msPerToken = windowMs / limit;
+  // A key idle this long has refilled in full, so dropping it changes no answer; longer than a window when burst exceeds limit.
+  const refillMs = burst * msPerToken;
   const buckets = new Map<string, Bucket>();
   let prunedAt = now();
 
   const pruneIdle = (at: number): void => {
-    if (at - prunedAt < windowMs) return;
+    if (at - prunedAt < refillMs) return;
     prunedAt = at;
     for (const [key, bucket] of buckets) {
-      if (at - bucket.refilledAt >= windowMs) buckets.delete(key);
+      if (at - bucket.refilledAt >= refillMs) buckets.delete(key);
     }
   };
 
@@ -66,15 +69,21 @@ export function createRateLimiter(config: RateLimitConfig = {}, now: () => numbe
   };
 }
 
+// Finite and positive, with at least one token to hand out: anything else reads as "no limit" or never allows a request.
+function isUsableBudget(limit: number, windowMs: number, burst: number): boolean {
+  const finite = [limit, windowMs, burst].every(Number.isFinite);
+  return finite && limit > 0 && windowMs > 0 && burst >= 1;
+}
+
 /** The engine's limiter from `transport.rateLimit`: the defaults when unset, none when `false`. */
 export function rateLimiterFrom(setting: RateLimitConfig | false | undefined): RateLimiter | undefined {
   return setting === false ? undefined : createRateLimiter(setting);
 }
 
-/** The user when auth ran before the limiter, else the remote address; never the address for a known user, since an office shares one. */
+/** The user when auth ran before the limiter and left a usable id, else the remote address; an office shares one address, never one user. */
 export function rateLimitKey(req: AuthenticatedRequest): string {
   const user = req.user?.id;
-  return user === undefined ? `address:${req.ip ?? 'unknown'}` : `user:${String(user)}`;
+  return isScalarUserId(user) && user !== '' ? `user:${String(user)}` : `address:${req.ip ?? 'unknown'}`;
 }
 
 /** Answers a refused request 429 with `Retry-After` in whole seconds; the log line carries the wait alone, never the key. */

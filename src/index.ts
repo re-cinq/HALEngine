@@ -6,7 +6,7 @@ export type {HalAppOptions} from './transport/createApp.js';
 export {createServer} from './transport/createServer.js';
 export type {HalServerOptions, HalServer} from './transport/createServer.js';
 export type {ForwardableHeader} from './transport/authHeaders.js';
-export {createRateLimiter, DEFAULT_RATE_LIMIT} from './transport/rateLimit.js';
+export {createRateLimiter, DEFAULT_RATE_LIMIT, rateLimitMiddleware} from './transport/rateLimit.js';
 export type {RateLimitConfig, RateLimiter, RateLimitVerdict} from './transport/rateLimit.js';
 export {createChatRoutes} from './transport/routes/chats.js';
 export {HAL_WS_SUBPROTOCOL, credentialFromSubprotocol} from './transport/ws/subprotocol.js';

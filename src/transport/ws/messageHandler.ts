@@ -102,9 +102,13 @@ async function refuseInTurn(
   signal: AbortSignal | undefined
 ): Promise<void> {
   if (droppedForClosedSocket(ws, session, signal)) return;
-  log.warn('rateLimit', 'user_message refused: too many requests', {sessionId: session.sessionId, retryAfterMs});
-  sendError(ws, ErrorCodes.TOO_MANY_REQUESTS, TOO_MANY_REQUESTS_MESSAGE, {retryAfterMs});
-  sendStreamEnd(ws);
+  const startedAt = Date.now();
+  try {
+    log.warn('rateLimit', 'user_message refused: too many requests', {sessionId: session.sessionId, retryAfterMs});
+    sendError(ws, ErrorCodes.TOO_MANY_REQUESTS, TOO_MANY_REQUESTS_MESSAGE, {retryAfterMs});
+  } finally {
+    endTurn(ws, session, signal, startedAt);
+  }
 }
 
 // A turn whose socket closed is abandoned rather than ended: nobody is left to read a terminal frame.

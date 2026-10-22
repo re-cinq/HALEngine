@@ -65,9 +65,8 @@ describe('the one AIError table', () => {
     ]);
   });
 
-  it('is the only non-test file under src/transport that maps a provider error code, rateLimit.ts aside', () => {
+  it('is the only non-test file under src/transport that maps a provider error code', () => {
     const mapping = sourceFiles(TRANSPORT)
-      .filter(path => !path.endsWith('rateLimit.ts'))
       .filter(path => MAPS_A_PROVIDER_CODE.test(readFileSync(path, 'utf8')))
       .map(path => relative(process.cwd(), path));
 
