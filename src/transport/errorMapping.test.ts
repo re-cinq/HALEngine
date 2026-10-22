@@ -51,10 +51,11 @@ describe('the one AIError table', () => {
     expect([...rows]).toEqual([{code: 'UPSTREAM_ERROR', status: 502, message: UNAVAILABLE}]);
   });
 
-  it('defines eight ErrorCodes, the three provider conditions added beside the five the protocol already had', () => {
+  it('defines nine ErrorCodes: TOO_MANY_REQUESTS and the three provider conditions added beside the five the protocol first had', () => {
     expect(Object.keys(ErrorCodes)).toEqual([
       'INVALID_MESSAGE',
       'INVALID_FORMAT',
+      'TOO_MANY_REQUESTS',
       'RATE_LIMITED',
       'SERVICE_UNAVAILABLE',
       'TIMEOUT',

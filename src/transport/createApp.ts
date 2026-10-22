@@ -6,6 +6,8 @@ import type {ChatOrchestrator} from '../orchestration/chatOrchestrator.js';
 import type {SessionStore} from '../types/sessionStore.js';
 import {createChatRoutes} from './routes/chats.js';
 import {httpErrorHandler} from './httpErrorHandler.js';
+import {rateLimitMiddleware} from './rateLimit.js';
+import type {RateLimiter} from './rateLimit.js';
 import type {ForwardableHeader} from './authHeaders.js';
 
 export interface HalAppOptions {
@@ -20,6 +22,8 @@ export interface HalAppOptions {
   errorHandler?: express.ErrorRequestHandler;
   /** The caller headers a tool reached through the chat routes may receive; unset, none. */
   forwardHeaders?: readonly ForwardableHeader[];
+  /** The request budget shared with the WebSocket transport; unset, nothing here is limited (specs/hal-engine-rate-limit/spec.md). */
+  rateLimit?: RateLimiter;
 }
 
 export function createApp(options: HalAppOptions = {}) {
@@ -43,6 +47,9 @@ export function createApp(options: HalAppOptions = {}) {
       timestamp: new Date().toISOString(),
     });
   });
+
+  // After health, so a liveness probe is never refused, and before every other route, a consumer's own included.
+  if (options.rateLimit) app.use(rateLimitMiddleware(options.rateLimit));
 
   if (options.orchestrator && options.sessionStore) {
     const chatRoutes = createChatRoutes(

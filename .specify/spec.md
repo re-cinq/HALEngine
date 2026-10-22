@@ -298,7 +298,7 @@ Each layer depends only on layers below it, ensuring clean separation of concern
 
 - `tools`: Custom tool registry (defaults to empty)
 - `session`: Custom session store (defaults to in-memory)
-- `transport`: Port, CORS, base path, heartbeat interval
+- `transport`: Port, CORS, base path, heartbeat interval, rate limit
 - `auth.http`: Express middleware for HTTP endpoints
 - `orchestrator`: Max tool rounds, per-call tool deadline (`toolTimeoutMs`), context config, lifecycle hooks
 - `onConnect`/`onDisconnect`: Lifecycle hooks, fire-and-forget

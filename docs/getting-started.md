@@ -187,6 +187,8 @@ const engine = createHalEngine({
     // basePath defaults to '/hal' and the heartbeat to 30s.
     basePath: '/hal',
     heartbeatIntervalMs: 30_000,
+    // One user's inbound budget across WebSocket and HTTP, the default shown; false turns it off for a deployment whose gateway already limits.
+    rateLimit: {limit: 20, windowMs: 60_000, burst: 5},
     // The connected frame's text, sent before any entry; a deployer serving EU users may carry its AI disclosure here.
     connectMessage: 'You are chatting with an AI assistant.',
     // additionalRoutes mounts under basePath and rootRoutes at /, neither gated by auth.http; errorHandler replaces Express's default HTML error page.

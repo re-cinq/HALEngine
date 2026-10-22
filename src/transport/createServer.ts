@@ -12,6 +12,7 @@ import type {ConnectInfo, SessionResumeOptions} from './ws/sessionResume.js';
 import type {ConversationHistoryOptions} from './ws/conversationList.js';
 import {log} from '../shared/logger.js';
 import type {ForwardableHeader} from './authHeaders.js';
+import type {RateLimiter} from './rateLimit.js';
 
 export interface HalServerOptions {
   app: Express;
@@ -30,6 +31,8 @@ export interface HalServerOptions {
   history?: ConversationHistoryOptions;
   /** The caller headers a tool may receive; unset, none (specs/hal-engine-tool-header-allowlist/spec.md). */
   forwardHeaders?: readonly ForwardableHeader[];
+  /** The request budget shared with the HTTP transport; unset, no user_message is refused (specs/hal-engine-rate-limit/spec.md). */
+  rateLimiter?: RateLimiter;
 }
 
 export interface HalServer {
@@ -60,6 +63,7 @@ export function createServer(options: HalServerOptions): HalServer {
   const handleMessage = createMessageHandler(options.orchestrator, {
     sessionStore: options.sessionStore,
     history: options.history,
+    rateLimiter: options.rateLimiter,
   });
   // Read at each connection, never once at startup, so a tool registered after the server starts offers its prompts too.
   const getExamplePrompts = () => options.toolRegistry?.getExamplePrompts() ?? [];

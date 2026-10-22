@@ -41,6 +41,7 @@ export type SessionEntry = UserEntry | AssistantEntry | ThinkingEntry | ToolEntr
 export const ErrorCodes = {
   INVALID_MESSAGE: 'INVALID_MESSAGE',
   INVALID_FORMAT: 'INVALID_FORMAT',
+  TOO_MANY_REQUESTS: 'TOO_MANY_REQUESTS',
   RATE_LIMITED: 'RATE_LIMITED',
   SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
   TIMEOUT: 'TIMEOUT',
