@@ -109,8 +109,8 @@ anything.
 
 `count()` reports documents, not cache entries, so `delete` does not change it. It counts **every**
 user's, not one user's: it is an operational figure, and putting it in front of a user would both
-misreport their history and disclose the size of everyone else's. There is no per-user count — see
-§ Listing a user's conversations for what to do instead.
+misreport their history and disclose the size of everyone else's. `countFor(userId)` is the per-user
+count, see § Listing a user's conversations; `count()` is never a user's own.
 
 ## Latest session
 
@@ -187,7 +187,10 @@ either accept one final round-trip that comes back empty, or ask for one row mor
 show — `{limit: pageSize + 1}`, display the first `pageSize`, and take the cursor from the last row
 you displayed. The extra row's presence is your `hasMore`. Because the limit is capped at 200, that
 trick works up to a `pageSize` of 199. Do not reach for `count()` for this: it counts every user's
-conversations, not this user's, and there is no per-user total today.
+conversations, not this user's. `countFor(userId)` answers this user's total, on both shipped stores;
+on MongoDB it is an index-only scan whose cost grows with the user's conversation count, cheap next to
+reading documents, not cheap next to nothing, so a consumer labelling a sidebar on every connect
+should know that. A per-user count is personal data about that user, and never the store-wide total.
 
 `MongoSessionStore` filters on the user in the query, sorts `{updatedAt: -1, _id: -1}` and projects
 the entries away, so a page of summaries never carries a conversation out of the database.
