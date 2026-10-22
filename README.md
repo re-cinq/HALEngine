@@ -129,6 +129,7 @@ interface HalEngineConfig {
     corsOrigin?: string | string[];
     basePath?: string; // URL prefix (default: '/hal')
     heartbeatIntervalMs?: number; // WS heartbeat (default: 30000)
+    rateLimit?: RateLimitConfig | false; // one user's inbound budget across WS and HTTP: 20 a minute, 5 at once (default); false turns it off
     connectMessage?: string; // the connected frame's message (default: 'Connected to HAL Engine'); may carry the AI disclosure
     resume?: {enabled: boolean; latest?: boolean}; // opt-in: rejoin a conversation by ?sessionId=, or the user's latest
     history?: {enabled: boolean; preview?: boolean}; // opt-in: answer list_conversations with the user's own conversations; preview adds each one's opening question

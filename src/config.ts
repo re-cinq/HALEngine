@@ -1,5 +1,7 @@
 import type {WsAuthenticator, HttpAuthMiddleware} from './types/auth.js';
 import type {ForwardableHeader} from './transport/authHeaders.js';
+import {rateLimiterFrom} from './transport/rateLimit.js';
+import type {RateLimitConfig} from './transport/rateLimit.js';
 import type {SessionStore} from './types/sessionStore.js';
 import type {PromptBuilderConfig} from './infrastructure/builders/promptBuilder.js';
 import type {ContextConfig} from './orchestration/conversationContext.js';
@@ -51,6 +53,8 @@ export interface HalEngineConfig {
     errorHandler?: HalAppOptions['errorHandler'];
     resume?: SessionResumeOptions;
     history?: ConversationHistoryOptions;
+    /** One user's request budget across both transports: 20 a minute, 5 at once, when unset; `false` turns it off (specs/hal-engine-rate-limit/spec.md). */
+    rateLimit?: RateLimitConfig | false;
   };
   auth: {
     ws: WsAuthenticator;
@@ -97,7 +101,10 @@ export function createHalEngine(config: HalEngineConfig): HalEngine {
     sessionStore,
   });
 
+  // One limiter for both transports, so a user's HTTP and WebSocket requests draw on one budget.
+  const rateLimiter = rateLimiterFrom(config.transport?.rateLimit);
   const app = createApp({
+    rateLimit: rateLimiter,
     corsOrigin: config.transport?.corsOrigin,
     basePath,
     authMiddleware: config.auth.http,
@@ -124,6 +131,7 @@ export function createHalEngine(config: HalEngineConfig): HalEngine {
     onDisconnect: config.onDisconnect,
     resume: config.transport?.resume,
     history: config.transport?.history,
+    rateLimiter,
   });
 
   return {

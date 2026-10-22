@@ -21,6 +21,8 @@ import {
 } from '../../orchestration/entryFactories.js';
 import {appendEntry, appendDelta, commitEntry, markTruncated} from '../../orchestration/entryMutations.js';
 import {sendJson, sendUpsert, sendDelta, sendCommit, sendSkip, sendError, sendStreamEnd} from './sender.js';
+import {TOO_MANY_REQUESTS_MESSAGE} from '../rateLimit.js';
+import type {RateLimiter} from '../rateLimit.js';
 import {log} from '../../shared/logger.js';
 
 interface StreamState {
@@ -33,8 +35,10 @@ interface StreamState {
 
 type StateIndexKey = 'thinkingIndex' | 'assistantIndex';
 type EntryFactory = () => SessionEntry;
-/** What the handler needs besides the orchestrator: the store a conversation list reads, and whether one is served. */
-export type MessageHandlerDeps = ConversationListDeps;
+/** What the handler needs besides the orchestrator: the store a conversation list reads, whether one is served, and the user's request budget. */
+export interface MessageHandlerDeps extends ConversationListDeps {
+  rateLimiter?: RateLimiter;
+}
 
 export function createMessageHandler(orchestrator: ChatOrchestrator, deps?: MessageHandlerDeps) {
   // Keyed by session, not socket: a resumed session can be open on more than one (specs/hal-engine-architecture/spec.md).
@@ -46,9 +50,14 @@ export function createMessageHandler(orchestrator: ChatOrchestrator, deps?: Mess
     signal?: AbortSignal
   ): Promise<void> {
     const validation = validateMessage(rawMessage);
-    // Queued with no await before it, so a session's user_messages, a failed one too, are answered in arrival order.
+    // Queued with no await before it, so a session's user_messages, a refused or failed one too, are answered in arrival order.
     if (isUserMessageFrame(rawMessage)) {
-      return lock.run(session.sessionId, () => answerInTurn(ws, session, orchestrator, validation, signal));
+      const refusal = refusedBy(deps?.rateLimiter, session);
+      return lock.run(session.sessionId, () =>
+        refusal === undefined
+          ? answerInTurn(ws, session, orchestrator, validation, signal)
+          : refuseInTurn(ws, session, refusal, signal)
+      );
     }
     // An async action runs up to its first await at once, so a ping is answered now and a throw stays a rejection.
     return wsErrorHandler(ws, () => answerFrame(ws, session, validation, deps, signal));
@@ -63,14 +72,40 @@ async function answerInTurn(
   validation: ValidationResult,
   signal: AbortSignal | undefined
 ): Promise<void> {
-  // Its socket closed while it waited: nobody is left to read the answer, and a session's last close took its credentials.
-  if (signal?.aborted || ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED) {
-    log.info('message', 'queued message dropped: its socket closed', {sessionId: session.sessionId});
-    return;
-  }
+  if (droppedForClosedSocket(ws, session, signal)) return;
   const startedAt = Date.now();
   try {
     await wsErrorHandler(ws, () => answerUserMessage(ws, session, orchestrator, validation, signal));
+  } finally {
+    endTurn(ws, session, signal, startedAt);
+  }
+}
+
+// Its socket closed while it waited: nobody is left to read the answer, and a session's last close took its credentials.
+function droppedForClosedSocket(ws: WebSocket, session: ChatSession, signal: AbortSignal | undefined): boolean {
+  if (!signal?.aborted && ws.readyState !== WebSocket.CLOSING && ws.readyState !== WebSocket.CLOSED) return false;
+  log.info('message', 'queued message dropped: its socket closed', {sessionId: session.sessionId});
+  return true;
+}
+
+// Consumed on arrival, so the sending rate is what is limited; one bucket per user, whatever the session or socket.
+function refusedBy(limiter: RateLimiter | undefined, session: ChatSession): number | undefined {
+  const verdict = limiter?.consume(`user:${String(session.userId)}`);
+  return verdict === undefined || verdict.allowed ? undefined : verdict.retryAfterMs;
+}
+
+// A refusal keeps a turn's shape, one error then stream_end, and runs no model call (specs/hal-engine-rate-limit/spec.md).
+async function refuseInTurn(
+  ws: WebSocket,
+  session: ChatSession,
+  retryAfterMs: number,
+  signal: AbortSignal | undefined
+): Promise<void> {
+  if (droppedForClosedSocket(ws, session, signal)) return;
+  const startedAt = Date.now();
+  try {
+    log.warn('rateLimit', 'user_message refused: too many requests', {sessionId: session.sessionId, retryAfterMs});
+    sendError(ws, ErrorCodes.TOO_MANY_REQUESTS, TOO_MANY_REQUESTS_MESSAGE, {retryAfterMs});
   } finally {
     endTurn(ws, session, signal, startedAt);
   }

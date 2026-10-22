@@ -8,6 +8,14 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+### Added
+
+- **An inbound rate limit per user.** `transport.rateLimit` bounds how often one authenticated user may send: 20 requests a minute sustained and 5 at once by default, one budget across the WebSocket and HTTP transports, keyed on the user for WebSocket frames and the engine's chat routes, and on the remote address for a consumer's own routes unless it authenticates before the limiter. A refused `user_message` is answered in turn with an `error` frame, code `TOO_MANY_REQUESTS` carrying `retryAfterMs`, then `stream_end`, and starts no model call; a refused HTTP request answers 429 with `Retry-After`. `/health` is never refused. `rateLimit: false` turns it off, for a deployment whose gateway already limits. The limiter is in memory and per engine instance: N instances behind a load balancer permit N times the limit.
+
+### Changed
+
+- **A client sending more than five messages in a burst, or more than twenty a minute, now sees refusals it did not see before.** An automated load test against the default `transport.rateLimit` gets `TOO_MANY_REQUESTS` from the sixth message of a burst; pass `rateLimit: false` to such a test, or raise the limit.
+
 ## [0.10.0] - 2026-10-21
 
 **Upgrading from 0.9.x.** If a tool reads `context.authHeaders`, set `auth.forwardHeaders` to the headers it needs, for example `auth: {ws, forwardHeaders: ['authorization']}`: an unset list now forwards none. A list you already set, `[]` included, behaves as before, and nothing else changes for a consumer.
