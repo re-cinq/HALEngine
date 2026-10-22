@@ -22,18 +22,21 @@ Agents should read files in this order to understand the HAL Engine codebase:
 ## Workflow Commands
 
 ### Development
+
 ```bash
 npm run dev          # Start example/server.ts with hot reload (tsx watch)
 npm run typecheck    # Run TypeScript type checking without emitting
 ```
 
 ### Building
+
 ```bash
 npm run build        # Compile TypeScript to dist/ (tsc)
 npm start            # Run compiled JavaScript from dist/index.js
 ```
 
 ### Testing
+
 ```bash
 npm test             # Run Jest test suite
 # Tests use ts-jest for TypeScript compilation
@@ -41,6 +44,7 @@ npm test             # Run Jest test suite
 ```
 
 ### Code Quality
+
 ```bash
 npm run eslint       # Run ESLint with max-warnings 0 (zero-tolerance)
 npm run prettier     # Format all src/**/*.ts with Prettier
@@ -48,6 +52,7 @@ npm run prettier:check  # Check formatting without writing
 ```
 
 ### All Checks (Recommended Pre-Commit)
+
 ```bash
 npm run verify
 ```
@@ -71,10 +76,10 @@ and carries a lead paragraph of prose before its first `##` section:
 ```markdown
 # <spec title>
 
-| Field  | Value                  |
-| ------ | ---------------------- |
+| Field  | Value                 |
+| ------ | --------------------- |
 | Issue  | re-cinq/HALEngine#<n> |
-| Status | Draft                  |
+| Status | Draft                 |
 
 <lead paragraph>
 ```
@@ -178,7 +183,12 @@ introduces a spec, its anchors have to be corrected by hand.
 The convention's tooling is wired up here: `npm run check:spec-links`, `npm run check:spec-status` and
 `node scripts/repoint-spec-anchors.mjs --check origin/main` all gate CI, and
 `re-lint/require-status-matches-coverage` derives each `Status` row from its
-spec's citations. `re-lint/require-spec-link` gates in `eslint.config.mjs`: every test cites a
+spec's citations - from the ones that are evidence, since 1.8.0 of the plugin: a citation
+whose file is gone, or whose `#Lnn` lands outside any `it()`/`test()` declaration, counts
+for nothing, so a drifted anchor costs a spec its tier rather than quietly holding it. That
+rule now also carries a fixer that rewrites the `Status` row, so `eslint --fix` run over the
+tree will restate a spec's status for you; no CI job here runs one.
+`re-lint/require-spec-link` gates in `eslint.config.mjs`: every test cites a
 statement, so an uncited new test fails the build. Its statement-side mirror,
 `require-statement-links`, runs at `warn` from `eslint.config.backlog.mjs` and
 reports without blocking - the severities the rule pair is designed for.
@@ -186,7 +196,9 @@ reports without blocking - the severities the rule pair is designed for.
 ## Commit Conventions
 
 ### Format
+
 Follow conventional commits:
+
 ```
 <type>(<scope>): <subject>
 
@@ -196,6 +208,7 @@ Follow conventional commits:
 ```
 
 ### Types
+
 - `feat` - New feature (provider, tool, config option)
 - `fix` - Bug fix
 - `refactor` - Code restructuring without behavior change
@@ -205,7 +218,9 @@ Follow conventional commits:
 - `perf` - Performance improvement
 
 ### Scope
+
 Optional but recommended. Use domain areas:
+
 - `bedrock` / `vertex` / `openai` / `anthropic` / `mock` - Provider-specific
 - `tools` - Tool registry and execution
 - `orchestrator` - Chat orchestrator
@@ -215,6 +230,7 @@ Optional but recommended. Use domain areas:
 - `build` - Build/packaging
 
 ### Examples
+
 ```
 feat(tools): add parallel tool execution batching
 fix(bedrock): handle streaming timeouts gracefully
@@ -224,6 +240,7 @@ test(tools): add registry conflict detection
 ```
 
 ### Rules
+
 - Use imperative mood: "add" not "added" or "adds"
 - Do not capitalize first letter of subject
 - No period (.) at end of subject
@@ -234,6 +251,7 @@ test(tools): add registry conflict detection
 ## PR Requirements
 
 ### Before Opening
+
 1. Run full check suite and ensure all pass:
    ```bash
    npm run verify
@@ -242,26 +260,32 @@ test(tools): add registry conflict detection
 3. Commit with conventional format
 
 ### PR Description Template
+
 ```markdown
-## Description
-Brief summary of changes and rationale.
+## Why
 
-## Type of Change
-- [ ] Feature
-- [ ] Bug fix
-- [ ] Breaking change
-- [ ] Documentation
+Explain the motivation for this change. What problem does it solve? What feature does it enable?
 
-## Changes
-- Bullet list of concrete changes
-- What was added/modified/removed
+## What Changed
+
+Describe the changes made. Be specific about what was added, modified, or removed.
+
+## Alternatives Considered
+
+What other approaches were considered? Why was this one chosen?
+
+## ADRs & Architecture
+
+Reference any Architecture Decision Records (ADRs) or architectural patterns this PR follows or establishes.
 
 ## Testing
+
 - How to test locally
 - Any new test cases added
 - Edge cases considered
 
 ## Checklist
+
 - [ ] Code follows style guide (eslint passes)
 - [ ] No console.logs or debugging code
 - [ ] TypeScript strict mode passes
@@ -272,6 +296,7 @@ Brief summary of changes and rationale.
 ```
 
 ### Acceptance Criteria
+
 - [ ] All GitHub Actions CI checks pass. `.github/workflows/ci.yml` is three
       jobs - `verify` (sixteen steps, of which `npm run verify` reproduces
       fourteen), `build-chain` (audit, action pins) and `smoke` (packed tarball,
@@ -287,7 +312,9 @@ Brief summary of changes and rationale.
 - [ ] Public API changes described in `specs/`, not in comments (see Code Style)
 
 ### Provider Implementation PRs
+
 For new provider support:
+
 - [ ] Provider in `src/providers/<name>/` with index.ts exporting public API
 - [ ] Implements `AIProvider` interface fully
 - [ ] Handles streaming with `MessageChunk` protocol
@@ -300,12 +327,14 @@ For new provider support:
 ## Compliance Constraints
 
 ### TypeScript
+
 - `strict: true` in tsconfig.json is non-negotiable
 - All public exports must be typed (no `any` in public APIs)
 - Use `type` for type-only imports: `import type { ... } from '...'`
 - Generics preferred over union types for reusability
 
 ### Code Style
+
 - ESLint config: `eslint.config.mjs` (flat config format)
 - Max warnings: 0 (all warnings treated as errors)
 - Comments: one line maximum (`re-lint/max-comment-lines`), and it counts a run
@@ -322,6 +351,7 @@ For new provider support:
 - Quotes: Single quotes (`singleQuote: true` in `.prettierrc`)
 
 ### Testing
+
 - Jest configuration: `jest.config.js`
 - ts-jest for TypeScript support
 - Minimum coverage: 70% lines for new code. That is review guidance; the gate is
@@ -337,6 +367,7 @@ For new provider support:
 - Async code must have proper await/done handling
 
 ### Architecture Constraints
+
 - **Layered structure mandatory** (types → providers → infrastructure → orchestration → transport)
 - No circular dependencies between layers
 - Providers must be pluggable (no hardcoded provider logic in orchestrator)
@@ -345,6 +376,7 @@ For new provider support:
 - WebSocket protocol defined in types/messages.ts (additive changes only for backward compatibility)
 
 ### Dependency Management
+
 - Core dependencies only (Express, ws, uuid, cookie, cors, cookie-parser)
 - `@types/express`, `@types/node` and `@types/ws` are dependencies rather than
   devDependencies, because the emitted `.d.ts` files import `express`, `http`,
@@ -363,6 +395,7 @@ For new provider support:
   require them
 
 ### Documentation Requirements
+
 - A comment may span at most one line, JSDoc included — see Code Style. What a
   public function is and does belongs in `specs/`; what a signature is, the
   signature already says
@@ -384,6 +417,7 @@ For new provider support:
   commit subject have different readers
 
 ### Releasing
+
 - Five human steps: bump `version` in `package.json` inside the pull request,
   merge it, draft a GitHub Release on `main` tagged `vX.Y.Z`, publish it, approve
   the staged version. Everything between the release and the approval is CI
@@ -425,6 +459,7 @@ For new provider support:
   once a tag has fired
 
 ### Breaking Changes
+
 - MUST be discussed in issue before implementation
 - MUST include migration guide in PR
 - MUST increment MINOR version (semver)
@@ -440,6 +475,7 @@ For new provider support:
   elapses on their side
 
 ### AI Provider Compliance
+
 - No hardcoded API keys or secrets (use environment variables)
 - Providers must handle rate limiting gracefully
 - Tool calling must match JSON Schema spec

@@ -40,26 +40,43 @@ const sessionCarryingCredentials = (): ChatSession => ({
 describe('what a persisted session may not contain', () => {
   const collectionFor = mongoCollection();
 
-  it('holds no credential key at any depth of the stored document', async () => {
+  const loadStored = async () => {
     const store = new MongoSessionStore({collection: collectionFor()});
-
+    await store.create('s1', 'u1');
     await store.save(sessionCarryingCredentials());
-    const stored = await collectionFor().findOne({_id: 's1'});
+    return collectionFor().findOne({_id: 's1'});
+  };
+
+  it('holds no credential key at any depth of the stored document', async () => {
+    const stored = await loadStored();
     const keys = keysOf(JSON.parse(JSON.stringify(stored)) as unknown);
 
     expect(keys.filter(key => ['authheaders', 'authorization', 'cookie', 'host'].includes(key))).toEqual([]);
   });
 
   it('keeps everything that is not a credential, so the redaction is not simply emptying the document', async () => {
-    const store = new MongoSessionStore({collection: collectionFor()});
-
-    await store.save(sessionCarryingCredentials());
-    const stored = await collectionFor().findOne({_id: 's1'});
+    const stored = await loadStored();
 
     expect({
       entries: stored?.entries.length,
       kept: (stored?.entries[1] as {toolInput: {keep: string}} | undefined)?.toolInput.keep,
     }).toEqual({entries: 2, kept: 'Bearer-looking'});
+  });
+
+  it('writes no user key to the stored document and reads back a session with none, though create and save were handed one', async () => {
+    const user = {id: 'u1', role: 'editor', apiToken: 'sk-live-0123456789abcdef'};
+    const writer = new MongoSessionStore({collection: collectionFor()});
+    const created = await writer.create('s2', 'u1', {user});
+    await writer.save({sessionId: 's2', userId: 'u1', entries: [], user});
+
+    const stored = await collectionFor().findOne({_id: 's2'});
+    const readBack = await new MongoSessionStore({collection: collectionFor()}).get('s2');
+
+    expect({
+      heldInMemory: created.user,
+      stored: JSON.stringify(stored).includes('apiToken'),
+      readBack: Object.hasOwn(readBack ?? {}, 'user'),
+    }).toEqual({heldInMemory: user, stored: false, readBack: false});
   });
 
   it('leaves the caller their in-memory credentials, which the tools still need', () => {

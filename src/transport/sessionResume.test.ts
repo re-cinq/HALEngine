@@ -88,6 +88,8 @@ const startEngine = async (
     sessionStore: store,
     orchestrator,
     resume,
+    // These tests follow which socket lends the session its credential, so they forward it; unset forwards none.
+    forwardHeaders: ['authorization'],
     onConnect: (session, {resumed}) => void connects.push({sessionId: session.sessionId, resumed}),
     onDisconnect: sessionId => void disconnected.push(sessionId),
   });
@@ -157,12 +159,19 @@ const deferredRelease = () => {
   return {until, release: () => release()};
 };
 
+// A century on, so each entry lands after its session's creation, as in real use, and its time decides the activity.
+const AFTER_CREATION_MS = 100 * 365 * 24 * 60 * 60 * 1000;
+
 // Each stored conversation holds one user entry, sent at the given time and reading as its own id.
 const storeWith = (conversations: Array<[sessionId: string, userId: string, sentAt: string]>): InMemorySessionStore => {
   const store = new InMemorySessionStore();
   for (const [sessionId, userId, sentAt] of conversations) {
     const {entries} = store.create(sessionId, userId);
-    entries.push({role: 'user', content: sessionId, timestamp: sentAt});
+    entries.push({
+      role: 'user',
+      content: sessionId,
+      timestamp: new Date(Date.parse(sentAt) + AFTER_CREATION_MS).toISOString(),
+    });
   }
   return store;
 };

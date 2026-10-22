@@ -1,9 +1,9 @@
 # Tool Responses
 
-| Field  | Value |
-| ------ | ----- |
-| Issue  | n/a   |
-| Status | Draft |
+| Field  | Value       |
+| ------ | ----------- |
+| Issue  | n/a         |
+| Status | In Progress |
 
 By default, a tool executor returns a plain string that feeds back into the AI conversation. The client never sees the result -- it only sees the tool invocation (name and input parameters). This is fine for most tools, but sometimes a tool knows exactly what to show the user and does not need the AI to rephrase it.
 
@@ -22,6 +22,8 @@ interface ToolResponse {
   result: string;
   clientMessages?: OutgoingMessage[];
   suppressAssistantResponse?: boolean;
+  /** Tells the model `result` describes a failure, not an answer; each provider's encoding is in specs/hal-engine-tool-responses/spec.md. */
+  isError?: boolean;
 }
 ```
 
@@ -30,6 +32,7 @@ interface ToolResponse {
 | `result` | The string the AI model sees -- identical to what a plain-string executor returns |
 | `clientMessages` | Optional array of `OutgoingMessage` values sent directly to the client via WebSocket |
 | `suppressAssistantResponse` | When `true`, the AI's next text response still accumulates in `session.entries` for context continuity, but is not sent to the client |
+| `isError` | When `true`, `result` describes a failure, and the provider is told so on its own wire; see [Marking a failure](#marking-a-failure-iserror) |
 
 A `ToolExecutor` can return either a plain `string` or a `ToolResponse`:
 
@@ -43,6 +46,27 @@ type ToolExecutor = (input: Record<string, unknown>, context?: ToolContext) => P
 An executor that throws is caught: the model is told the call failed, and the thrown message reaches only the log, as [tool-executor-throw](../hal-engine-tool-executor-throw/spec.md) specifies.
 
 The registry normalizes both forms internally via `normalizeToolResponse()`, so downstream code always sees a `ToolResponse`.
+
+## Marking a failure: isError
+
+A tool signals that a call failed by returning `isError: true` beside its `result`, a single bit rather than a taxonomy: a kind of failure stays in the `result` text, where the model reads it. The flag never reaches the browser wire.
+
+- `normalizeToolResponse` turns a plain string into `{result}` with no `isError` key, so a tool that returns a string sees no change ([validated by: normalizes '18 degrees and clear' to {result} with no isError key](../../src/orchestration/toolResultError.test.ts#L53)).
+- A `ToolResponse` with `isError: true` reaches the provider's next call as a `tool_result` carrying `isError: true` ([validated by: carries isError true from an executor's {result: 'lookup failed', isError: true} onto the tool_result the provider's next call gets](../../src/orchestration/toolResultError.test.ts#L62)).
+- A successful result carries no `isError` key at all, so it reaches the provider exactly as it did before the field existed ([validated by: sends a successful result with no isError key at all, as before the field existed](../../src/orchestration/toolResultError.test.ts#L68)).
+- The engine marks a schema rejection as an error ([validated by: marks a schema rejection as an error: lookup called without its required id](../../src/orchestration/toolResultError.test.ts#L77)).
+- It marks its answer to a tool name the model invented as an error ([validated by: marks the answer to an unknown tool name as an error: lookpu, a name the model invented](../../src/orchestration/toolResultError.test.ts#L81)).
+- It marks the result it substitutes at a call's deadline as an error ([validated by: marks the deadline substitution as an error: lookup never answering within toolTimeoutMs 5](../../src/orchestration/toolResultError.test.ts#L85)).
+- It marks a call declined because its `beforeToolCall` policy threw as an error ([validated by: marks a declined call as an error: a beforeToolCall policy that throws](../../src/orchestration/toolResultError.test.ts#L89)).
+- It marks the result it gives for an executor that threw as an error ([validated by: marks a caught executor throw as an error: lookup rejecting with ECONNREFUSED](../../src/orchestration/toolResultError.test.ts#L97)).
+- For a model Bedrock documents the field for, the flag travels as the Converse API's `toolResult.status: 'error'` ([validated by: maps a tool_result with isError true to a toolResult whose status is 'error', for a model that takes the field](../../src/providers/bedrock/bedrockMessageMapper.test.ts#L12)).
+- Bedrock documents `toolResult.status` for Amazon Nova and Anthropic Claude 3 and 4 models only, so the provider sends it to those model ids alone, inference-profile prefixes and ARNs included; Claude 2 and Instant, Llama, Mistral, Cohere and an application inference profile, whose ARN names no model, get none ([validated by: takes the field for Amazon Nova and Anthropic Claude 3 and 4 ids, inference profiles included, and for no other model](../../src/providers/bedrock/bedrockMessageMapper.test.ts#L41)).
+- Any other model receives no `status` key, even for a failed result, whose failure text still reaches it in the result ([validated by: omits status for a model that does not take the field, the failure still in the text, isError true or not](../../src/providers/bedrock/bedrockMessageMapper.test.ts#L31), [validated by: sends a failed tool_result with status 'error' to a Claude model and with no status to a Llama one](../../src/providers/bedrock/bedrockProvider.test.ts#L91)).
+- A Bedrock result without the flag carries no `status` key at all ([validated by: maps the same tool_result with isError omitted to a toolResult with no status key](../../src/providers/bedrock/bedrockMessageMapper.test.ts#L21)).
+- The Bedrock mapper writes the literal `'error'`, not the SDK's `ToolResultStatus.ERROR`, because that constant is a value import, and the module imports the optional peer as types only ([validated by: imports @aws-sdk/client-bedrock-runtime as types only, so the optional peer is never loaded by mapping](../../src/providers/bedrock/bedrockMessageMapper.test.ts#L79)).
+- Vertex has no status field, so a failure travels as `functionResponse.response.error` in place of `response.result`, and a success is unchanged ([validated by: sends a failed tool_result under functionResponse.response.error and a successful one under response.result](../../src/providers/vertex/vertexProvider.test.ts#L444)).
+
+Bedrock's own note on `toolResult.status`, as `@aws-sdk/client-bedrock-runtime` 3.1020.0 documents it: "This field is only supported by Amazon Nova and Anthropic Claude 3 and 4 models." What another model would do with the field, ignore it or reject the request, is not documented, so it is never sent one. A model Bedrock adds the field for later gets it only once its id is added to the match in `bedrockMessageMapper.ts`. The mock provider maps no tool result at all, so it has nothing to encode.
 
 ## When to Use This
 
@@ -190,9 +214,15 @@ Two new chunk types flow through `processChunk`:
 
 When suppression is active, `streamSegment` and `commitAndClear` still call `appendEntry`, `appendDelta`, and `commitEntry` (so the session accumulates entries for context), but skip `sendUpsert`, `sendDelta`, and `sendCommit` (so the client sees nothing).
 
-When a new entry is created under suppression, the server sends an `entry_skip` message with the server-side index. This tells the client "an entry exists here on the server, but you will never receive it." The client tracks these skipped indices and adjusts all subsequent incoming indices via the `adjustIndex` pure function. Without this, server indices would diverge from the client's entry array, causing deltas and commits to target the wrong positions.
+Three rules decide what the client receives once suppression is active:
 
-If the AI streamed text *before* the tool call (which happens when the model explains what it is about to do), that text was already sent to the client as an assistant entry. When suppression activates, the server retroactively blanks these entries by sending `entry_upsert` with empty content. The client already skips rendering empty assistant entries, so the pre-tool text disappears cleanly.
+- **A model entry already sent is blanked.** Every thinking or assistant entry the client was sent before suppression began, including text the model streamed before the tool call to explain what it was about to do, is re-sent as `entry_upsert` with empty content, and the stored entry keeps its text, marked `suppressed` ([validated by: blanks a thinking entry already sent beside the answer, and no frame after suppression carries its text](../../src/transport/ws/messageHandler.test.ts#L196), [validated by: marks a blanked thinking entry suppressed beside the blanked answer, keeping both texts](../../src/transport/ws/messageHandler.test.ts#L271)).
+- **A model entry not yet sent is skipped.** A thinking or assistant entry opened under suppression is announced with `entry_skip` carrying its server-side index: an entry exists here on the server, but the client will never receive it. The client tracks these skipped indices and adjusts every later incoming index with the `adjustIndex` pure function; without this, server indices would diverge from the client's entry array, and deltas and commits would target the wrong positions ([validated by: skips rather than upserts a segment opened after suppression](../../src/transport/ws/messageHandler.test.ts#L219), [validated by: skips a thinking entry opened after suppression rather than blanking it](../../src/transport/ws/messageHandler.test.ts#L325)).
+- **A tool entry is exempt from both.** It is no model response, and hiding it under sticky suppression would leave the client nothing between the tool's answer and `stream_end`, which the spinner logic below relies on, so it is sent as `entry_upsert` with its `toolName` and `toolInput` ([validated by: still sends a tool entry opened under suppression as an entry_upsert carrying its toolName and toolInput](../../src/transport/ws/messageHandler.test.ts#L333)).
+
+The blanking is logged once, at `info`, as `suppression activated` with the blanked indices and nothing else, since their text is exactly what suppression hides ([validated by: lists thinking index 1 and assistant index 2 at suppression, and no line carries their text](../../src/transport/ws/messageHandler.test.ts#L355)).
+
+Suppression is recorded on the stored entry, so a conversation resumed from a store replays a suppressed entry as `entry_skip`, never as its text ([validated by: replays a suppressed entry as a skip, so the client never sees text a tool suppressed](../../src/transport/sessionResume.test.ts#L337)).
 
 **Suppression is sticky for the entire stream.** Once a tool sets `suppressAssistantResponse: true` in any round, all subsequent AI responses in that stream are suppressed -- even if later tool rounds do not set the flag. This is intentional: suppression is a per-message property, not per-round. If the first tool already sent the definitive answer to the client, the AI's commentary in all following rounds is equally redundant. A new user message starts a fresh stream with `suppressOutput: false`.
 

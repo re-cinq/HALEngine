@@ -11,12 +11,12 @@ import {createProvider} from '@re-cinq/hal-engine';
 const require = createRequire(import.meta.url);
 const loaded = peer => Object.keys(require.cache).filter(path => path.includes(`node_modules/${peer}/`)).length;
 
-for (const peer of ['@google-cloud/vertexai', '@aws-sdk/client-bedrock-runtime']) {
+for (const peer of ['@google/genai', '@aws-sdk/client-bedrock-runtime']) {
   assert.equal(loaded(peer), 0, `${peer}: importing the package root loaded ${loaded(peer)} of its modules`);
 }
 
 for (const [config, peer] of [
-  [{type: 'vertex', projectId: 'smoke', location: 'europe-west4', modelId: 'gemini-2.5-flash'}, '@google-cloud/vertexai'],
+  [{type: 'vertex', projectId: 'smoke', location: 'europe-west4', modelId: 'gemini-2.5-flash'}, '@google/genai'],
   [{type: 'bedrock', region: 'eu-west-1', modelId: 'eu.anthropic.claude-sonnet-4-5-20250929-v1:0', maxTokens: 16}, '@aws-sdk/client-bedrock-runtime'],
 ]) {
   // Construction only. Nothing here holds cloud credentials, so a call would fail for reasons that

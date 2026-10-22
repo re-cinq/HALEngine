@@ -1,5 +1,5 @@
 // Makes the optional peers unresolvable, so a probe can prove the package root never reaches for one.
-const ABSENT = new Set(['mongodb', '@aws-sdk/client-bedrock-runtime', '@google-cloud/vertexai']);
+const ABSENT = new Set(['mongodb', '@aws-sdk/client-bedrock-runtime', '@google/genai']);
 
 export function resolve(specifier, context, nextResolve) {
   if (!ABSENT.has(specifier)) return nextResolve(specifier, context);

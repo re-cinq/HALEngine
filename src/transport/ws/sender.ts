@@ -18,8 +18,8 @@ export function sendCommit(ws: WebSocket, index: number): void {
   sendJson(ws, {type: 'entry_commit', index});
 }
 
-export function sendError(ws: WebSocket, code: string, message: string): void {
-  sendJson(ws, {type: 'error', code, message});
+export function sendError(ws: WebSocket, code: string, message: string, detail: {retryAfterMs?: number} = {}): void {
+  sendJson(ws, {type: 'error', code, message, ...detail});
 }
 
 export function sendSkip(ws: WebSocket, index: number): void {

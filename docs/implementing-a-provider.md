@@ -12,6 +12,11 @@ reference implementation for streaming, and
 [vertexProvider.ts](../src/providers/vertex/vertexProvider.ts) for
 `generateStructured`.
 
+Bedrock reports token counts on its stop chunk, read from the Converse stream's
+`metadata` event; AWS sends that event after `messageStop`, so the stop chunk
+waits for the stream to end. A provider you finish reports its counts on its
+stop chunk the same way, as `usage`.
+
 ## Anthropic ([anthropicProvider.ts](../src/providers/anthropic/anthropicProvider.ts))
 
 1. Install `@anthropic-ai/sdk`
@@ -34,6 +39,11 @@ tool. A vendor that marks tool calls structurally rather than through its finish
 reason, as Vertex does, needs the value derived from the `tool_use` chunks the
 provider yielded.
 
+A vendor that attaches a token to a tool call and needs it back in the turn's next
+request, as Gemini 3 does with `thoughtSignature`, puts it on `toolCall.signature`.
+The orchestrator returns it on that call's `tool_use` block, and the provider sends
+it back exactly as it came: nothing for a call that came without one.
+
 `generateStructured` is required, not optional — returning `null` or `undefined`
 silently breaks orchestration. Until it is implemented it must keep throwing
 `AIError` with a descriptive message.
@@ -41,6 +51,28 @@ silently breaks orchestration. Until it is implemented it must keep throwing
 Both SDKs take the signal as a request option, so an abort cancels the request at
 the vendor, and both reject the pending call when it does. Honour it the way
 § Cancellation below describes.
+
+## Scripting the mock provider
+
+The mock provider echoes the user by default. To exercise a tool round with no cloud account, give it
+`turns`: a queue of answers, consumed one per `sendMessage` call rather than one per user message,
+because a tool round is several calls within one user turn.
+
+<!-- doc-block: none -- a two-turn script; MockTurn is checked through src/providers/mock/mockProvider.ts by typecheck -->
+```typescript
+const provider = createProvider({
+  type: 'mock',
+  turns: [
+    {toolCalls: [{id: 't1', name: 'echo', input: {q: 'hi'}}]}, // call 1: ask for the tool
+    {text: 'done'}, // call 2: answer once the result is back
+  ],
+  onSendMessage: params => console.log(params.messages.length),
+});
+```
+
+Each turn emits its text, then its tool calls, then a `stop` whose reason follows from them:
+`tool_use` when the turn calls a tool, `end_turn` otherwise, which is what Bedrock and Vertex report.
+A call past the end of the script throws rather than falling back to the echo.
 
 ## Cancellation
 
@@ -56,14 +88,14 @@ What an abort stops depends on the vendor SDK, measured at these versions:
 | Provider | SDK measured | What an abort stops |
 | --- | --- | --- |
 | Bedrock | `@aws-sdk/client-bedrock-runtime@3.1020.0` (`@smithy/node-http-handler@4.5.1`) | The request at the vendor: the SDK's HTTP/2 handler closes the stream, so the vendor stops sending. |
-| Vertex | `@google-cloud/vertexai@1.10.4` | Only the engine's reading. `generateContentStream` takes no abort signal, and the SDK tees the response and drains one copy to completion whether or not the stream is read, so the vendor request runs to the end. |
+| Vertex | `@google/genai@2.26.0` | The request's connection: the SDK passes the signal to `fetch`, so no more of the answer arrives. Google documents that the service may still finish generating, and bill, the request. Under `@google-cloud/vertexai@1.10.4` only the engine's reading stopped, and the vendor's response ran to its end. |
 | Mock | built in | Everything, at once: there is no vendor. |
 
-**GDPR.** On Vertex an abandoned turn keeps sending and receiving the user's
-question at the vendor after the engine has stopped listening, so cancellation
-reduces the personal data crossing the transfer boundary on Bedrock and does not
-on Vertex; a deployer recording where personal data goes has to record that
-difference. Re-measure the Vertex row when upgrading `@google-cloud/vertexai`.
+**GDPR.** Bedrock and Vertex both close the request when a turn is abandoned, so
+no more of the answer crosses the transfer boundary back to the engine. What the
+vendor already received stays with it, and Vertex may still finish generating the
+answer it was asked for; a deployer recording where personal data goes records
+both. Re-measure the Vertex row when upgrading `@google/genai`.
 
 A provider honours the signal in three places, as the custom-provider template in
 [specs/hal-engine-providers/spec.md](../specs/hal-engine-providers/spec.md)

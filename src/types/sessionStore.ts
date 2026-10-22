@@ -12,9 +12,41 @@ export interface BaseSession {
 export type SessionLookup<T extends BaseSession = ChatSession> =
   {status: 'active'; session: T} | {status: 'expired'; userId: string | number} | {status: 'missing'};
 
+/** Thrown by a store that cannot list conversations at all, so a deployment fault reads as one rather than a failed read. */
+export class StoreCannotList extends Error {
+  readonly name = 'StoreCannotList';
+}
+
+/** What a conversation list needs of one session: never its entries, and never its credentials. */
+export interface SessionSummary {
+  sessionId: string;
+  createdAt: Date;
+  updatedAt: Date;
+  entryCount: number;
+  /** The conversation's opening question as a label, only when asked for, and absent when it opens with no user entry (specs/hal-engine-conversation-list/spec.md). */
+  preview?: string;
+}
+
+/** Where a page of conversations resumes from: the last row the caller saw, which a `SessionSummary` satisfies. */
+export interface SessionCursor {
+  /** A `Date`, an ISO string or an epoch number, so a row that went through JSON still pages (specs/hal-engine-conversation-list/spec.md). */
+  updatedAt: Date | string | number;
+  sessionId: string;
+}
+
+/** A window onto a user's conversations, newest activity first; `before` pages down that same order. */
+export interface SessionListOptions {
+  limit?: number;
+  before?: SessionCursor;
+  /** Whether each summary carries a `preview`; `false` by default, because a plain summary carries no conversation content. */
+  preview?: boolean;
+}
+
 export interface SessionCreateOptions {
   authHeaders?: ChatSession['authHeaders'];
   workspaceId?: string | number;
+  /** Held on the session in memory for its connection; a store must not write it. */
+  user?: ChatSession['user'];
 }
 
 export interface SessionStore<T extends BaseSession = ChatSession> {
@@ -27,6 +59,8 @@ export interface SessionStore<T extends BaseSession = ChatSession> {
   evict?(sessionId: string): Awaitable<boolean>;
   /** Write signal: fires once per processed user message; failures are swallowed (specs/hal-engine-session-write-signal/spec.md). */
   save?(session: T): Awaitable<void>;
+  /** Summaries of the user's conversations, newest activity first, so a client can offer a list of them (specs/hal-engine-conversation-list/spec.md). */
+  listFor?(userId: string | number, options?: SessionListOptions): Awaitable<SessionSummary[]>;
   /** The user's most recently active session the store still holds, so a connect that names none can continue it (specs/hal-engine-session-resume/spec.md). */
   latestFor?(userId: string | number): Awaitable<T | undefined>;
   /** Tells an expired session from a missing one; `missing` is always a permitted answer, and a store without it behaves as `get` (specs/hal-engine-session-resume/spec.md). */

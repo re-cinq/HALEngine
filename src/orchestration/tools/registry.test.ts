@@ -149,7 +149,7 @@ describe('ToolRegistry.execute — a tool name the model invented', () => {
     const response = await registryWith('get_weather', 'list_locations').execute('nope', {});
 
     const absent = ['nope', 'get_weather', 'list_locations'].filter(name => !response.result.includes(name));
-    expect({response, absent}).toEqual({response: {result: expect.any(String)}, absent: []});
+    expect({response, absent}).toEqual({response: {result: expect.any(String), isError: true}, absent: []});
   });
 
   it('says that no tools are registered when the registry is empty, ending in no empty list', async () => {
@@ -176,7 +176,10 @@ describe('ToolRegistry.execute — an executor that throws', () => {
     const response = await throwing('get_weather', new Error('ECONNREFUSED 10.0.0.4:8080')).execute('get_weather', {});
 
     const leaks = ['ECONNREFUSED', '10.0.0.4'].filter(text => response.result.includes(text));
-    expect({response, leaks}).toEqual({response: {result: expect.stringContaining('get_weather')}, leaks: []});
+    expect({response, leaks}).toEqual({
+      response: {result: expect.stringContaining('get_weather'), isError: true},
+      leaks: [],
+    });
   });
 
   it('answers a throw of any shape alike: a string, undefined, a plain object, an object with no prototype', async () => {
@@ -184,7 +187,9 @@ describe('ToolRegistry.execute — an executor that throws', () => {
 
     const responses = await Promise.all(thrown.map(value => throwing('get_weather', value).execute('get_weather', {})));
 
-    expect(responses).toEqual(thrown.map(() => ({result: 'The get_weather tool failed and returned no result.'})));
+    expect(responses).toEqual(
+      thrown.map(() => ({result: 'The get_weather tool failed and returned no result.', isError: true}))
+    );
   });
 
   it('logs a throw once, at error under tool, with the tool name and error type, its message cut to 500 characters', async () => {
@@ -313,3 +318,40 @@ function recordLog(): {info: LoggedLine[]; warn: LoggedLine[]; error: LoggedLine
   setLogger({debug: into(), info: into('info'), warn: into('warn'), error: into('error')});
   return lines;
 }
+
+describe('ToolRegistry.register — a name already registered', () => {
+  const weather = {name: 'get_weather', description: 'Returns the weather.', inputSchema: {type: 'object'}};
+
+  it('throws Duplicate tool name: get_weather on the second register and keeps the first tool and its executor', async () => {
+    const registry = new ToolRegistry();
+    registry.register(weather, async () => 'first');
+
+    const thrown = (() => {
+      try {
+        registry.register({...weather, description: 'A second weather tool.'}, async () => 'second');
+        return undefined;
+      } catch (error) {
+        return error;
+      }
+    })();
+    const answer = await registry.execute('get_weather', {});
+
+    expect({thrown, definitions: registry.getDefinitions(), result: answer.result}).toEqual({
+      thrown: new Error('Duplicate tool name: get_weather'),
+      definitions: [weather],
+      result: 'first',
+    });
+  });
+
+  it('throws for a definition function that resolves to get_weather once a plain definition holds that name', () => {
+    const registry = new ToolRegistry();
+    registry.register(weather, async () => 'first');
+
+    expect(() =>
+      registry.register(
+        () => ({...weather}),
+        async () => 'second'
+      )
+    ).toThrow(new Error('Duplicate tool name: get_weather'));
+  });
+});

@@ -55,6 +55,38 @@ export function connectClient(url: string, token = 't'): WebSocket {
   return client;
 }
 
+const CLOSE_WAIT_MS = 3_000;
+
+/** Every event a client sees until its socket closes: open, each frame's type, a socket error, and the close code. */
+export function eventsUntilClose(
+  url: string,
+  headers: Record<string, string> = {},
+  onConnected: (client: WebSocket) => void = () => undefined
+): Promise<string[]> {
+  const events: string[] = [];
+  const client = new WebSocket(url, {headers});
+  clients.push(client);
+  return new Promise<string[]>(resolve => {
+    // A hang is reported as an event rather than left to jest's timeout, so the test shows what did arrive.
+    const timer = setTimeout(() => {
+      events.push('timeout');
+      client.terminate();
+    }, CLOSE_WAIT_MS);
+    client.on('open', () => events.push('open'));
+    client.on('error', () => events.push('error'));
+    client.on('message', raw => {
+      const {type} = JSON.parse(String(raw)) as {type: string};
+      events.push(`frame:${type}`);
+      if (type === 'connected') onConnected(client);
+    });
+    client.on('close', code => {
+      clearTimeout(timer);
+      events.push(`close:${code}`);
+      resolve(events);
+    });
+  });
+}
+
 /** A promise a test settles by hand, to hold a stream or a hook at a point of its choosing. */
 export function deferred(): {until: Promise<void>; release: () => void} {
   let release = (): void => undefined;

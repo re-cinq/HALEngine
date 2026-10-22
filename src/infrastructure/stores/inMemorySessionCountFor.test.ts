@@ -18,7 +18,7 @@ describe('InMemorySessionStore.countFor', () => {
     }).toEqual({u1: 2, u2: 1, none: 0, global: 3});
   });
 
-  it('does not count a conversation that has aged out', () => {
+  it('does not count a conversation that has aged out, and equals the length of listFor(u1, {limit: 200}), so a count and a list cannot drift apart', () => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
     const store = new InMemorySessionStore({maxAgeMs: 1000});
@@ -28,9 +28,9 @@ describe('InMemorySessionStore.countFor', () => {
     jest.setSystemTime(new Date('2026-01-01T00:00:01.001Z'));
     store.create('s3', 'u1');
 
-    const count = store.countFor('u1');
+    const counted = {count: store.countFor('u1'), listed: store.listFor('u1', {limit: 200}).length};
     jest.useRealTimers();
 
-    expect(count).toBe(1);
+    expect(counted).toEqual({count: 1, listed: 1});
   });
 });

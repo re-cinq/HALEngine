@@ -5,9 +5,14 @@ export {createApp} from './transport/createApp.js';
 export type {HalAppOptions} from './transport/createApp.js';
 export {createServer} from './transport/createServer.js';
 export type {HalServerOptions, HalServer} from './transport/createServer.js';
+export type {ForwardableHeader} from './transport/authHeaders.js';
+export {createRateLimiter, DEFAULT_RATE_LIMIT, rateLimitMiddleware} from './transport/rateLimit.js';
+export type {RateLimitConfig, RateLimiter, RateLimitVerdict} from './transport/rateLimit.js';
 export {createChatRoutes} from './transport/routes/chats.js';
 export {HAL_WS_SUBPROTOCOL, credentialFromSubprotocol} from './transport/ws/subprotocol.js';
+export {recordedFrames} from './testing/frames.js';
 export type {ConnectInfo, SessionResumeOptions} from './transport/ws/sessionResume.js';
+export type {ConversationHistoryOptions} from './transport/ws/conversationList.js';
 
 export {createChatOrchestrator, TOOL_BUDGET_EXHAUSTED} from './orchestration/chatOrchestrator.js';
 export type {
@@ -25,6 +30,10 @@ export {createProvider} from './providers/providerFactory.js';
 export type {ProviderConfig, ProviderType} from './providers/providerFactory.js';
 export {withRetry} from './providers/withRetry.js';
 export type {RetryPolicy} from './providers/withRetry.js';
+export {withFallback} from './providers/withFallback.js';
+export type {FallbackPolicy, FailoverEvent} from './providers/withFallback.js';
+export {withMask} from './providers/withMask.js';
+export type {PromptMask, MaskBinding} from './providers/withMask.js';
 export {createBedrockProvider} from './providers/bedrock/index.js';
 export type {BedrockConfig} from './providers/bedrock/index.js';
 export {createVertexProvider} from './providers/vertex/index.js';
@@ -34,7 +43,7 @@ export type {OpenAIConfig} from './providers/openai/index.js';
 export {createAnthropicProvider} from './providers/anthropic/index.js';
 export type {AnthropicConfig} from './providers/anthropic/index.js';
 export {createMockProvider} from './providers/mock/index.js';
-export type {MockConfig} from './providers/mock/index.js';
+export type {MockConfig, MockTurn} from './providers/mock/index.js';
 
 export {ToolRegistry, normalizeToolResponse} from './orchestration/tools/index.js';
 export type {
@@ -57,7 +66,10 @@ export type {
   MongoSessionStoreOptions,
   MongoSessionDocument,
   CollectionLike,
+  CursorLike,
   DbLike,
+  FindManyOptions,
+  FindOneOptions,
   MongoClientLike,
 } from './infrastructure/stores/mongo/index.js';
 export {InMemoryPromptStore} from './infrastructure/stores/inMemoryPromptStore.js';
@@ -95,7 +107,7 @@ export type {
   ChatSession,
   AuthenticatedUser,
 } from './types/session.js';
-export {ErrorCodes} from './types/session.js';
+export {ErrorCodes, assertScalarUserId, isScalarUserId} from './types/session.js';
 
 export type {
   IncomingMessage,
@@ -112,6 +124,16 @@ export type {
 } from './types/messages.js';
 
 export type {WsAuthenticator, HttpAuthMiddleware, AuthenticatedRequest} from './types/auth.js';
-export type {SessionStore, SessionCreateOptions, BaseSession, Awaitable, SessionLookup} from './types/sessionStore.js';
+export {StoreCannotList} from './types/sessionStore.js';
+export type {
+  SessionStore,
+  SessionCreateOptions,
+  SessionListOptions,
+  SessionCursor,
+  SessionSummary,
+  BaseSession,
+  Awaitable,
+  SessionLookup,
+} from './types/sessionStore.js';
 export type {PromptStore, PromptTemplate} from './types/promptStore.js';
 export type {UsageStore, UsageRecord} from './types/usageStore.js';

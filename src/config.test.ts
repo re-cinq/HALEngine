@@ -1,7 +1,14 @@
 import net from 'node:net';
 import request from 'supertest';
 import type {Request, Response} from 'express';
-import {createHalEngine} from './config.js';
+import {WebSocket} from 'ws';
+import {composeProvider, createHalEngine} from './config.js';
+import type {HalEngineConfig} from './config.js';
+import {HAL_WS_SUBPROTOCOL} from './transport/ws/subprotocol.js';
+import type {ProviderConfig} from './providers/providerFactory.js';
+import {AIError} from './types/ai.js';
+import type {FailoverEvent} from './providers/withFallback.js';
+import type {AIProvider, MessageChunk} from './types/ai.js';
 import {log, setLogger} from './shared/logger.js';
 import type {Logger} from './shared/logger.js';
 import type {ChatSession} from './types/session.js';
@@ -127,7 +134,8 @@ describe('createHalEngine orchestrator hooks reach the orchestrator', () => {
     expect(reply).toEqual('Mock response to: "unwrapped" ');
   });
 
-  it('hands a config-installed beforeModelResponse hook the built base system prompt, not merely storing it', async () => {
+  // An engine whose beforeModelResponse hook keeps the base system prompt it was handed.
+  const engineKeepingPrompt = (): {engine: ReturnType<typeof createHalEngine>; received: () => string} => {
     let received = 'never called';
     const engine = createHalEngine({
       ...base,
@@ -140,6 +148,11 @@ describe('createHalEngine orchestrator hooks reach the orchestrator', () => {
         },
       },
     });
+    return {engine, received: () => received};
+  };
+
+  it('hands a config-installed beforeModelResponse hook the built base system prompt, not merely storing it', async () => {
+    const {engine, received} = engineKeepingPrompt();
     const session: ChatSession = {
       sessionId: 's-prompt',
       userId: 'u1',
@@ -148,7 +161,28 @@ describe('createHalEngine orchestrator hooks reach the orchestrator', () => {
 
     await engine.orchestrator.processMessage(session);
 
-    expect(received).toBe('test');
+    expect(received()).toBe('test');
+  });
+
+  it('hands beforeModelResponse a prompt naming weather, a tool registered after createHalEngine returned', async () => {
+    const {engine, received} = engineKeepingPrompt();
+    engine.toolRegistry.register(
+      {
+        name: 'weather',
+        description: 'Reports the weather.',
+        inputSchema: {type: 'object'},
+        promptInstructions: 'Call weather for rain.',
+      },
+      async () => 'sunny'
+    );
+
+    await engine.orchestrator.processMessage({
+      sessionId: 's-late-tool',
+      userId: 'u1',
+      entries: [{role: 'user', content: 'hi', timestamp: ''}],
+    });
+
+    expect(received()).toContain('weather: Call weather for rain.');
   });
 
   it('fires the lifecycle hooks in documented order for a session that completes without error', async () => {
@@ -305,6 +339,23 @@ describe('createHalEngine transport extension forwarding', () => {
   });
 });
 
+// The transport reads `history.preview`, so the warning it logs for an inert one is evidence the field crossed over.
+describe('createHalEngine conversation history forwarding', () => {
+  afterEach(() => setLogger());
+
+  it('forwards every field of transport.history, not only the switch the engine reads first', () => {
+    const lines: string[] = [];
+    const collect = (_category: string, message: string) => void lines.push(message);
+    setLogger({debug: collect, info: collect, warn: collect, error: collect});
+
+    createHalEngine({...base, transport: {history: {enabled: false, preview: true}}});
+
+    expect(lines).toEqual([
+      'conversation previews are on but conversation history is off, so no list is served at all',
+    ]);
+  });
+});
+
 // The store was declared on HalEngineConfig and reached the transport, but never the orchestrator.
 describe('createHalEngine session store forwarding', () => {
   it('forwards the session store, so its write signal reaches the orchestrator', async () => {
@@ -315,5 +366,165 @@ describe('createHalEngine session store forwarding', () => {
     await engine.orchestrator.processMessage(session.create('s1', 'u1') as ChatSession);
 
     expect(saved).toEqual(['s1']);
+  });
+});
+
+describe('composeProvider, the provider createHalEngine hands its orchestrator', () => {
+  const answering = (reply: string): AIProvider => ({
+    async *sendMessage(): AsyncGenerator<MessageChunk> {
+      yield {type: 'text', text: reply};
+      yield {type: 'stop', stopReason: 'end_turn'};
+    },
+    generateStructured: async <T>() => ({}) as T,
+  });
+  const unavailable = (calls: {count: number}): AIProvider => ({
+    async *sendMessage(): AsyncGenerator<MessageChunk> {
+      calls.count++;
+      yield* [];
+      // eslint-disable-next-line re-lint/no-flag-params -- AIError's retryable flag; see adrs/ADR-006-lint-suppressions.md
+      throw new AIError('down', 'SERVICE_UNAVAILABLE', true);
+    },
+    generateStructured: async <T>() => ({}) as T,
+  });
+  const textOf = async (provider: AIProvider) => {
+    let text = '';
+    for await (const chunk of provider.sendMessage({messages: [{role: 'user', content: 'hi'}], systemPrompt: 's'})) {
+      if (chunk.type === 'text') text += chunk.text;
+    }
+    return text;
+  };
+
+  it('is the identical reference createProvider returned when neither fallbackProviders nor resilience is set', () => {
+    const built = answering('primary');
+
+    expect(composeProvider({provider: {type: 'mock'}}, () => built)).toBe(built);
+  });
+
+  it('retries each provider innermost, then fails over: a primary down for every attempt answers from the fallback', async () => {
+    const primaryCalls = {count: 0};
+    const fallbackConfig: ProviderConfig = {type: 'vertex', projectId: 'p', location: 'eu', modelId: 'gemini-3'};
+    const built: ProviderConfig[] = [];
+    const create = (config: ProviderConfig) => {
+      built.push(config);
+      return config === fallbackConfig ? answering('from the fallback') : unavailable(primaryCalls);
+    };
+
+    const provider = composeProvider(
+      {provider: {type: 'mock'}, resilience: {maxAttempts: 2, baseDelayMs: 0}, fallbackProviders: [fallbackConfig]},
+      create
+    );
+    const builtAtComposition = built.length;
+
+    expect({builtAtComposition, text: await textOf(provider), primaryAttempts: primaryCalls.count}).toEqual({
+      builtAtComposition: 2,
+      text: 'from the fallback',
+      primaryAttempts: 2,
+    });
+  });
+
+  it("hands config.onFailover to the chain, labelled by each provider's config type: failed mock, next vertex on SERVICE_UNAVAILABLE", async () => {
+    const events: FailoverEvent[] = [];
+    const fallbackConfig: ProviderConfig = {type: 'vertex', projectId: 'p', location: 'eu', modelId: 'gemini-3'};
+    const provider = composeProvider(
+      {provider: {type: 'mock'}, fallbackProviders: [fallbackConfig], onFailover: event => void events.push(event)},
+      config => (config === fallbackConfig ? answering('from the fallback') : unavailable({count: 0}))
+    );
+
+    expect({text: await textOf(provider), events}).toEqual({
+      text: 'from the fallback',
+      events: [{failed: 'mock', next: 'vertex', code: 'SERVICE_UNAVAILABLE', elapsedMs: expect.any(Number)}],
+    });
+  });
+});
+
+describe('createHalEngine transport.connectMessage', () => {
+  it('throws at construction, naming transport.connectMessage, for a blank one; unset or absent constructs normally', () => {
+    const outcomes = [{transport: {connectMessage: '   '}}, {transport: {connectMessage: undefined}}, {}].map(extra => {
+      try {
+        createHalEngine({...base, ...extra});
+        return 'constructed';
+      } catch (error) {
+        return (error as Error).message.includes('transport.connectMessage') ? 'refused, naming the field' : 'refused';
+      }
+    });
+
+    expect(outcomes).toEqual(['refused, naming the field', 'constructed', 'constructed']);
+  });
+
+  // Starts `engine`, opens one client sending `headers`, and returns its first frame once the server has handled the close.
+  const firstFrameFrom = async (
+    engine: ReturnType<typeof createHalEngine>,
+    headers: Record<string, string> = {}
+  ): Promise<unknown> => {
+    await engine.start(0);
+    const {port} = engine.server.address() as net.AddressInfo;
+    const disconnected = new Promise<void>(resolve => {
+      engine.wss.once('connection', socket => socket.once('close', () => setImmediate(resolve)));
+    });
+    const first = await new Promise<unknown>(resolve => {
+      const client = new WebSocket(`ws://127.0.0.1:${port}/hal/ws/c1`, [HAL_WS_SUBPROTOCOL], {headers});
+      client.once('message', frame => {
+        client.close();
+        resolve(JSON.parse(String(frame)));
+      });
+    });
+    // The server logs the disconnect on its own close; waiting for it keeps that line inside this test.
+    await disconnected;
+    return first;
+  };
+
+  it('carries transport.connectMessage to the first frame a real client receives', async () => {
+    const disclosure = 'Du skriver med en AI-assistent. Æ, ø og å.';
+    const engine = createHalEngine({
+      ...base,
+      auth: {ws: (async () => ({id: 'u1'})) as WsAuthenticator},
+      transport: {connectMessage: disclosure},
+    });
+
+    const first = await firstFrameFrom(engine);
+    await engine.stop();
+
+    expect(first).toMatchObject({type: 'connected', message: disclosure});
+  });
+
+  it('refuses auth.forwardHeaders naming x-tenant-id at compile time, since the list only narrows the three captured headers', () => {
+    const config: HalEngineConfig = {
+      ...base,
+      auth: {
+        ws: (async () => ({id: 'u1'})) as WsAuthenticator,
+        // @ts-expect-error -- x-tenant-id is not a header the engine captures, so it is not a ForwardableHeader
+        forwardHeaders: ['x-tenant-id'],
+      },
+    };
+
+    expect(config.auth.forwardHeaders).toEqual(['x-tenant-id']);
+  });
+
+  it("carries auth.forwardHeaders listing only authorization to both capture sites: a socket's session and a REST turn's hold authorization alone", async () => {
+    const caller = {authorization: 'Bearer t-1', cookie: 'sid=1'};
+    const held: unknown[] = [];
+    const engine = createHalEngine({
+      ...base,
+      auth: {
+        ws: (async () => ({id: 'u1'})) as WsAuthenticator,
+        http: ((req, _res, next) => {
+          Object.assign(req, {user: {id: 'u1'}});
+          next();
+        }) as HttpAuthMiddleware,
+        forwardHeaders: ['authorization'],
+      },
+      onConnect: session => void held.push(session.authHeaders),
+      orchestrator: {hooks: {beforeSession: async session => void held.push(session.authHeaders)}},
+    });
+
+    await firstFrameFrom(engine, caller);
+    const created = await request(engine.app).post('/hal/chats').set(caller);
+    await request(engine.app)
+      .post(`/hal/chats/${(created.body as {id: string}).id}/messages`)
+      .set(caller)
+      .send({content: 'hi'});
+    await engine.stop();
+
+    expect(held).toEqual([{authorization: 'Bearer t-1'}, {authorization: 'Bearer t-1'}]);
   });
 });

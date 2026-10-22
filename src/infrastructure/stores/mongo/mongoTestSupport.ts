@@ -3,6 +3,7 @@ import {MongoMemoryServer} from 'mongodb-memory-server';
 import {MongoClient} from 'mongodb';
 import type {Collection, Db} from 'mongodb';
 import type {MongoSessionDocument} from './mongoSessionDocument.js';
+export {fakeCollection} from './mongoFakeCollection.js';
 
 // A real mongod, started once per suite: no cloud account, no Docker, and no double standing in for a database.
 

@@ -10,12 +10,16 @@ export interface ToolCallContent {
   toolUseId: string;
   name: string;
   input: Record<string, unknown>;
+  /** The opaque token its ToolCall arrived with, which the provider that issued it sends back unchanged. */
+  signature?: string;
 }
 
 export interface ToolResultContent {
   type: 'tool_result';
   toolUseId: string;
   content: string;
+  /** Set only when the result describes a failure; a provider mapper encodes it on its own wire. */
+  isError?: boolean;
 }
 
 export interface ToolUseMessage {
@@ -42,6 +46,8 @@ export interface ToolCall {
   id: string;
   name: string;
   input: Record<string, unknown>;
+  /** An opaque vendor token tied to this call, such as Gemini's thought signature, owed back on the turn's next request. */
+  signature?: string;
 }
 
 export type MessageChunk =

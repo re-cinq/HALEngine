@@ -1,6 +1,7 @@
 import {jest} from '@jest/globals';
 import {collectAbortingAfter, collectChunks, userMessage} from '../providerTestSupport.js';
 import {setLogger} from '../../shared/logger.js';
+import type {SendMessageParams} from '../../types/ai.js';
 
 // @jest/globals types a bare jest.fn() as taking no arguments; this names what the assertions read back.
 type Send = (command: unknown, options?: {abortSignal?: AbortSignal}) => Promise<unknown>;
@@ -60,6 +61,62 @@ describe('createBedrockProvider', () => {
         argumentCount: 2,
         sameSignal: true,
       });
+    });
+
+    it('sends a tool_use block carrying signature sig-1 to Bedrock as a toolUse without it', async () => {
+      mockSend.mockResolvedValue({});
+
+      await collectChunks(
+        provider().sendMessage({
+          messages: [
+            {role: 'user', content: 'look it up'},
+            {
+              role: 'assistant',
+              content: [{type: 'tool_use', toolUseId: 't1', name: 'lookup', input: {q: 'x'}, signature: 'sig-1'}],
+            },
+            {role: 'user', content: [{type: 'tool_result', toolUseId: 't1', content: 'found'}]},
+          ],
+          systemPrompt: 'test',
+        })
+      );
+
+      const [[command]] = mockSend.mock.calls;
+      const {input} = command as {input: {messages: unknown[]}};
+      expect(input.messages[1]).toStrictEqual({
+        role: 'assistant',
+        content: [{toolUse: {toolUseId: 't1', name: 'lookup', input: {q: 'x'}}}],
+      });
+    });
+
+    it("sends a failed tool_result with status 'error' to a Claude model and with no status to a Llama one", async () => {
+      mockSend.mockResolvedValue({});
+      const failed: SendMessageParams = {
+        systemPrompt: 'test',
+        messages: [
+          {role: 'user', content: 'look it up'},
+          {role: 'assistant', content: [{type: 'tool_use', toolUseId: 't1', name: 'lookup', input: {}}]},
+          {role: 'user', content: [{type: 'tool_result', toolUseId: 't1', content: 'lookup failed', isError: true}]},
+        ],
+      };
+      const llama = createBedrockProvider({
+        type: 'bedrock',
+        modelId: 'meta.llama3-70b-instruct-v1:0',
+        region: 'eu-west-1',
+        maxTokens: 1024,
+      });
+
+      await collectChunks(provider().sendMessage(failed));
+      await collectChunks(llama.sendMessage(failed));
+
+      const {calls} = mockSend.mock;
+      const sentResults = calls.map(([command]) => {
+        const {input} = command as {input: {messages: unknown[]}};
+        return input.messages[2];
+      });
+      expect(sentResults).toStrictEqual([
+        {role: 'user', content: [{toolResult: {toolUseId: 't1', content: [{text: 'lookup failed'}], status: 'error'}}]},
+        {role: 'user', content: [{toolResult: {toolUseId: 't1', content: [{text: 'lookup failed'}]}}]},
+      ]);
     });
 
     it('calls client.send with the command alone when no signal is given', async () => {

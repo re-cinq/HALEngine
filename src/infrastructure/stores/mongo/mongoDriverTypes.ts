@@ -6,11 +6,25 @@ export interface DeleteOutcome {
 
 export interface FindOneOptions {
   sort?: Record<string, 1 | -1>;
-  projection?: Record<string, 0 | 1>;
+  /** `$slice` is admitted beside the flags so a list can read a conversation's first entry without reading the rest. */
+  projection?: Record<string, 0 | 1 | {$slice: number}>;
+}
+
+/** `sort` and `limit` ride on the options rather than a chained cursor, so the port stays one method wide. */
+export interface FindManyOptions extends FindOneOptions {
+  limit?: number;
+  /** Pins the index a query walks, so a sweep's plan cannot change with whatever indexes an operator adds. */
+  hint?: Record<string, 1 | -1>;
+}
+
+export interface CursorLike<T> {
+  toArray(): Promise<T[]>;
 }
 
 export interface CollectionLike<T> {
   findOne(filter: Record<string, unknown>, options?: FindOneOptions): Promise<T | null>;
+  /** Optional, so an adapter written before conversation lists existed still satisfies this port; `listFor` needs it. */
+  find?(filter: Record<string, unknown>, options?: FindManyOptions): CursorLike<T>;
   updateOne(
     filter: Record<string, unknown>,
     update: Record<string, unknown>,

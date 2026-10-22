@@ -2,6 +2,7 @@ import {Ajv} from 'ajv';
 import type {ErrorObject, ValidateFunction} from 'ajv';
 import type {ToolDefinition} from '../../types/ai.js';
 import type {OutgoingMessage} from '../../types/messages.js';
+import type {AuthenticatedUser} from '../../types/session.js';
 import {log} from '../../shared/logger.js';
 
 const MAX_NAME_IN_ANSWER = 64;
@@ -11,6 +12,8 @@ export interface ToolResponse {
   result: string;
   clientMessages?: OutgoingMessage[];
   suppressAssistantResponse?: boolean;
+  /** Tells the model `result` describes a failure, not an answer; each provider's encoding is in specs/hal-engine-tool-responses/spec.md. */
+  isError?: boolean;
 }
 
 export interface ToolContext {
@@ -22,6 +25,8 @@ export interface ToolContext {
     authorization?: string;
     host?: string;
   };
+  /** A shallow copy of what `auth.ws` returned, made per call, so treat it as read-only; absent on the REST path. */
+  user?: AuthenticatedUser;
   /** Aborted when the orchestrator abandons this call, at its `toolTimeoutMs` deadline with a `TimeoutError` or with its turn; pass it to `fetch` so the call's own request stops too. */
   signal?: AbortSignal;
 }
@@ -75,8 +80,10 @@ export class ToolRegistry {
     return compiled;
   }
 
+  /** Registers a tool under the name it resolves to now; @throws Error('Duplicate tool name: <name>') when that name is taken, leaving the first tool as it was. */
   register(definition: ToolDefinitionSource, execute: ToolExecutor): void {
     const resolved = this.resolveDefinition(definition);
+    if (this.tools.has(resolved.name)) throw new Error(`Duplicate tool name: ${resolved.name}`);
     if (typeof definition !== 'function') {
       this.staticValidators.set(resolved.name, this.compileSchema(resolved.inputSchema, resolved.name));
     }
@@ -94,9 +101,7 @@ export class ToolRegistry {
   }
 
   getPromptInstructions(): string[] {
-    return this.getDefinitions()
-      .filter(t => t.promptInstructions)
-      .map(t => `${t.name}: ${t.promptInstructions}`);
+    return promptInstructionsOf(this.getDefinitions());
   }
 
   getExamplePrompts(): string[] {
@@ -152,21 +157,26 @@ function kindOf(value: unknown): string {
 function invalidInput(name: string, errors: ErrorObject[]): ToolResponse {
   const message = errors.map(e => `${e.instancePath || '(root)'} ${e.message}`).join('; ');
   log.warn('tool', 'input validation failed', {name, paths: errors.map(e => e.instancePath)});
-  return {result: `Tool '${name}' input invalid: ${message}`};
+  return {result: `Tool '${name}' input invalid: ${message}`, isError: true};
 }
 
 // A name the model invented is its mistake to correct, so it is answered, bounded, with nothing from the call's input.
 function missingTool(name: string, registered: string[]): ToolResponse {
   const attempted = name.slice(0, MAX_NAME_IN_ANSWER);
   log.warn('tool', 'tool not found', {name: attempted});
-  if (registered.length === 0) return {result: `There is no tool named '${attempted}', and no tools are registered.`};
-  return {result: `There is no tool named '${attempted}'. The available tools are: ${registered.join(', ')}.`};
+  if (registered.length === 0) {
+    return {result: `There is no tool named '${attempted}', and no tools are registered.`, isError: true};
+  }
+  return {
+    result: `There is no tool named '${attempted}'. The available tools are: ${registered.join(', ')}.`,
+    isError: true,
+  };
 }
 
 // The model learns only that the call failed: a thrown message can carry a host name or another user's identifier.
 function crashed(name: string, error: unknown, signal: AbortSignal | undefined): ToolResponse {
   logThrow(name, error, signal);
-  return {result: `The ${name} tool failed and returned no result.`};
+  return {result: `The ${name} tool failed and returned no result.`, isError: true};
 }
 
 // A user leaving is no tool failing, so a throw once the turn was abandoned stays out of the error lines; a deadline's does not.
@@ -192,4 +202,9 @@ function describeThrow(error: unknown): string {
   } catch {
     return typeof error;
   }
+}
+
+/** The prompt line of each definition that carries instructions, `name: instructions`, in the order given. */
+export function promptInstructionsOf(definitions: ToolDefinition[]): string[] {
+  return definitions.filter(t => t.promptInstructions).map(t => `${t.name}: ${t.promptInstructions}`);
 }

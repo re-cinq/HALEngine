@@ -1,27 +1,14 @@
 import {MongoSessionStore} from './mongoSessionStore.js';
+import {fakeCollection} from './mongoFakeCollection.js';
 import {mongoCollection} from './mongoTestSupport.js';
-import type {CollectionLike} from './mongoDriverTypes.js';
-import type {MongoSessionDocument} from './mongoSessionDocument.js';
 
 // specs/hal-engine-conversation-list
-
-const fixedCollection = (
-  overrides: Partial<CollectionLike<MongoSessionDocument>>
-): CollectionLike<MongoSessionDocument> =>
-  ({
-    findOne: () => Promise.resolve(null),
-    updateOne: () => Promise.resolve(undefined),
-    deleteOne: () => Promise.resolve({deletedCount: 0}),
-    deleteMany: () => Promise.resolve({deletedCount: 0}),
-    countDocuments: () => Promise.resolve(0),
-    ...overrides,
-  }) as CollectionLike<MongoSessionDocument>;
 
 describe('MongoSessionStore.countFor (fake collection)', () => {
   it('calls countDocuments with {userId} as the filter, not an empty filter, and returns what it answers', async () => {
     const calls: Array<Record<string, unknown> | undefined> = [];
     const store = new MongoSessionStore({
-      collection: fixedCollection({
+      collection: fakeCollection({
         countDocuments: (filter?: Record<string, unknown>) => {
           calls.push(filter);
           return Promise.resolve(3);
@@ -36,7 +23,7 @@ describe('MongoSessionStore.countFor (fake collection)', () => {
 
   it('surfaces a countDocuments rejection to the caller rather than answering 0', async () => {
     const store = new MongoSessionStore({
-      collection: fixedCollection({
+      collection: fakeCollection({
         countDocuments: () => Promise.reject(new Error('db gone')),
       }),
     });

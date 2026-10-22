@@ -9,7 +9,10 @@ import {createUpgradeHandler, createConnectionHandler, ExtWebSocket} from './ws/
 import {createMessageHandler} from './ws/messageHandler.js';
 import {selectSubprotocol} from './ws/subprotocol.js';
 import type {ConnectInfo, SessionResumeOptions} from './ws/sessionResume.js';
+import type {ConversationHistoryOptions} from './ws/conversationList.js';
 import {log} from '../shared/logger.js';
+import type {ForwardableHeader} from './authHeaders.js';
+import type {RateLimiter} from './rateLimit.js';
 
 export interface HalServerOptions {
   app: Express;
@@ -20,9 +23,16 @@ export interface HalServerOptions {
   basePath?: string;
   port?: number;
   heartbeatIntervalMs?: number;
+  /** The connected frame's `message`; unset, `DEFAULT_CONNECT_MESSAGE`. */
+  connectMessage?: string;
   onConnect?: (session: import('../types/session.js').ChatSession, connection: ConnectInfo) => void | Promise<void>;
   onDisconnect?: (sessionId: string) => void | Promise<void>;
   resume?: SessionResumeOptions;
+  history?: ConversationHistoryOptions;
+  /** The caller headers a tool may receive; unset, none (specs/hal-engine-tool-header-allowlist/spec.md). */
+  forwardHeaders?: readonly ForwardableHeader[];
+  /** The request budget shared with the HTTP transport; unset, no user_message is refused (specs/hal-engine-rate-limit/spec.md). */
+  rateLimiter?: RateLimiter;
 }
 
 export interface HalServer {
@@ -40,8 +50,23 @@ export function createServer(options: HalServerOptions): HalServer {
     handleProtocols: selectSubprotocol,
   });
 
-  const handleMessage = createMessageHandler(options.orchestrator);
-  const examplePrompts = options.toolRegistry?.getExamplePrompts() ?? [];
+  // A list whose rows cannot be opened is a deployment slip worth saying out loud, not worth refusing to start over.
+  if (options.history?.enabled && !options.resume?.enabled) {
+    log.warn('server', 'conversation history is on but resume is off, so a listed conversation cannot be rejoined');
+  }
+
+  // Asking for a label on a list this server does not serve: inert, and silence would read as previews being on.
+  if (options.history?.preview === true && !options.history.enabled) {
+    log.warn('server', 'conversation previews are on but conversation history is off, so no list is served at all');
+  }
+
+  const handleMessage = createMessageHandler(options.orchestrator, {
+    sessionStore: options.sessionStore,
+    history: options.history,
+    rateLimiter: options.rateLimiter,
+  });
+  // Read at each connection, never once at startup, so a tool registered after the server starts offers its prompts too.
+  const getExamplePrompts = () => options.toolRegistry?.getExamplePrompts() ?? [];
 
   const deps = {
     wsAuth: options.wsAuth,
@@ -51,10 +76,11 @@ export function createServer(options: HalServerOptions): HalServer {
     onConnect: options.onConnect,
     onDisconnect: options.onDisconnect,
     resume: options.resume,
+    forwardHeaders: options.forwardHeaders,
   };
 
   const handleUpgrade = createUpgradeHandler(wss, deps);
-  const handleConnection = createConnectionHandler(deps, examplePrompts);
+  const handleConnection = createConnectionHandler(deps, {getExamplePrompts, connectMessage: options.connectMessage});
 
   const server = http.createServer(options.app);
 
