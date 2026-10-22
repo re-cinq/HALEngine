@@ -49,6 +49,11 @@ jobs:
       - name: Install
         run: npm ci --ignore-scripts
 
+      # --ignore-scripts skipped mongodb-memory-server's postinstall, so the first Mongo suite to start would download mongod,
+      # and two starting together would race for one file, as the driver-6 job did. Fetched once here, before any worker starts.
+      - name: Fetch the mongod binary once
+        run: node node_modules/mongodb-memory-server/postinstall.js
+
       # Every `npm run` step below is one link of the `verify` script in
       # package.json, in the same order - scripts/verify-script.test.ts holds
       # the two together - and kept as separate steps so a red run names the
