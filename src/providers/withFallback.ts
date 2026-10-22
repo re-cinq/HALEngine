@@ -2,10 +2,20 @@ import type {AIProvider, MessageChunk, SendMessageParams, StructuredOutputParams
 import {AIError} from '../types/ai.js';
 import {log} from '../shared/logger.js';
 
-/** How withFallback names the providers in its chain; nothing here changes which failures route onward. */
+/** What a host learns of one failover: the two providers by label or position, the code that routed onward, and the time since the call began. */
+export interface FailoverEvent {
+  failed: string;
+  next: string;
+  code: string;
+  elapsedMs: number;
+}
+
+/** How withFallback names the providers in its chain and whom it tells; nothing here changes which failures route onward. */
 export interface FallbackPolicy {
   /** One label per provider, primary first, for the failover log line, such as each one's config `type`; unset, the position is logged alone. */
   labels?: readonly string[];
+  /** Called once per failover, after the log line and before the next provider starts; a throw is logged once and changes nothing. */
+  onFailover?: (event: FailoverEvent) => void | Promise<void>;
 }
 
 // The vendor is down or cannot say why it failed; a second vendor may well answer.
@@ -30,6 +40,7 @@ export function withFallback(
 
   return {
     async *sendMessage(params: SendMessageParams): AsyncGenerator<MessageChunk> {
+      const startedAt = Date.now();
       let lastError: AIError | undefined;
 
       for (const [position, provider] of chain.entries()) {
@@ -44,7 +55,7 @@ export function withFallback(
             if (params.signal?.aborted) return;
             if (!failsOver(error)) throw error;
             lastError = error;
-            reportFailover(chain, position, error, policy);
+            await reportFailover(chain, position, error, policy, startedAt);
             continue;
           }
           if (first.done) return;
@@ -61,6 +72,7 @@ export function withFallback(
     },
 
     async generateStructured<T>(params: StructuredOutputParams<T>): Promise<T> {
+      const startedAt = Date.now();
       let lastError: AIError | undefined;
 
       for (const [position, provider] of chain.entries()) {
@@ -69,7 +81,7 @@ export function withFallback(
         } catch (error) {
           if (!failsOver(error)) throw error;
           lastError = error;
-          reportFailover(chain, position, error, policy);
+          await reportFailover(chain, position, error, policy, startedAt);
         }
       }
 
@@ -85,8 +97,14 @@ function failsOver(error: unknown): error is AIError {
   return error.retryable || OUTAGE_CODES.has(error.code);
 }
 
-// Logged only when a next provider is tried; the last failure reaches the caller instead, as the error it is.
-function reportFailover(chain: readonly AIProvider[], position: number, error: AIError, policy: FallbackPolicy): void {
+// Logged and reported only when a next provider is tried; the last failure reaches the caller instead, as the error it is.
+async function reportFailover(
+  chain: readonly AIProvider[],
+  position: number,
+  error: AIError,
+  policy: FallbackPolicy,
+  startedAt: number
+): Promise<void> {
   if (position === chain.length - 1) return;
   log.warn('provider', 'failing over to the next provider', {
     failed: policy.labels?.[position] ?? null,
@@ -94,4 +112,21 @@ function reportFailover(chain: readonly AIProvider[], position: number, error: A
     position: position + 1,
     of: chain.length,
   });
+  await notifyFailover(policy, failoverEvent(position, error, policy, startedAt));
+}
+
+// Labels when the policy has them, else the 1-based positions the log line prints, so a host and the log name the same provider.
+function failoverEvent(position: number, error: AIError, policy: FallbackPolicy, startedAt: number): FailoverEvent {
+  const nameOf = (index: number): string => policy.labels?.[index] ?? String(index + 1);
+  return {failed: nameOf(position), next: nameOf(position + 1), code: error.code, elapsedMs: Date.now() - startedAt};
+}
+
+// A host's hook must not change which provider answers: its throw is logged once, never raised into the turn.
+async function notifyFailover(policy: FallbackPolicy, event: FailoverEvent): Promise<void> {
+  if (!policy.onFailover) return;
+  try {
+    await policy.onFailover(event);
+  } catch (error) {
+    log.error('provider', 'onFailover hook threw', {error: error instanceof Error ? error.name : 'unknown'});
+  }
 }
