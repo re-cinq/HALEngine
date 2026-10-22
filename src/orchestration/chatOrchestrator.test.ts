@@ -13,6 +13,7 @@ import {AIError} from '../types/ai.js';
 import type {ChatSession} from '../types/session.js';
 import {PromptBuilder} from '../infrastructure/builders/promptBuilder.js';
 import {ToolRegistry} from './tools/registry.js';
+import {twoTools} from './toolLoopTestSupport.js';
 import type {ToolResponse} from './tools/registry.js';
 import type {OutgoingMessage} from '../types/messages.js';
 import type {SessionEntry} from '../types/session.js';
@@ -862,3 +863,25 @@ async function abortedMidStream(end: () => void): Promise<{outcome: string; call
 
   return {outcome: await outcomeOf(chunksFrom(stream)), callOrder};
 }
+
+// A scripted first round, then a second round that must never stream; what the loop did is the executions and the chunk types.
+const gatedTurn = async (firstRound: MessageChunk[]) => {
+  const provider = scriptedProvider([firstRound, [{type: 'text', text: 'never'}, STOP_DONE]]);
+  const {registry, ran} = twoTools({first: {result: 'one'}, second: {result: 'two'}});
+
+  const chunks = await chunksFrom(
+    createChatOrchestrator(provider, promptBuilder, registry).processMessageStream(createSession('ask'))
+  );
+
+  return {ran, types: chunks.map(c => c.type)};
+};
+
+describe('ChatOrchestrator tool loop gating, observed from outside', () => {
+  it('ends after one round with zero executions when the stop reason is end_turn despite a tool call: the second scripted round never streams', async () => {
+    expect(await gatedTurn([TOOL_CALL, STOP_DONE])).toEqual({ran: [], types: ['tool_use', 'stop']});
+  });
+
+  it('ends after one round with zero executions when the stream ends without a stop chunk: the second scripted round never streams', async () => {
+    expect(await gatedTurn([TOOL_CALL])).toEqual({ran: [], types: ['tool_use']});
+  });
+});
