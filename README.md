@@ -124,6 +124,8 @@ interface HalEngineConfig {
   tools?: ToolRegistry; // Registered tools (optional)
   session?: SessionStore; // Custom session store (default: in-memory)
   privacy?: {mask?: PromptMask}; // opt-in: the model sees your detector's tokens, everything else the real values
+  fallbackProviders?: ProviderConfig[]; // tried in order, once each, when the provider before it is down before its first chunk
+  onFailover?: (event: FailoverEvent) => void | Promise<void>; // once per failover: {failed, next, code, elapsedMs}, the providers by config type
   transport?: {
     port?: number; // Server port (default: 8086)
     corsOrigin?: string | string[];

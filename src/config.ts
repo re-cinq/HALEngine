@@ -8,6 +8,7 @@ import type {ContextConfig} from './orchestration/conversationContext.js';
 import type {ProviderConfig} from './providers/providerFactory.js';
 import {withRetry} from './providers/withRetry.js';
 import {withFallback} from './providers/withFallback.js';
+import type {FailoverEvent} from './providers/withFallback.js';
 import {withMask} from './providers/withMask.js';
 import type {PromptMask} from './providers/withMask.js';
 import type {RetryPolicy} from './providers/withRetry.js';
@@ -74,6 +75,8 @@ export interface HalEngineConfig {
   logger?: Logger;
   onConnect?: (session: ChatSession, connection: ConnectInfo) => void | Promise<void>;
   onDisconnect?: (sessionId: string) => void | Promise<void>;
+  /** Called once each time a provider in `fallbackProviders` takes over, with the two providers' config types, the code and the elapsed time; a throw is logged and changes nothing. */
+  onFailover?: (event: FailoverEvent) => void | Promise<void>;
 }
 
 export interface HalEngine extends HalServer {
@@ -152,7 +155,7 @@ function refuseBlankConnectMessage(connectMessage: string | undefined): void {
 
 /** The provider the orchestrator receives: retry innermost per provider, then the fallback chain, then the mask; with none configured, exactly what `create` returned. */
 export function composeProvider(
-  config: Pick<HalEngineConfig, 'provider' | 'resilience' | 'fallbackProviders' | 'privacy'>,
+  config: Pick<HalEngineConfig, 'provider' | 'resilience' | 'fallbackProviders' | 'privacy' | 'onFailover'>,
   create: (providerConfig: ProviderConfig) => AIProvider = createProvider
 ): AIProvider {
   const resilient = (provider: AIProvider): AIProvider =>
@@ -166,7 +169,7 @@ export function composeProvider(
       : withFallback(
           primary,
           fallbacks.map(fallback => resilient(create(fallback))),
-          {labels: [config.provider.type, ...fallbacks.map(fallback => fallback.type)]}
+          {labels: [config.provider.type, ...fallbacks.map(fallback => fallback.type)], onFailover: config.onFailover}
         );
   // Outermost, so a retry replays masked parameters and every vendor tried receives text from one binding.
   const mask = config.privacy?.mask;

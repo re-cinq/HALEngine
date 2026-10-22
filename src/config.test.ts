@@ -7,6 +7,7 @@ import type {HalEngineConfig} from './config.js';
 import {HAL_WS_SUBPROTOCOL} from './transport/ws/subprotocol.js';
 import type {ProviderConfig} from './providers/providerFactory.js';
 import {AIError} from './types/ai.js';
+import type {FailoverEvent} from './providers/withFallback.js';
 import type {AIProvider, MessageChunk} from './types/ai.js';
 import {log, setLogger} from './shared/logger.js';
 import type {Logger} from './shared/logger.js';
@@ -418,6 +419,20 @@ describe('composeProvider, the provider createHalEngine hands its orchestrator',
       builtAtComposition: 2,
       text: 'from the fallback',
       primaryAttempts: 2,
+    });
+  });
+
+  it("hands config.onFailover to the chain, labelled by each provider's config type: failed mock, next vertex on SERVICE_UNAVAILABLE", async () => {
+    const events: FailoverEvent[] = [];
+    const fallbackConfig: ProviderConfig = {type: 'vertex', projectId: 'p', location: 'eu', modelId: 'gemini-3'};
+    const provider = composeProvider(
+      {provider: {type: 'mock'}, fallbackProviders: [fallbackConfig], onFailover: event => void events.push(event)},
+      config => (config === fallbackConfig ? answering('from the fallback') : unavailable({count: 0}))
+    );
+
+    expect({text: await textOf(provider), events}).toEqual({
+      text: 'from the fallback',
+      events: [{failed: 'mock', next: 'vertex', code: 'SERVICE_UNAVAILABLE', elapsedMs: expect.any(Number)}],
     });
   });
 });
