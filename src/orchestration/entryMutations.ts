@@ -1,5 +1,4 @@
-import type {SessionEntry} from '../types/session.js';
-import type {ChatSession} from '../types/session.js';
+import type {SessionEntry, ChatSession} from '../types/session.js';
 
 export function appendEntry(session: ChatSession, entry: SessionEntry): number {
   const index = session.entries.length;
@@ -39,6 +38,21 @@ export function trimOldContent(session: ChatSession, maxContentEntries: number):
       entry.content = '';
     }
   }
+}
+
+export function applyRedaction(
+  session: ChatSession,
+  index: number,
+  redactEntry: (entry: SessionEntry) => {role: string; [key: string]: unknown}
+): void {
+  const entry = session.entries[index];
+  const redacted = redactEntry(entry);
+  if (redacted.role !== entry.role) {
+    throw new Error(
+      `redactEntry must not change entry role: returned '${String(redacted.role)}', expected '${entry.role}'`
+    );
+  }
+  session.entries[index] = redacted as SessionEntry;
 }
 
 // A turn ends with its entries closed however it ended, so nothing persists an entry still marked streaming.

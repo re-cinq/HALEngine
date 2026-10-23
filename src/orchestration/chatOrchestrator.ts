@@ -24,7 +24,7 @@ import {
   extractStopReason,
   extractUsage,
 } from './orchestratorHelpers.js';
-import {appendEntry, commitStreamingEntries, trimOldContent} from './entryMutations.js';
+import {appendEntry, commitStreamingEntries, trimOldContent, applyRedaction} from './entryMutations.js';
 import {log} from '../shared/logger.js';
 
 const DEFAULT_MAX_TOOL_ROUNDS = 5;
@@ -67,7 +67,7 @@ export interface ChatOrchestrator {
 
 export interface HistoryPolicy {
   maxContentEntries?: number;
-  redactEntry?: (entry: SessionEntry) => SessionEntry;
+  redactEntry?: (entry: SessionEntry) => {role: 'user' | 'assistant' | 'thinking' | 'tool'; [key: string]: unknown};
 }
 
 export interface ChatOrchestratorOptions {
@@ -105,6 +105,7 @@ export function createChatOrchestrator(
     },
 
     async *processMessageStream(session: ChatSession, options?: {signal?: AbortSignal}): AsyncGenerator<MessageChunk> {
+      const turnStart = session.entries.length;
       try {
         if (hooks?.beforeSession) await hooks.beforeSession(session);
 
@@ -185,6 +186,13 @@ export function createChatOrchestrator(
         // Before both: a provider that threw mid-stream leaves an entry open, and nothing should persist it that way.
         commitStreamingEntries(session);
         if (history?.maxContentEntries !== undefined) trimOldContent(session, history.maxContentEntries);
+        if (history?.redactEntry) {
+          const redact = history.redactEntry;
+          for (let i = turnStart; i < session.entries.length; i++) {
+            const entry = session.entries[i];
+            if (entry.role === 'tool' || entry.role === 'assistant') applyRedaction(session, i, redact);
+          }
+        }
         try {
           if (hooks?.afterSession) await hooks.afterSession(session);
         } finally {

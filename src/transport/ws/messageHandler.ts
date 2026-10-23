@@ -183,6 +183,7 @@ async function wsErrorHandler(ws: WebSocket, action: () => Promise<void>): Promi
     }
     // Only a throw that is no AIError is the engine's own defect, the one condition a provider never produces.
     sendError(ws, ErrorCodes.SERVER_ERROR, 'Failed to process message');
+    ws.close(1011, 'Internal server error');
   }
 }
 
