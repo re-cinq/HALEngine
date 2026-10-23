@@ -13,7 +13,6 @@ import {AIError} from '../types/ai.js';
 import type {ChatSession} from '../types/session.js';
 import {PromptBuilder} from '../infrastructure/builders/promptBuilder.js';
 import {ToolRegistry} from './tools/registry.js';
-import {twoTools} from './toolLoopTestSupport.js';
 import type {ToolResponse} from './tools/registry.js';
 import type {OutgoingMessage} from '../types/messages.js';
 import type {SessionEntry} from '../types/session.js';
@@ -864,10 +863,15 @@ async function abortedMidStream(end: () => void): Promise<{outcome: string; call
   return {outcome: await outcomeOf(chunksFrom(stream)), callOrder};
 }
 
-// A scripted first round, then a second round that must never stream; what the loop did is the executions and the chunk types.
+// A scripted first round, then a second round that must never stream; the registry holds the tool TOOL_CALL names and records every run.
 const gatedTurn = async (firstRound: MessageChunk[]) => {
+  const ran: string[] = [];
   const provider = scriptedProvider([firstRound, [{type: 'text', text: 'never'}, STOP_DONE]]);
-  const {registry, ran} = twoTools({first: {result: 'one'}, second: {result: 'two'}});
+  const registry = new ToolRegistry();
+  registry.register({name: 'lookup', description: 'looks things up', inputSchema: {type: 'object'}}, async () => {
+    ran.push('lookup');
+    return {result: 'found'};
+  });
 
   const chunks = await chunksFrom(
     createChatOrchestrator(provider, promptBuilder, registry).processMessageStream(createSession('ask'))

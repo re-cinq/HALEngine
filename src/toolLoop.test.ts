@@ -1,10 +1,11 @@
 import {createChatOrchestrator} from './orchestration/chatOrchestrator.js';
-import {CALL_A, CALL_B, twoTools} from './orchestration/toolLoopTestSupport.js';
+import {ToolRegistry} from './orchestration/tools/registry.js';
+import type {ToolResponse} from './orchestration/tools/registry.js';
 import {PromptBuilder} from './infrastructure/builders/promptBuilder.js';
 import {createMockProvider} from './providers/mock/mockProvider.js';
 import type {MockTurn} from './providers/mock/mockProvider.js';
 import {collectChunks} from './providers/providerTestSupport.js';
-import type {Message, SendMessageParams, ToolCallContent} from './types/ai.js';
+import type {Message, SendMessageParams, ToolCall, ToolCallContent} from './types/ai.js';
 import type {ChatSession, SessionEntry} from './types/session.js';
 
 // specs/hal-engine-architecture § Tool Execution Loop: the cases the package's own scripted mock can drive.
@@ -23,6 +24,25 @@ const upserted = (content: string): SessionEntry => ({
   timestamp: SENT_AT,
   isStreaming: false,
 });
+
+/** Two registered tools whose executors record the order they started in; what each answers is the caller's. */
+function twoTools(answers: {first: ToolResponse; second: ToolResponse}): {
+  registry: ToolRegistry;
+  ran: string[];
+} {
+  const ran: string[] = [];
+  const registry = new ToolRegistry();
+  for (const name of ['first', 'second'] as const) {
+    registry.register({name, description: `the ${name} tool`, inputSchema: {type: 'object'}}, async () => {
+      ran.push(name);
+      return answers[name];
+    });
+  }
+  return {registry, ran};
+}
+
+const CALL_A: ToolCall = {id: 'call-a', name: 'first', input: {a: 1}};
+const CALL_B: ToolCall = {id: 'call-b', name: 'second', input: {b: 2}};
 
 const toolUseIdsOf = (message: Message): string[][] => {
   if (message.role !== 'assistant' || !Array.isArray(message.content)) return [];
