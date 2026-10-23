@@ -190,6 +190,27 @@ describe('redactEntry', () => {
   });
 });
 
+describe('text arriving after the bound cleared its entry', () => {
+  it('drops held-back text that reaches an answer the bound cleared when its turn closed', () => {
+    const writer = createEntryWriter({maxContentEntries: 1});
+    const session = sessionOf();
+    const index = writer.appendEntry(session, streamingAnswer());
+    writer.appendDelta(session, index, 'Booking ');
+    writer.appendEntry(session, toolCall('OLT-9'));
+    writer.closeTurn(session);
+    writer.appendDelta(session, index, 'OLT-9 ships today');
+
+    expect(session.entries[index]).toEqual({
+      role: 'assistant',
+      content: '',
+      timestamp: AT,
+      isStreaming: false,
+      truncated: true,
+      cleared: true,
+    });
+  });
+});
+
 describe('a policy createEntryWriter cannot honour', () => {
   it('refuses a maxContentEntries of 0, 2.5, NaN or -3, naming the setting', () => {
     const outcomes = [0, 2.5, Number.NaN, -3].map(maxContentEntries => {

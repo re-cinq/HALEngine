@@ -27,6 +27,8 @@ export function createEntryWriter(policy: EntryPolicy = {}): EntryWriter {
     appendDelta(session, index, delta) {
       const entry = session.entries[index];
       if (entry.role !== 'assistant' && entry.role !== 'thinking') return;
+      // Emptied by the bound once its turn closed, so text arriving later has nowhere it may be kept.
+      if (entry.cleared) return;
       entry.content += delta;
       // Text the parser held back can land after the turn closed this entry, so what it adds is redacted too.
       if (!entry.isStreaming) session.entries[index] = finalised(entry);
