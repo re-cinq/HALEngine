@@ -862,3 +862,30 @@ async function abortedMidStream(end: () => void): Promise<{outcome: string; call
 
   return {outcome: await outcomeOf(chunksFrom(stream)), callOrder};
 }
+
+// A scripted first round, then a second round that must never stream; the registry holds the tool TOOL_CALL names and records every run.
+const gatedTurn = async (firstRound: MessageChunk[]) => {
+  const ran: string[] = [];
+  const provider = scriptedProvider([firstRound, [{type: 'text', text: 'never'}, STOP_DONE]]);
+  const registry = new ToolRegistry();
+  registry.register({name: 'lookup', description: 'looks things up', inputSchema: {type: 'object'}}, async () => {
+    ran.push('lookup');
+    return {result: 'found'};
+  });
+
+  const chunks = await chunksFrom(
+    createChatOrchestrator(provider, promptBuilder, registry).processMessageStream(createSession('ask'))
+  );
+
+  return {ran, types: chunks.map(c => c.type)};
+};
+
+describe('ChatOrchestrator tool loop gating, observed from outside', () => {
+  it('ends after one round with zero executions when the stop reason is end_turn despite a tool call: the second scripted round never streams', async () => {
+    expect(await gatedTurn([TOOL_CALL, STOP_DONE])).toEqual({ran: [], types: ['tool_use', 'stop']});
+  });
+
+  it('ends after one round with zero executions when the stream ends without a stop chunk: the second scripted round never streams', async () => {
+    expect(await gatedTurn([TOOL_CALL])).toEqual({ran: [], types: ['tool_use']});
+  });
+});
