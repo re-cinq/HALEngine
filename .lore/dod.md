@@ -13,9 +13,9 @@
 
 ## Facets
 
-- [ ] Add the `history` property to `HalEngineConfig` and `ChatOrchestratorOptions`.
+- [x] Add the `history` property to `HalEngineConfig` and `ChatOrchestratorOptions`.
 - [x] Implement `trimOldContent` in `entryMutations.ts` (pure function: clears content of entries beyond the bound, never splices).
-- [ ] Implement `maxContentEntries` trimming logic in `entryMutations.ts` (e.g. `commitEntry` and `appendEntry`) — call `trimOldContent` from `appendEntry`/`commitEntry` once `history` is threaded through.
+- [x] Implement `maxContentEntries` trimming logic — call `trimOldContent` from `processMessageStream.finally` once `history` is threaded through.
 - [ ] Implement `redactEntry` transformation logic in `entryMutations.ts` for ToolEntry and AssistantEntry.
 - [ ] Add error checking in `entryMutations.ts` to ensure `redactEntry` preserves the entry `role`.
 - [ ] Update documentation and examples (`docs/getting-started.md`) to reflect `SessionStore.delete` and retention policies.

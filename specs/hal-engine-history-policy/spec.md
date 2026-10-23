@@ -1,9 +1,9 @@
 # History Policy
 
-| Field  | Value                  |
-| ------ | ---------------------- |
-| Issue  | re-cinq/HALEngine#41   |
-| Status | Draft                  |
+| Field  | Value                |
+| ------ | -------------------- |
+| Issue  | re-cinq/HALEngine#41 |
+| Status | Draft                |
 
 The history policy bounds what `HalEngineConfig` stores in server-side conversation history. `history.maxContentEntries` trims by clearing entry content in place — never by splicing the array, so the WS protocol's index-addressed frames (`entry_delta`, `entry_commit`) continue to resolve to the same slot. `history.redactEntry(entry) => entry` rewrites a finalised entry before it is stored; it runs on `ToolEntry` at append time and on `AssistantEntry` at commit time. Both fields are optional; an engine configured without a `history` block behaves as it does today.
 
@@ -13,6 +13,8 @@ The history policy bounds what `HalEngineConfig` stores in server-side conversat
   ([validated by: clears content of entries beyond the bound, keeping array length, roles and timestamps](../../src/orchestration/entryMutations.test.ts#L5)).
 - With `maxContentEntries: 10`, a session driven to 26 entries has `entries.length === 26` and the 16 oldest entries have `content === ''`, while the 10 newest retain their content; a cleared entry's role and timestamp survive, and an `entry_delta` addressed to a cleared index still merges to that slot
   ([validated by: maxContentEntries clears content but retains array slots](../../src/orchestration/historyPolicy.acceptance.test.ts#L13)).
+- `trimOldContent` is called after each turn completes in `processMessageStream`, so the bound is enforced on the stored session, not just in-memory; configuring `maxContentEntries: 2` on a session with 3 existing entries produces a 4-entry array whose first 2 entries are cleared
+  ([validated by: trims session entries to the configured maxContentEntries bound after a turn completes](../../src/orchestration/chatOrchestrator.test.ts#L894)).
 
 ## Entry redaction
 

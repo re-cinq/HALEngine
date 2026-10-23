@@ -20,7 +20,7 @@ import type {HalServer} from './transport/createServer.js';
 import type {ConnectInfo} from './transport/ws/sessionResume.js';
 import {PromptBuilder} from './infrastructure/builders/promptBuilder.js';
 import {createChatOrchestrator} from './orchestration/chatOrchestrator.js';
-import type {OrchestratorHooks} from './orchestration/chatOrchestrator.js';
+import type {OrchestratorHooks, HistoryPolicy} from './orchestration/chatOrchestrator.js';
 import {createProvider} from './providers/providerFactory.js';
 import {ToolRegistry} from './orchestration/tools/registry.js';
 import {InMemorySessionStore} from './infrastructure/stores/inMemorySessionStore.js';
@@ -71,6 +71,7 @@ export interface HalEngineConfig {
     /** Lifecycle hooks: called before and after each phase of processing a user message. */
     hooks?: OrchestratorHooks;
   };
+  history?: HistoryPolicy;
   // Replaces the package's logger process-wide, not per engine: there is one `log` per process.
   logger?: Logger;
   onConnect?: (session: ChatSession, connection: ConnectInfo) => void | Promise<void>;
@@ -102,6 +103,7 @@ export function createHalEngine(config: HalEngineConfig): HalEngine {
     contextConfig: config.orchestrator?.contextConfig,
     hooks: config.orchestrator?.hooks,
     sessionStore,
+    history: config.history,
   });
 
   // One limiter for both transports, so a user's HTTP and WebSocket requests draw on one budget.

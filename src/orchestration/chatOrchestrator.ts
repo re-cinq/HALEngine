@@ -1,4 +1,4 @@
-import type {ChatSession} from '../types/session.js';
+import type {ChatSession, SessionEntry} from '../types/session.js';
 import type {ToolRegistry, ToolContext, ToolResponse} from './tools/registry.js';
 import {promptInstructionsOf} from './tools/registry.js';
 import type {
@@ -24,7 +24,7 @@ import {
   extractStopReason,
   extractUsage,
 } from './orchestratorHelpers.js';
-import {appendEntry, commitStreamingEntries} from './entryMutations.js';
+import {appendEntry, commitStreamingEntries, trimOldContent} from './entryMutations.js';
 import {log} from '../shared/logger.js';
 
 const DEFAULT_MAX_TOOL_ROUNDS = 5;
@@ -65,6 +65,11 @@ export interface ChatOrchestrator {
   processMessageStream(session: ChatSession, options?: {signal?: AbortSignal}): AsyncGenerator<MessageChunk>;
 }
 
+export interface HistoryPolicy {
+  maxContentEntries?: number;
+  redactEntry?: (entry: SessionEntry) => SessionEntry;
+}
+
 export interface ChatOrchestratorOptions {
   maxToolRounds?: number;
   /** How long one tool call may take before it is abandoned and answered with a timeout result; default 30000, and 0 waits forever (specs/hal-engine-tool-budget/spec.md). */
@@ -73,6 +78,7 @@ export interface ChatOrchestratorOptions {
   promptBuilderOptions?: PromptBuilderOptions;
   hooks?: OrchestratorHooks;
   sessionStore?: SessionStore;
+  history?: HistoryPolicy;
 }
 
 interface ToolExecutionResult {
@@ -91,6 +97,7 @@ export function createChatOrchestrator(
   const promptBuilderOptions = options?.promptBuilderOptions;
   const hooks = options?.hooks;
   const sessionStore = options?.sessionStore;
+  const history = options?.history;
 
   return {
     async processMessage(session: ChatSession): Promise<string> {
@@ -177,6 +184,7 @@ export function createChatOrchestrator(
       } finally {
         // Before both: a provider that threw mid-stream leaves an entry open, and nothing should persist it that way.
         commitStreamingEntries(session);
+        if (history?.maxContentEntries !== undefined) trimOldContent(session, history.maxContentEntries);
         try {
           if (hooks?.afterSession) await hooks.afterSession(session);
         } finally {

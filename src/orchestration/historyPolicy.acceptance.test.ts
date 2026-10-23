@@ -34,7 +34,6 @@ describe('HalEngineConfig history policy', () => {
       auth: {ws: async () => ({id: 'u1'}), forwardHeaders: []},
       session: store,
       transport: {resume: {enabled: true}},
-      // @ts-expect-error - history not yet typed
       history: {maxContentEntries: 10},
     });
 
@@ -94,7 +93,6 @@ describe('HalEngineConfig history policy', () => {
       session: store,
       tools: registry,
       transport: {resume: {enabled: true}},
-      // @ts-expect-error - history not yet typed
       history: {
         redactEntry: (entry: SessionEntry) => {
           if (entry.role === 'tool') return {...entry, toolInput: {}};
@@ -129,7 +127,7 @@ describe('HalEngineConfig history policy', () => {
 
     const assistantEntry = finalSession.entries.find(e => e.role === 'assistant');
     expect(assistantEntry).toBeDefined();
-    expect(assistantEntry.content).toBe('redacted response');
+    expect(assistantEntry!.content).toBe('redacted response');
 
     await engine.stop();
 
@@ -140,7 +138,6 @@ describe('HalEngineConfig history policy', () => {
       auth: {ws: async () => ({id: 'u1'}), forwardHeaders: []},
       session: store,
       transport: {resume: {enabled: true}},
-      // @ts-expect-error
       history: {
         redactEntry: (entry: SessionEntry) => ({...entry, role: 'user'}),
       },

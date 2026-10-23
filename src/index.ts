@@ -20,6 +20,7 @@ export type {
   ChatOrchestratorOptions,
   OrchestratorHooks,
   ToolBudgetInfo,
+  HistoryPolicy,
 } from './orchestration/chatOrchestrator.js';
 export {PromptBuilder} from './infrastructure/builders/promptBuilder.js';
 export type {PromptBuilderConfig, PromptBuilderOptions} from './infrastructure/builders/promptBuilder.js';

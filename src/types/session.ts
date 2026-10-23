@@ -33,6 +33,8 @@ export interface ToolEntry {
   role: 'tool';
   toolName: string;
   toolInput: Record<string, unknown>;
+  /** Not used for tool entries; present so `SessionEntry.content` is reachable without narrowing. */
+  content?: string;
   timestamp: string;
 }
 
