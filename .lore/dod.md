@@ -7,7 +7,7 @@
 ## Done when these pass
 
 - [ ] **chat routes tests** — Existing tests must stay green to prove no behaviour was broken.
-  `src/transport/routes/chats.test.ts`
+      `src/transport/routes/chats.test.ts`
 
 ## Facets
 
