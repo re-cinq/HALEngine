@@ -25,6 +25,7 @@ export {PromptBuilder} from './infrastructure/builders/promptBuilder.js';
 export type {PromptBuilderConfig, PromptBuilderOptions} from './infrastructure/builders/promptBuilder.js';
 export {toMessages, createContextConfig} from './orchestration/conversationContext.js';
 export type {ContextConfig} from './orchestration/conversationContext.js';
+export type {EntryPolicy} from './types/entryPolicy.js';
 
 export {createProvider} from './providers/providerFactory.js';
 export type {ProviderConfig, ProviderType} from './providers/providerFactory.js';
