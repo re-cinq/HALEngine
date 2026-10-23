@@ -43,7 +43,7 @@ export function trimOldContent(session: ChatSession, maxContentEntries: number):
 export function applyRedaction(
   session: ChatSession,
   index: number,
-  redactEntry: (entry: SessionEntry) => {role: string; [key: string]: unknown}
+  redactEntry: (entry: SessionEntry) => {role: SessionEntry['role']}
 ): void {
   const entry = session.entries[index];
   const redacted = redactEntry(entry);

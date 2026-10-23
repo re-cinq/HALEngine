@@ -67,7 +67,7 @@ export interface ChatOrchestrator {
 
 export interface HistoryPolicy {
   maxContentEntries?: number;
-  redactEntry?: (entry: SessionEntry) => {role: 'user' | 'assistant' | 'thinking' | 'tool'; [key: string]: unknown};
+  redactEntry?: (entry: SessionEntry) => {role: SessionEntry['role']};
 }
 
 export interface ChatOrchestratorOptions {
