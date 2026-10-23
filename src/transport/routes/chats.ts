@@ -1,10 +1,4 @@
-// The demo REST chat API: its whole state is the `chats` Map below, one per router and lost on restart.
-
-// POST /chats calls sessionStore.create so a save after erasure of the conversation writes nothing back.
-
-// A chat id from POST /chats is not a WebSocket session id: the socket mints its own and stores that.
-
-// Demo only - see specs/hal-engine-chat-routes/spec.md; content sits in process memory, unredacted.
+// _sessionStore is unused by design; the Map is process-local; a REST chat id is not a WebSocket session id.
 
 import {Router, Response, RequestHandler} from 'express';
 import {randomUUID} from 'crypto';

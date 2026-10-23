@@ -11,7 +11,7 @@
 
 ## Facets
 
-- [ ] Replace the multi-line file-head comments in `src/transport/routes/chats.ts` with a single-line comment stating that the store is unused by design, the `Map` is process-local, and a REST-created chat id is not a WebSocket session id.
+- [x] Replace the multi-line file-head comments in `src/transport/routes/chats.ts` with a single-line comment stating that the store is unused by design, the `Map` is process-local, and a REST-created chat id is not a WebSocket session id.
 
 ## Out of scope
 
