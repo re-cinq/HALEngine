@@ -1,5 +1,15 @@
 # AGENTS.md
 
+## Install
+
+```bash
+npm install @re-cinq/hal-engine
+```
+
+That is the supported install path, and the one this project releases against: every published version is built by a workflow run in this repository's CI and carries an npm provenance attestation. Use the registry specifier — not a git specifier.
+
+A git specifier also resolves, and four things differ. It builds `dist/` from a checkout through the `prepare` script rather than installing a built artefact, so your install runs this package's TypeScript compiler. It carries no provenance. It pins whatever commit your lockfile recorded, not a version, so `npm outdated` has nothing to compare. And npm installs a dependency under its **key**, not the package's `name` — which means an existing `"hal-engine": "github:…"` entry silently keeps resolving after a rename while switching imports to `@re-cinq/hal-engine` breaks. Move to the registry specifier.
+
 ## Context Loading Order
 
 Agents should read files in this order to understand the HAL Engine codebase:
