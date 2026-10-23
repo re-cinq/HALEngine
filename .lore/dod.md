@@ -11,7 +11,7 @@
 
 ## Facets
 
-- [ ] Update the §8.1 code block in `specs/hal-engine-websocket-protocol/spec.md` to match the exact `recordedFrames.thinkingThenTool` output sequence.
+- [x] Update the §8.1 code block in `specs/hal-engine-websocket-protocol/spec.md` to match the exact `recordedFrames.thinkingThenTool` output sequence.
 
 ## Out of scope
 
