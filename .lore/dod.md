@@ -7,11 +7,11 @@
 ## Done when these pass
 
 - [ ] **check-doc-blocks** — existing doc-block tests that must stay green
-  `scripts/check-doc-blocks.test.ts`
+      `scripts/check-doc-blocks.test.ts`
 
 ## Facets
 
-- [ ] Add an Install section to AGENTS.md naming the registry specifier as the supported path and warning about the git specifier.
+- [x] Add an Install section to AGENTS.md naming the registry specifier as the supported path and warning about the git specifier.
 
 ## Out of scope
 
