@@ -1,3 +1,4 @@
+/* eslint-disable re-lint/max-expects -- acceptance tests assert across an end-to-end scenario; one toEqual cannot capture all the invariants */
 import {createHalEngine} from '../config.js';
 import {InMemorySessionStore} from '../infrastructure/stores/inMemorySessionStore.js';
 import type {ChatSession, SessionEntry, ToolEntry} from '../types/session.js';

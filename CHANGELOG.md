@@ -8,6 +8,10 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+### Added
+
+- **History policy for `HalEngineConfig`.** `history.maxContentEntries` bounds how many entries retain their content — older entries are cleared in place (never spliced out, so the WS protocol's index-addressed frames still resolve to the same slot). `history.redactEntry(entry) => entry` rewrites a `ToolEntry` before it is stored and an `AssistantEntry` when it is committed; user entries are left untouched. Both fields are optional; an engine configured without `history` behaves exactly as it does today.
+
 ## [0.11.0] - 2026-10-23
 
 **Upgrading from 0.10.x.** Nothing breaks, but one default changes what a client sees: the engine now refuses an authenticated user's sixth message in a burst, and more than twenty a minute, with `TOO_MANY_REQUESTS` and a `retryAfterMs`. Set `transport.rateLimit: false` if your gateway already limits, or raise the numbers. Everything else is additive: `onFailover`, `countFor`, and the optional `retryAfterMs` field on the error frame.

@@ -28,6 +28,19 @@ export function commitEntry(session: ChatSession, index: number): void {
   }
 }
 
+export function trimOldContent(session: ChatSession, maxContentEntries: number): void {
+  const clearCount = session.entries.length - maxContentEntries;
+  if (clearCount <= 0) return;
+  for (let i = 0; i < clearCount; i++) {
+    const entry = session.entries[i];
+    if (entry.role === 'tool') {
+      entry.toolInput = {};
+    } else {
+      entry.content = '';
+    }
+  }
+}
+
 // A turn ends with its entries closed however it ended, so nothing persists an entry still marked streaming.
 export function commitStreamingEntries(session: ChatSession): void {
   for (const entry of session.entries) {

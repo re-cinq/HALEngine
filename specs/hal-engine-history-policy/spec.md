@@ -1,0 +1,20 @@
+# History Policy
+
+| Field  | Value                  |
+| ------ | ---------------------- |
+| Issue  | re-cinq/HALEngine#41   |
+| Status | Draft                  |
+
+The history policy bounds what `HalEngineConfig` stores in server-side conversation history. `history.maxContentEntries` trims by clearing entry content in place — never by splicing the array, so the WS protocol's index-addressed frames (`entry_delta`, `entry_commit`) continue to resolve to the same slot. `history.redactEntry(entry) => entry` rewrites a finalised entry before it is stored; it runs on `ToolEntry` at append time and on `AssistantEntry` at commit time. Both fields are optional; an engine configured without a `history` block behaves as it does today.
+
+## Content bound
+
+- `trimOldContent` clears the content of entries that fall outside the bound (`length - maxContentEntries` oldest entries), leaving the array length, each entry's role and each entry's timestamp unchanged; a `ToolEntry` has its `toolInput` cleared to `{}` rather than a `content` field set to `''`
+  ([validated by: clears content of entries beyond the bound, keeping array length, roles and timestamps](../../src/orchestration/entryMutations.test.ts#L5)).
+- With `maxContentEntries: 10`, a session driven to 26 entries has `entries.length === 26` and the 16 oldest entries have `content === ''`, while the 10 newest retain their content; a cleared entry's role and timestamp survive, and an `entry_delta` addressed to a cleared index still merges to that slot
+  ([validated by: maxContentEntries clears content but retains array slots](../../src/orchestration/historyPolicy.acceptance.test.ts#L13)).
+
+## Entry redaction
+
+- `redactEntry(entry) => entry` runs on a `ToolEntry` before it is stored and on an `AssistantEntry` when `commitEntry` fires, leaving `UserEntry` untouched — `beforeUserInput` already owns the user-message path, and a second mechanism for the same content is duplication; a transform that returns a different `role` than it was given is rejected rather than stored
+  ([validated by: redactEntry runs on ToolEntry and AssistantEntry, but not UserEntry, and rejects invalid role](../../src/orchestration/historyPolicy.acceptance.test.ts#L70)).
