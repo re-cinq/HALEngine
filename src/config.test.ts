@@ -437,6 +437,23 @@ describe('composeProvider, the provider createHalEngine hands its orchestrator',
   });
 });
 
+describe('createHalEngine orchestrator.entries', () => {
+  it('throws at construction, naming orchestrator.entries.maxContentEntries, for a bound of 0; a bound of 5 or no policy constructs normally', () => {
+    const outcomes = [{maxContentEntries: 0}, {maxContentEntries: 5}, undefined].map(entries => {
+      try {
+        createHalEngine({...base, orchestrator: {entries}});
+        return 'constructed';
+      } catch (error) {
+        return (error as Error).message.includes('orchestrator.entries.maxContentEntries')
+          ? 'refused, naming the field'
+          : 'refused';
+      }
+    });
+
+    expect(outcomes).toEqual(['refused, naming the field', 'constructed', 'constructed']);
+  });
+});
+
 describe('createHalEngine transport.connectMessage', () => {
   it('throws at construction, naming transport.connectMessage, for a blank one; unset or absent constructs normally', () => {
     const outcomes = [{transport: {connectMessage: '   '}}, {transport: {connectMessage: undefined}}, {}].map(extra => {

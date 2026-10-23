@@ -59,6 +59,12 @@ describe('a conversation preview', () => {
     ]);
   });
 
+  it('is absent for a conversation whose opening question the content bound cleared', () => {
+    expect(
+      previewOf({role: 'user', content: '', timestamp: '2026-10-24T09:00:00.000Z', cleared: true})
+    ).toBeUndefined();
+  });
+
   it('drops a joiner the cut left with nothing to join, since it is invisible in what a client renders', () => {
     const family = previewOf(asked('a'.repeat(118) + '👨‍👩‍👧'));
 
