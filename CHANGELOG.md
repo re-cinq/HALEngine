@@ -29,6 +29,7 @@ package, not for somebody reading this repository's commit log.
 ### Changed
 
 - **A client sending more than five messages in a burst, or more than twenty a minute, now sees refusals it did not see before.** An automated load test against the default `transport.rateLimit` gets `TOO_MANY_REQUESTS` from the sixth message of a burst; pass `rateLimit: false` to such a test, or raise the limit.
+- **The `_sessionStore` parameter of `createChatRoutes` is documented as intentionally unused.** The chat-routes file now states at its head that the store is unused by design, that the in-process `Map` is the live store, and that a REST-created chat id is not a WebSocket session id.
 
 ## [0.10.0] - 2026-10-21
 
