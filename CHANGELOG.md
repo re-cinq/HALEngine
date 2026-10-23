@@ -8,11 +8,14 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-23
+
+**Upgrading from 0.10.x.** Nothing breaks, but one default changes what a client sees: the engine now refuses an authenticated user's sixth message in a burst, and more than twenty a minute, with `TOO_MANY_REQUESTS` and a `retryAfterMs`. Set `transport.rateLimit: false` if your gateway already limits, or raise the numbers. Everything else is additive: `onFailover`, `countFor`, and the optional `retryAfterMs` field on the error frame.
+
 ### Added
 
 - **Count a user's conversations.** `SessionStore` gains an optional `countFor(userId)` member, implemented by `InMemorySessionStore` and `MongoSessionStore`; a store implementing only the original members still satisfies the interface. A per-user count is personal data scoped to one user: use `countFor` for labelling, and never show `count()`, the store-wide total, as a user's own. On MongoDB the call is an index-only scan on `{userId}`.
 - **An inbound rate limit per user.** `transport.rateLimit` bounds how often one authenticated user may send: 20 requests a minute sustained and 5 at once by default, one budget across the WebSocket and HTTP transports, keyed on the user for WebSocket frames and the engine's chat routes, and on the remote address for a consumer's own routes unless it authenticates before the limiter. A refused `user_message` is answered in turn with an `error` frame, code `TOO_MANY_REQUESTS` carrying `retryAfterMs`, then `stream_end`, and starts no model call; a refused HTTP request answers 429 with `Retry-After`. `/health` is never refused. `rateLimit: false` turns it off, for a deployment whose gateway already limits. The limiter is in memory and per engine instance: N instances behind a load balancer permit N times the limit.
-
 - **A failover hook.** `onFailover` on `HalEngineConfig`, and `FallbackPolicy.onFailover` on `withFallback`, is called once each time a fallback provider takes over, after the log line and before that provider starts, with `{failed, next, code, elapsedMs}`: the two providers by config type (or by 1-based position when `withFallback` was given no labels), the `AIError` code that routed onward, and the milliseconds since the call began. A hook that throws is logged once and changes nothing about which provider answers. `FailoverEvent` is exported from the root.
 
 ### Changed
@@ -451,7 +454,8 @@ path from `0.1.0` on the registry — only from the git specifier.
 - Resolved a high-severity advisory in `ws`, a direct runtime dependency. The full dependency audit went
   from 18 advisories (1 critical, 6 high) to 3 (2 moderate, 1 low), none at high or above.
 
-[Unreleased]: https://github.com/re-cinq/HALEngine/compare/v0.10.0...main
+[Unreleased]: https://github.com/re-cinq/HALEngine/compare/v0.11.0...main
+[0.11.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.11.0
 [0.10.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.10.0
 [0.9.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.9.0
 [0.8.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.8.0
