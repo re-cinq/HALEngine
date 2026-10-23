@@ -206,6 +206,11 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
+      # --ignore-scripts skipped mongodb-memory-server's postinstall, so the first suite to start would download mongod,
+      # and two suites starting together raced for one file. Fetched once here, before any worker starts.
+      - name: Fetch the mongod binary once
+        run: node node_modules/mongodb-memory-server/postinstall.js
+
       - name: Test the Mongo store
         run: npm test -- src/infrastructure/stores/mongo
 

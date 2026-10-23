@@ -83,6 +83,12 @@ export class InMemorySessionStore implements SessionStore {
     return this.sessions.size;
   }
 
+  /** How many live sessions the user owns, by the same `ownedBy` the list reads, so a count and a list cannot disagree. */
+  countFor(userId: string | number): number {
+    assertScalarUserId(userId);
+    return this.ownedBy(userId).length;
+  }
+
   clear(): void {
     this.sessions.clear();
   }
