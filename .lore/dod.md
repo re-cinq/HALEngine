@@ -18,6 +18,7 @@
 - [x] Update `contextFor` inside the tool loop to fetch auth headers via the hook per round if provided, otherwise default to the session's auth headers.
 - [x] Catch `CredentialExpiredError` and emit the correct `error` and `stream_end` WebSocket frames.
 - [x] Ensure other Errors throw unmodified `SERVER_ERROR` frames.
+- [x] Cover the `onError` true branch and non-Error ternary arm in `resolveRoundHeaders` for orchestration branch coverage.
 
 ## Out of scope
 

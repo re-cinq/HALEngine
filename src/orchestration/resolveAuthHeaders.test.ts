@@ -40,4 +40,17 @@ describe('resolveAuthHeaders hook', () => {
     await orchestrator.processMessage(baseSession());
     expect(hook).toHaveBeenCalledTimes(1);
   });
+
+  it('wraps a non-Error rejection from resolveAuthHeaders in a new Error before passing to onError ([validated by specs/hal-engine-architecture/spec.md#L548])', async () => {
+    const onError = jest.fn<(session: ChatSession, error: Error) => Promise<void>>().mockResolvedValue(undefined);
+    const hook = jest
+      .fn<(session: ChatSession) => Promise<ChatSession['authHeaders']>>()
+      .mockRejectedValue('string rejection');
+    const provider = scriptedProvider([toolUse('c1'), WANTS_TOOLS], [END_TURN]);
+    const orchestrator = createChatOrchestrator(provider, new PromptBuilder({identity: 'Test.'}), lookupRegistry(), {
+      hooks: {resolveAuthHeaders: hook, onError},
+    });
+    await orchestrator.processMessage(baseSession()).catch(() => {});
+    expect(onError).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({message: 'string rejection'}));
+  });
 });
