@@ -67,10 +67,12 @@ describe('HalEngineConfig history policy', () => {
     expect(finalSession.entries.length).toBe(26);
 
     for (let i = 0; i <= 15; i++) {
-      expect(finalSession.entries[i].content).toBe('');
+      const entry = finalSession.entries[i];
+      expect(entry.content).toBe('');
     }
     for (let i = 16; i <= 25; i++) {
-      expect(finalSession.entries[i].content).not.toBe('');
+      const entry = finalSession.entries[i];
+      expect(entry.content).not.toBe('');
     }
 
     const clearedEntry = finalSession.entries[0];
@@ -78,7 +80,7 @@ describe('HalEngineConfig history policy', () => {
     expect(clearedEntry.timestamp).toBe('2026-01-01T00:00:00.000Z');
 
     appendDelta(finalSession, 0, 'new delta');
-    expect(finalSession.entries[0].content).toBe('new delta');
+    expect(clearedEntry.content).toBe('new delta');
   });
 
   it('redactEntry runs on ToolEntry and AssistantEntry, but not UserEntry, and rejects invalid role', async () => {

@@ -18,7 +18,7 @@
 - [x] Implement `maxContentEntries` trimming logic — call `trimOldContent` from `processMessageStream.finally` once `history` is threaded through.
 - [x] Implement `redactEntry` transformation logic in `entryMutations.ts` for ToolEntry and AssistantEntry.
 - [x] Add error checking in `entryMutations.ts` to ensure `redactEntry` preserves the entry `role`.
-- [ ] Update documentation and examples (`docs/getting-started.md`) to reflect `SessionStore.delete` and retention policies.
+- [x] Update documentation and examples (`docs/getting-started.md`) to reflect `SessionStore.delete` and retention policies.
 
 ## Out of scope
 

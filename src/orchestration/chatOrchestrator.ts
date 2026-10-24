@@ -85,6 +85,18 @@ interface ToolExecutionResult {
   clientMessages: OutgoingMessage[];
   suppressOutput: boolean;
 }
+function applyRedactionsForTurn(
+  session: ChatSession,
+  turnStart: number,
+  redact: (entry: SessionEntry) => {role: SessionEntry['role']}
+): void {
+  for (let i = turnStart; i < session.entries.length; i++) {
+    const entry = session.entries[i];
+    if (entry.role !== 'tool' && entry.role !== 'assistant') continue;
+    applyRedaction(session, i, redact);
+  }
+}
+
 export function createChatOrchestrator(
   provider: AIProvider,
   promptBuilder: PromptBuilder,
@@ -186,14 +198,7 @@ export function createChatOrchestrator(
         // Before both: a provider that threw mid-stream leaves an entry open, and nothing should persist it that way.
         commitStreamingEntries(session);
         if (history?.maxContentEntries !== undefined) trimOldContent(session, history.maxContentEntries);
-        if (history?.redactEntry) {
-          const redact = history.redactEntry;
-          for (let i = turnStart; i < session.entries.length; i++) {
-            const entry = session.entries[i];
-            if (entry.role !== 'tool' && entry.role !== 'assistant') continue;
-            applyRedaction(session, i, redact);
-          }
-        }
+        if (history?.redactEntry) applyRedactionsForTurn(session, turnStart, history.redactEntry);
         try {
           if (hooks?.afterSession) await hooks.afterSession(session);
         } finally {

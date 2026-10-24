@@ -3,7 +3,7 @@
 | Field  | Value                |
 | ------ | -------------------- |
 | Issue  | re-cinq/HALEngine#41 |
-| Status | In Progress          |
+| Status | Shipped              |
 
 The history policy bounds what `HalEngineConfig` stores in server-side conversation history. `history.maxContentEntries` trims by clearing entry content in place — never by splicing the array, so the WS protocol's index-addressed frames (`entry_delta`, `entry_commit`) continue to resolve to the same slot. `history.redactEntry(entry) => entry` rewrites a finalised entry before it is stored; it runs on `ToolEntry` at append time and on `AssistantEntry` at commit time. Both fields are optional; an engine configured without a `history` block behaves as it does today.
 
