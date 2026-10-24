@@ -101,7 +101,7 @@ describe('Tool Credentials', () => {
 
   it('hands the tool the round-0 value in round 0 and the round-1 value in round 1 ([validated by specs/hal-engine-architecture/spec.md#L542])', async () => {
     const hook = jest
-      .fn()
+      .fn<() => Promise<ChatSession['authHeaders']>>()
       .mockResolvedValueOnce({authorization: 'Bearer 0'})
       .mockResolvedValueOnce({authorization: 'Bearer 1'});
     const e = engine(
@@ -122,7 +122,7 @@ describe('Tool Credentials', () => {
   });
 
   it('keeps session.authHeaders equal to the value captured at upgrade after a hook returns a different value ([validated by specs/hal-engine-architecture/spec.md#L544])', async () => {
-    const hook = jest.fn().mockResolvedValue({authorization: 'Bearer new'});
+    const hook = jest.fn<() => Promise<ChatSession['authHeaders']>>().mockResolvedValue({authorization: 'Bearer new'});
     const e = engine(
       [[call('c1', 'lookup'), WANTS_TOOLS]],
       {resolveAuthHeaders: hook as any},
@@ -145,7 +145,7 @@ describe('Tool Credentials', () => {
   });
 
   it('keeps todays generic SERVER_ERROR path unchanged for any Error thrown from the hook that is not a CredentialExpiredError ([validated by specs/hal-engine-architecture/spec.md#L546])', async () => {
-    const hook = jest.fn().mockRejectedValue(new Error('boom'));
+    const hook = jest.fn<() => Promise<ChatSession['authHeaders']>>().mockRejectedValue(new Error('boom'));
     const e = engine([[call('c1', 'lookup'), WANTS_TOOLS]], {resolveAuthHeaders: hook as any});
     await expect(e.ask()).rejects.toThrow('boom');
   });
@@ -160,7 +160,7 @@ describe('Tool Credentials', () => {
       throw new Error('CredentialExpiredError is not defined');
     }
     const thrownError = new CredentialExpiredError('the credential expired msg');
-    const hook = jest.fn().mockRejectedValue(thrownError);
+    const hook = jest.fn<() => Promise<ChatSession['authHeaders']>>().mockRejectedValue(thrownError);
 
     const registry = new ToolRegistry();
     registry.register({name: 'lookup', description: 'looks up', inputSchema: {type: 'object'}}, async () => 'lookup');
