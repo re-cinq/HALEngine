@@ -919,10 +919,9 @@ describe('ChatOrchestrator history policy', () => {
       registryReturning({result: 'done', clientMessages: [{type: 'entry_upsert', index: 0, entry}]}),
       {
         history: {
-          redactEntry: (e: SessionEntry): {role: SessionEntry['role']} =>
-            e.role === 'assistant' ? {...e, content: 'redacted'} : e,
+          redactEntry: (e: SessionEntry): SessionEntry => (e.role === 'assistant' ? {...e, content: 'redacted'} : e),
         },
-      },
+      }
     );
 
     await orchestrator.processMessage(session);
