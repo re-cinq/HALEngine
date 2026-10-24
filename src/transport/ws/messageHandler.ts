@@ -2,6 +2,7 @@ import {WebSocket} from 'ws';
 import type {SessionEntry} from '../../types/session.js';
 import type {ChatSession} from '../../types/session.js';
 import {ErrorCodes} from '../../types/messages.js';
+import {CredentialExpiredError, ResolveAuthHeadersError} from '../../orchestration/credentialExpiredError.js';
 import type {OutgoingMessage} from '../../types/messages.js';
 import {ThinkingTagParser, ParsedSegment} from '../../infrastructure/parsers/thinkingTagParser.js';
 import {validateMessage} from './validation.js';
@@ -176,6 +177,14 @@ async function wsErrorHandler(ws: WebSocket, action: () => Promise<void>): Promi
     const message = error instanceof Error ? error.message : 'Unknown error';
     const code = error instanceof AIError ? error.code : 'UNKNOWN';
     log.error('message', 'handling error', {error: message, code});
+    if (error instanceof CredentialExpiredError) {
+      sendError(ws, ErrorCodes.CREDENTIAL_EXPIRED, error.message);
+      return;
+    }
+    if (error instanceof ResolveAuthHeadersError) {
+      sendError(ws, ErrorCodes.SERVER_ERROR, 'Failed to process message');
+      throw error.original;
+    }
     if (error instanceof AIError) {
       const {code: clientCode, message: sentence} = clientErrorFor(error);
       sendError(ws, clientCode, sentence);

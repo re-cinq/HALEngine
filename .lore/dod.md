@@ -13,11 +13,11 @@
 
 ## Facets
 
-- [ ] Export `CredentialExpiredError` from the package root.
-- [ ] Add `resolveAuthHeaders` to `OrchestratorHooks`.
-- [ ] Update `contextFor` inside the tool loop to fetch auth headers via the hook per round if provided, otherwise default to the session's auth headers.
-- [ ] Catch `CredentialExpiredError` and emit the correct `error` and `stream_end` WebSocket frames.
-- [ ] Ensure other Errors throw unmodified `SERVER_ERROR` frames.
+- [x] Export `CredentialExpiredError` from the package root.
+- [x] Add `resolveAuthHeaders` to `OrchestratorHooks`.
+- [x] Update `contextFor` inside the tool loop to fetch auth headers via the hook per round if provided, otherwise default to the session's auth headers.
+- [x] Catch `CredentialExpiredError` and emit the correct `error` and `stream_end` WebSocket frames.
+- [x] Ensure other Errors throw unmodified `SERVER_ERROR` frames.
 
 ## Out of scope
 

@@ -21,6 +21,7 @@ export type {
   OrchestratorHooks,
   ToolBudgetInfo,
 } from './orchestration/chatOrchestrator.js';
+export {CredentialExpiredError} from './orchestration/credentialExpiredError.js';
 export {PromptBuilder} from './infrastructure/builders/promptBuilder.js';
 export type {PromptBuilderConfig, PromptBuilderOptions} from './infrastructure/builders/promptBuilder.js';
 export {toMessages, createContextConfig} from './orchestration/conversationContext.js';
