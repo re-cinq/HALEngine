@@ -85,3 +85,41 @@ describe('commitStreamingEntries', () => {
     });
   });
 });
+
+describe('trimOldContent — boundary and tool-entry cases', () => {
+  it('does not clear any entry when the bound covers all entries', () => {
+    const session: ChatSession = {
+      sessionId: 's',
+      userId: 'u',
+      entries: [
+        {role: 'user', content: 'hello', timestamp: 't'},
+        {role: 'assistant', content: 'hi', timestamp: 't', isStreaming: false},
+      ],
+    };
+
+    trimOldContent(session, 5);
+
+    expect(session.entries.map(e => e.content)).toEqual(['hello', 'hi']);
+  });
+
+  it('clears toolInput of a ToolEntry in the cleared range', () => {
+    const session: ChatSession = {
+      sessionId: 's',
+      userId: 'u',
+      entries: [
+        {role: 'tool', toolName: 'lookup', toolInput: {q: 'secret'}, timestamp: 't'},
+        {role: 'assistant', content: 'kept', timestamp: 't', isStreaming: false},
+        {role: 'user', content: 'hello', timestamp: 't'},
+      ],
+    };
+
+    trimOldContent(session, 2);
+
+    const cleared = session.entries[0] as ToolEntry;
+    expect({role: cleared.role, toolInput: cleared.toolInput, timestamp: cleared.timestamp}).toEqual({
+      role: 'tool',
+      toolInput: {},
+      timestamp: 't',
+    });
+  });
+});

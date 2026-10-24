@@ -929,4 +929,30 @@ describe('ChatOrchestrator history policy', () => {
     const assistantEntry = session.entries.find(e => e.role === 'assistant');
     expect(assistantEntry?.content).toBe('redacted');
   });
+
+  it('redactEntry does not transform a user entry added during a tool round', async () => {
+    const userEntry: SessionEntry = {role: 'user', content: 'injected question', timestamp: SENT_AT};
+    const redactedRoles: string[] = [];
+    const session = createSession('ask');
+    const orchestrator = createChatOrchestrator(
+      scriptedProvider([[TOOL_CALL, STOP_FOR_TOOL], [STOP_DONE]]),
+      promptBuilder,
+      registryReturning({result: 'done', clientMessages: [{type: 'entry_upsert', index: 0, entry: userEntry}]}),
+      {
+        history: {
+          redactEntry: (e: SessionEntry): SessionEntry => {
+            redactedRoles.push(e.role);
+            return e;
+          },
+        },
+      }
+    );
+
+    await orchestrator.processMessage(session);
+
+    expect({
+      userRedacted: redactedRoles.includes('user'),
+      userEntryPreserved: session.entries.some(e => e.role === 'user' && e.content === 'injected question'),
+    }).toEqual({userRedacted: false, userEntryPreserved: true});
+  });
 });
