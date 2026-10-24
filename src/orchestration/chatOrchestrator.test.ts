@@ -368,6 +368,22 @@ describe('ChatOrchestrator hooks', () => {
         {label: 'undefined', onErrorCallCount: 1, isError: true, causeIsOriginal: true, callerReceivedOriginal: true},
       ]);
     });
+
+    it('falls back to String() for the Error message when the non-Error rejection is not JSON-serialisable', async () => {
+      const received: Error[] = [];
+      const hooks: OrchestratorHooks = {
+        onError: async (_session, error) => {
+          received.push(error);
+        },
+      };
+      const orchestrator = createChatOrchestrator(createRejectingProvider(BigInt(1)), promptBuilder, undefined, {
+        hooks,
+      });
+      await rejectionOf(orchestrator.processMessage(createSession('hello')));
+      expect(received).toHaveLength(1);
+      expect(received[0]).toBeInstanceOf(Error);
+      expect(received[0].cause).toBe(BigInt(1));
+    });
   });
 
   describe('full lifecycle order', () => {
