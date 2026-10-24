@@ -53,6 +53,16 @@ Resume gets a client back into one conversation: the id it names, or the user's 
 - A plain list carries no label even from a collection that answered with the entries anyway, so an adapter ignoring the projection cannot volunteer one ([validated by: labels nothing on a plain list even where the collection answered with the entries anyway](../../src/infrastructure/stores/mongo/mongoConversationList.test.ts#L271)).
 - Both shipped stores derive the same label from the same conversation, and refuse a model-authored opening alike, so a consumer swapping one for the other sees the same labels ([validated by: label a conversation with the same opening question, and refuse a model-authored opening alike](../../src/infrastructure/stores/storeListAgreement.test.ts#L62)).
 
+## A stored title
+
+A consumer may want a shorter or more descriptive label than the user's opening question: one they wrote about the conversation rather than one lifted from it. `setTitle` stores that label; `listFor` answers it whenever the store holds one, without any option to ask. Unlike `preview`, a title is not conversation content the consumer opted into reading — it is text the consumer wrote — so it does not travel behind a flag. **GDPR.** A title a consumer generated from the conversation is derived personal data and is stored rather than derived, so it is erased with the conversation and not separately; a deployment generating titles with a provider sends conversation content to that provider, which belongs in the deployment's own record of processing.
+
+- A title is stored by `setTitle(sessionId, title)` on the session object and returned by `listFor` without any option to ask for it ([validated by: stores a title on the session and surfaces it in listFor](../../src/infrastructure/stores/inMemorySessionTitle.test.ts#L6)).
+- `setTitle` is optional on `SessionStore`, like `listFor`, `latestFor` and `lookup` before it: a store written against the original members still satisfies the interface.
+- Both shipped stores implement `setTitle` ([validated by: stores a title on the session and surfaces it in listFor](../../src/infrastructure/stores/inMemorySessionTitle.test.ts#L6)).
+- `setTitle` on a session id the store does not hold does nothing and does not throw: a title is not a way to conjure a conversation ([validated by: is a no-op for a session id the store does not hold, without throwing](../../src/infrastructure/stores/inMemorySessionTitle.test.ts#L16)).
+- `MongoSessionStore.listFor` reads the title from its existing projection, so no second query is needed and no entry is fetched for it.
+
 ## Whose conversations
 
 - A list holds only the asking user's conversations: another user's never appear, and a user with none gets an empty list ([validated by: omits a conversation that aged out and another user's, and answers nothing for a user with none](../../src/infrastructure/stores/inMemoryConversationList.test.ts#L65)).

@@ -13,10 +13,10 @@
 
 ## Facets
 
-- [ ] `ChatSession` and `SessionSummary` gain `title?: string`
-- [ ] `SessionStore` gains an optional `setTitle?(sessionId, title)`
-- [ ] `setTitle` implemented on `InMemorySessionStore` and `MongoSessionStore`
-- [ ] `MongoSessionStore.listFor` reads the title without a second query
+- [x] `ChatSession` and `SessionSummary` gain `title?: string`
+- [x] `SessionStore` gains an optional `setTitle?(sessionId, title)`
+- [x] `setTitle` implemented on `InMemorySessionStore` and `MongoSessionStore`
+- [x] `MongoSessionStore.listFor` reads the title without a second query
 - [ ] The `conversation_list` frame carries `title` correctly
 - [ ] A title survives a save and is removed upon erasure
 
