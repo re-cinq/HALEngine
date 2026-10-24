@@ -8,38 +8,19 @@ import type {ToolResponse} from '../../orchestration/tools/registry.js';
 import {PromptBuilder} from '../../infrastructure/builders/promptBuilder.js';
 import {setLogger} from '../../shared/logger.js';
 import type {Logger} from '../../shared/logger.js';
-import type {AIProvider, Message, MessageChunk, ToolResultContent} from '../../types/ai.js';
+import type {Message, MessageChunk, ToolResultContent} from '../../types/ai.js';
 import type {ChatSession, SessionEntry} from '../../types/session.js';
-import type {OutgoingMessage} from '../../types/messages.js';
+import {WANTS_TOOLS, call, kinds, makeScriptedProvider} from './wsToolTestSupport.js';
 
 // The real orchestrator behind the real handler: a policy is judged by what the model and the browser each receive.
 
 const DECLINED = 'Not performed. A human reviewer has been asked to do it.';
-const WANTS_TOOLS: MessageChunk = {type: 'stop', stopReason: 'tool_use'};
-const ANSWER: MessageChunk[] = [
-  {type: 'text', text: 'All done.'},
-  {type: 'stop', stopReason: 'end_turn'},
-];
-
-const call = (id: string, name: string, input: Record<string, unknown> = {}): MessageChunk => ({
-  type: 'tool_use',
-  toolCall: {id, name, input},
-});
 
 const declineNotifications = async (_session: ChatSession, request: {name: string}) =>
   request.name === 'send_notification' ? {result: DECLINED} : undefined;
 
 const engine = (rounds: MessageChunk[][], hooks: OrchestratorHooks = {}) => {
-  const requests: Message[][] = [];
-  const provider: AIProvider = {
-    async *sendMessage({messages}) {
-      requests.push([...messages]);
-      yield* rounds[requests.length - 1] ?? ANSWER;
-    },
-    async generateStructured<T>(): Promise<T> {
-      return {} as T;
-    },
-  };
+  const {provider, requests} = makeScriptedProvider(rounds);
 
   const executed: Record<string, unknown>[] = [];
   const registry = new ToolRegistry();
@@ -80,9 +61,6 @@ const toolResultsIn = (request: Message[] = []): ToolResultContent[] => {
   const last = request.at(-1);
   return last?.role === 'user' && Array.isArray(last.content) ? (last.content as ToolResultContent[]) : [];
 };
-
-const kinds = (frames: OutgoingMessage[]): string[] =>
-  frames.map(frame => (frame.type === 'error' ? `error ${frame.code}` : frame.type));
 
 describe('the beforeToolCall hook', () => {
   const lines: string[] = [];

@@ -30,10 +30,12 @@ function lookupRegistry(): ToolRegistry {
 
 describe('resolveAuthHeaders hook', () => {
   it('is called exactly once for a round with two parallel tool calls ([validated by specs/hal-engine-architecture/spec.md#L541])', async () => {
-    const hook = jest.fn<() => Promise<ChatSession['authHeaders']>>().mockResolvedValue({authorization: 'Bearer new'});
+    const hook = jest
+      .fn<(session: ChatSession) => Promise<ChatSession['authHeaders']>>()
+      .mockResolvedValue({authorization: 'Bearer new'});
     const provider = scriptedProvider([toolUse('c1'), toolUse('c2'), WANTS_TOOLS], [END_TURN]);
     const orchestrator = createChatOrchestrator(provider, new PromptBuilder({identity: 'Test.'}), lookupRegistry(), {
-      hooks: {resolveAuthHeaders: hook as any},
+      hooks: {resolveAuthHeaders: hook},
     });
     await orchestrator.processMessage(baseSession());
     expect(hook).toHaveBeenCalledTimes(1);
