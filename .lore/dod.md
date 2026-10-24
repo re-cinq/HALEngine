@@ -18,7 +18,7 @@
 - [x] `setTitle` implemented on `InMemorySessionStore` and `MongoSessionStore`
 - [x] `MongoSessionStore.listFor` reads the title without a second query
 - [x] The `conversation_list` frame carries `title` correctly
-- [ ] A title survives a save and is removed upon erasure
+- [x] A title survives a save and is removed upon erasure
 
 ## Out of scope
 

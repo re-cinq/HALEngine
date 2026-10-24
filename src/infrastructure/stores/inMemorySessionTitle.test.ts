@@ -1,3 +1,4 @@
+import {jest} from '@jest/globals';
 import {InMemorySessionStore} from './inMemorySessionStore.js';
 
 // specs/hal-engine-conversation-list/spec.md#title
@@ -19,5 +20,24 @@ describe('InMemorySessionStore setTitle', () => {
   it('is a no-op for a session id the store does not hold, without throwing', () => {
     const store = new InMemorySessionStore();
     expect(() => store.setTitle('missing', 'title')).not.toThrow();
+  });
+
+  describe('with an aged-out session', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    });
+
+    afterEach(() => jest.useRealTimers());
+
+    it('is a no-op for a session that has aged out, without touching its title', () => {
+      const store = new InMemorySessionStore({maxAgeMs: 1000});
+      const session = store.create('s1', 'u1');
+
+      jest.setSystemTime(new Date('2026-01-01T00:00:01.001Z'));
+      store.setTitle('s1', 'Expired Title');
+
+      expect(session.title).toBeUndefined();
+    });
   });
 });
