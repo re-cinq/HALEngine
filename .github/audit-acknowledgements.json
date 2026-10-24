@@ -1,0 +1,9 @@
+[
+  {
+    "advisory": "GHSA-27r3-jxmh-p828",
+    "package": "body-parser",
+    "why": "Vulnerability is in body-parser's handling of trailing bytes after compressed request body; hal-engine does not expose a compressed-body endpoint, so this path is not reachable in any supported deployment.",
+    "expires": "2027-04-24",
+    "acknowledged_by": "hal-engine maintainers"
+  }
+]
