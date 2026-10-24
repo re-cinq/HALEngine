@@ -547,6 +547,7 @@ When a connection drops, the frontend reconnects automatically:
 - `ToolContext.authHeaders` is a per-call copy: a mutation inside one executor cannot reach `session.authHeaders` or any sibling executor's context within the same round. ([validated by: protects session.authHeaders and the next tool in the same round from an executor that mutates context.authHeaders.authorization](../../src/transport/ws/resolveAuthHeaders.acceptance.test.ts#L112))
 - A non-`CredentialExpiredError` thrown by `resolveAuthHeaders` follows the engine's generic server-error path: `SERVER_ERROR` is sent to the client and the error propagates. ([validated by: keeps todays generic SERVER_ERROR path unchanged for any Error thrown from the hook that is not a CredentialExpiredError](../../src/transport/ws/resolveAuthHeaders.acceptance.test.ts#L124))
 - When `resolveAuthHeaders` throws `CredentialExpiredError`, the turn ends with `CREDENTIAL_EXPIRED` then `stream_end` instead of propagating to the generic server-error path. ([validated by: produces error CREDENTIAL_EXPIRED and stream_end over a real connection](../../src/transport/ws/resolveAuthHeaders.acceptance.test.ts#L136))
+- `CredentialExpiredError` is re-exported from the package entry point (`src/index.ts`), making it available to consumers at the public API boundary without requiring internal imports. ([validated by: CredentialExpiredError is exported from the package root](../../src/transport/ws/resolveAuthHeaders.acceptance.test.ts#L138))
 
 ## Provider resilience
 

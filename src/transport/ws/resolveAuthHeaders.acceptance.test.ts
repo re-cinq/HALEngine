@@ -93,7 +93,9 @@ describe('Tool Credentials', () => {
   it('hands the tool the headers captured at upgrade when no resolveAuthHeaders is configured ([validated by specs/hal-engine-architecture/spec.md#L543])', async () => {
     const e = engine([[call('c1', 'lookup'), WANTS_TOOLS]], {}, {authorization: 'Bearer original'});
     await e.ask();
-    expect(e.executed[0]?.context.authHeaders).toEqual({authorization: 'Bearer original'});
+    const executed = e.executed;
+    const ctx = executed[0]?.context;
+    expect(ctx?.authHeaders).toEqual({authorization: 'Bearer original'});
   });
 
   it('keeps session.authHeaders equal to the value captured at upgrade after a hook returns a different value ([validated by specs/hal-engine-architecture/spec.md#L544])', async () => {
@@ -117,8 +119,12 @@ describe('Tool Credentials', () => {
     );
     await e.ask();
 
-    expect(e.session.authHeaders).toEqual({authorization: 'Bearer original'});
-    expect(e.executed[1]?.context.authHeaders).toEqual({authorization: 'Bearer original'});
+    const executed = e.executed;
+    const nextCtx = executed[1]?.context;
+    expect({session: e.session.authHeaders, nextTool: nextCtx?.authHeaders}).toMatchObject({
+      session: {authorization: 'Bearer original'},
+      nextTool: {authorization: 'Bearer original'},
+    });
   });
 
   it('keeps todays generic SERVER_ERROR path unchanged for any Error thrown from the hook that is not a CredentialExpiredError ([validated by specs/hal-engine-architecture/spec.md#L546])', async () => {
@@ -129,7 +135,7 @@ describe('Tool Credentials', () => {
     await expect(e.ask()).rejects.toThrow('boom');
   });
 
-  it('CredentialExpiredError is exported from the package root', () => {
+  it('CredentialExpiredError is exported from the package root ([validated by specs/hal-engine-architecture/spec.md#L550])', () => {
     expect('CredentialExpiredError' in halEngine).toBe(true);
   });
 
@@ -175,28 +181,22 @@ describe('Tool Credentials', () => {
         const frame = JSON.parse(String(raw));
         if (frame.type === 'connected') {
           client.send(JSON.stringify({type: 'user_message', content: 'test'}));
-        } else {
-          frames.push(String(raw));
-          if (frame.type === 'stream_end') {
-            client.close();
-            resolve();
-          }
+          return;
+        }
+        frames.push(String(raw));
+        if (frame.type === 'stream_end') {
+          client.close();
+          resolve();
         }
       });
     });
 
     const parsedFrames = frames.map(f => JSON.parse(f));
 
-    const errorFrameIndex = parsedFrames.findIndex(f => f.type === 'error');
-    expect(errorFrameIndex).toBeGreaterThan(-1);
-
-    const errorFrame = parsedFrames[errorFrameIndex];
-    expect(errorFrame).toEqual({
-      type: 'error',
-      code: 'CREDENTIAL_EXPIRED',
-      message: 'the credential expired msg',
-    });
-
-    expect(parsedFrames[errorFrameIndex + 1]).toEqual({type: 'stream_end'});
+    const credIdx = parsedFrames.findIndex(f => f.type === 'error' && f.code === 'CREDENTIAL_EXPIRED');
+    expect(parsedFrames.slice(credIdx, credIdx + 2)).toEqual([
+      {type: 'error', code: 'CREDENTIAL_EXPIRED', message: 'the credential expired msg'},
+      {type: 'stream_end'},
+    ]);
   });
 });
