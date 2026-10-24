@@ -910,18 +910,21 @@ describe('ChatOrchestrator history policy', () => {
     expect(session.entries.map(e => e.content)).toEqual(['', '', '', 'old a2', 'hello']);
   });
 
-  it('applies the redactEntry transform to entries appended during a tool round', async () => {
-    const entry: SessionEntry = {role: 'assistant', content: 'tool output', timestamp: SENT_AT, isStreaming: false};
+  function makeToolRoundSetup(upsertEntry: SessionEntry, redact: (e: SessionEntry) => SessionEntry) {
     const session = createSession('ask');
     const orchestrator = createChatOrchestrator(
       scriptedProvider([[TOOL_CALL, STOP_FOR_TOOL], [STOP_DONE]]),
       promptBuilder,
-      registryReturning({result: 'done', clientMessages: [{type: 'entry_upsert', index: 0, entry}]}),
-      {
-        history: {
-          redactEntry: (e: SessionEntry): SessionEntry => (e.role === 'assistant' ? {...e, content: 'redacted'} : e),
-        },
-      }
+      registryReturning({result: 'done', clientMessages: [{type: 'entry_upsert', index: 0, entry: upsertEntry}]}),
+      {history: {redactEntry: redact}}
+    );
+    return {session, orchestrator};
+  }
+
+  it('applies the redactEntry transform to entries appended during a tool round', async () => {
+    const entry: SessionEntry = {role: 'assistant', content: 'tool output', timestamp: SENT_AT, isStreaming: false};
+    const {session, orchestrator} = makeToolRoundSetup(entry, (e: SessionEntry): SessionEntry =>
+      e.role === 'assistant' ? {...e, content: 'redacted'} : e
     );
 
     await orchestrator.processMessage(session);
@@ -933,20 +936,10 @@ describe('ChatOrchestrator history policy', () => {
   it('redactEntry does not transform a user entry added during a tool round', async () => {
     const userEntry: SessionEntry = {role: 'user', content: 'injected question', timestamp: SENT_AT};
     const redactedRoles: string[] = [];
-    const session = createSession('ask');
-    const orchestrator = createChatOrchestrator(
-      scriptedProvider([[TOOL_CALL, STOP_FOR_TOOL], [STOP_DONE]]),
-      promptBuilder,
-      registryReturning({result: 'done', clientMessages: [{type: 'entry_upsert', index: 0, entry: userEntry}]}),
-      {
-        history: {
-          redactEntry: (e: SessionEntry): SessionEntry => {
-            redactedRoles.push(e.role);
-            return e;
-          },
-        },
-      }
-    );
+    const {session, orchestrator} = makeToolRoundSetup(userEntry, (e: SessionEntry): SessionEntry => {
+      redactedRoles.push(e.role);
+      return e;
+    });
 
     await orchestrator.processMessage(session);
 
