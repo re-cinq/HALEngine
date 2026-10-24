@@ -263,7 +263,7 @@ describe('the MongoDB store conversation list', () => {
     const [call] = calls;
 
     expect({projection: call?.options?.projection, labelled: 'preview' in row}).toEqual({
-      projection: {_id: 1, createdAt: 1, updatedAt: 1, entryCount: 1},
+      projection: {_id: 1, createdAt: 1, updatedAt: 1, entryCount: 1, title: 1},
       labelled: false,
     });
   });
