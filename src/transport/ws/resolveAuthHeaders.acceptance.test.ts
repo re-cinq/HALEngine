@@ -111,7 +111,7 @@ describe('Tool Credentials', () => {
     expect(e.session.authHeaders).toEqual({authorization: 'Bearer original'});
   });
 
-  it('protects session.authHeaders and the next tool in the same round from an executor that mutates context.authHeaders.authorization ([validated by specs/hal-engine-architecture/spec.md#L545])', async () => {
+  it('protects session.authHeaders and the next tool in the same round from an executor that mutates context.authHeaders.authorization ([validated by specs/hal-engine-architecture/spec.md#L547])', async () => {
     const e = engine(
       [[call('c1', 'lookup', {mutate: true}), call('c2', 'lookup'), WANTS_TOOLS]],
       {},
