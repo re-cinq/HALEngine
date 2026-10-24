@@ -7,9 +7,9 @@
 ## Done when these pass
 
 - [ ] **resolves auth headers per round and hands them to the tools** — verifying that the hook is invoked correctly per tool round and tools receive the newly resolved headers instead of the initial connection headers.
-  `src/transport/ws/resolveAuthHeaders.acceptance.test.ts`
+      `src/transport/ws/resolveAuthHeaders.acceptance.test.ts`
 - [ ] **produces error CREDENTIAL_EXPIRED and stream_end over a real connection** — verifying that when the hook rejects with `CredentialExpiredError`, it ends the turn correctly with a `CREDENTIAL_EXPIRED` client error and `stream_end`.
-  `src/transport/ws/resolveAuthHeaders.acceptance.test.ts`
+      `src/transport/ws/resolveAuthHeaders.acceptance.test.ts`
 
 ## Facets
 
@@ -19,6 +19,7 @@
 - [x] Catch `CredentialExpiredError` and emit the correct `error` and `stream_end` WebSocket frames.
 - [x] Ensure other Errors throw unmodified `SERVER_ERROR` frames.
 - [x] Cover the `onError` true branch and non-Error ternary arm in `resolveRoundHeaders` for orchestration branch coverage.
+- [x] Cover the `CredentialExpiredError` true branch in `resolveRoundHeaders` and `wsErrorHandler` via the recording-socket engine helper (non-WS unit test), so the branch is hit regardless of real-WS test timing.
 
 ## Out of scope
 

@@ -199,4 +199,18 @@ describe('Tool Credentials', () => {
       {type: 'stream_end'},
     ]);
   });
+
+  it('sends CREDENTIAL_EXPIRED frame then stream_end via the recording socket and resolves when hook throws CredentialExpiredError ([validated by specs/hal-engine-architecture/spec.md#L549])', async () => {
+    const thrownError = new halEngine.CredentialExpiredError('the credential expired msg');
+    const hook = jest
+      .fn<(session: ChatSession) => Promise<ChatSession['authHeaders']>>()
+      .mockRejectedValue(thrownError);
+    const e = engine([[call('c1', 'lookup'), WANTS_TOOLS]], {resolveAuthHeaders: hook});
+    await e.ask();
+    const errorIdx = e.frames.findIndex(f => f.type === 'error');
+    expect(e.frames.slice(errorIdx, errorIdx + 2)).toMatchObject([
+      {type: 'error', code: 'CREDENTIAL_EXPIRED', message: 'the credential expired msg'},
+      {type: 'stream_end'},
+    ]);
+  });
 });
