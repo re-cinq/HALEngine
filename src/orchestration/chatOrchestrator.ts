@@ -1,4 +1,5 @@
 import type {ChatSession} from '../types/session.js';
+import {CredentialExpiredError, ResolveAuthHeadersError} from './credentialExpiredError.js';
 import type {ToolRegistry, ToolContext, ToolResponse} from './tools/registry.js';
 import {promptInstructionsOf} from './tools/registry.js';
 import type {
@@ -47,6 +48,8 @@ export interface OrchestratorHooks {
   beforeToolCall?: (session: ChatSession, call: ToolCall) => Promise<ToolResponse | undefined>;
   /** Fires when the model asks for a tool round the budget refuses, after the last provider call and before afterModelResponse; a returned string reaches the user as the turn's closing text, and the engine writes none of its own (see specs/hal-engine-tool-budget/spec.md). */
   onToolBudgetExhausted?: (session: ChatSession, budget: ToolBudgetInfo) => Promise<string | undefined>;
+  /** Called once per tool round, before ToolContext objects are built; the returned value is copied into each tool's context for that round and is never written back to session.authHeaders. Throw CredentialExpiredError to end the turn with CREDENTIAL_EXPIRED. */
+  resolveAuthHeaders?: (session: ChatSession) => Promise<ChatSession['authHeaders']>;
 }
 
 export interface ToolBudgetInfo {
@@ -139,11 +142,19 @@ export function createChatOrchestrator(
           }
 
           log.info('orchestrator', 'executing tools', {tools: pendingToolCalls.map(tc => tc.name)});
+          const roundHeaders =
+            hooks?.resolveAuthHeaders != null
+              ? await resolveRoundHeaders(session, hooks.resolveAuthHeaders, hooks.onError)
+              : null;
           const {clientMessages, suppressOutput} = await executeToolCalls(
             pendingToolCalls,
             messages,
             session,
-            withDeadline(toolCallRunner(toolRegistry!, session, hooks?.beforeToolCall), toolTimeoutMs, signal),
+            withDeadline(
+              toolCallRunner(toolRegistry!, session, hooks?.beforeToolCall, roundHeaders),
+              toolTimeoutMs,
+              signal
+            ),
             signal
           );
           // Abandoned while its tools ran: no provider call follows, so nothing they returned is read.
@@ -167,7 +178,8 @@ export function createChatOrchestrator(
       } catch (error) {
         // Abandoned by its caller: what the abort caused is no failure, and nobody is left to tell.
         if (options?.signal?.aborted) return;
-        if (hooks?.onError) {
+        // ResolveAuthHeadersError already called onError before wrapping; skip to avoid a duplicate call.
+        if (hooks?.onError && !(error instanceof ResolveAuthHeadersError)) {
           await hooks.onError(
             session,
             error instanceof Error ? error : new Error(describeRejection(error), {cause: error})
@@ -300,7 +312,8 @@ type ToolCallRun = (tc: ToolCall, signal: AbortSignal) => Promise<ToolResponse>;
 function toolCallRunner(
   toolRegistry: ToolRegistry,
   session: ChatSession,
-  beforeToolCall?: BeforeToolCall
+  beforeToolCall?: BeforeToolCall,
+  roundHeaders: ChatSession['authHeaders'] | null = null
 ): ToolCallRun {
   return async (tc, signal) => {
     const declined =
@@ -308,7 +321,7 @@ function toolCallRunner(
     if (declined) return declined;
     // A policy can answer after the deadline, when the model has already been told this call returned nothing.
     if (signal.aborted) return skipAbandoned(tc);
-    return toolRegistry.execute(tc.name, tc.input, contextFor(session, signal));
+    return toolRegistry.execute(tc.name, tc.input, contextFor(session, signal, roundHeaders));
   };
 }
 
@@ -318,13 +331,34 @@ function skipAbandoned(tc: ToolCall): ToolResponse {
   return {result: `The ${tc.name} call was abandoned before it started and was not performed.`};
 }
 
-// One per call, so each carries its own signal and its own copy of the caller's headers, which no sibling's edit can reach.
-function contextFor(session: ChatSession, signal: AbortSignal): ToolContext {
+// Calls onError for non-CredentialExpiredError so the orchestrator's outer catch can skip it, then wraps in ResolveAuthHeadersError for wsErrorHandler to rethrow.
+async function resolveRoundHeaders(
+  session: ChatSession,
+  resolver: NonNullable<OrchestratorHooks['resolveAuthHeaders']>,
+  onError: OrchestratorHooks['onError']
+): Promise<ChatSession['authHeaders']> {
+  try {
+    return await resolver(session);
+  } catch (error) {
+    if (error instanceof CredentialExpiredError) throw error;
+    const original = error instanceof Error ? error : new Error(String(error));
+    if (onError) await onError(session, original);
+    throw new ResolveAuthHeadersError(original);
+  }
+}
+
+// One per call, so each carries its own signal and a per-call copy of the round's resolved headers, which no sibling's edit can reach.
+function contextFor(
+  session: ChatSession,
+  signal: AbortSignal,
+  roundHeaders: ChatSession['authHeaders'] | null = null
+): ToolContext {
+  const headers = roundHeaders !== null ? roundHeaders : session.authHeaders;
   return {
     userId: session.userId,
     sessionId: session.sessionId,
     workspaceId: session.workspaceId,
-    authHeaders: session.authHeaders === undefined ? undefined : {...session.authHeaders},
+    authHeaders: headers === undefined ? undefined : {...headers},
     // Copied per call: an executor that assigns to its user must not reach the session or a sibling call's copy.
     user: session.user === undefined ? undefined : {...session.user},
     signal,

@@ -8,6 +8,14 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+### Added
+
+- **Per-round credential refresh.** `OrchestratorHooks` gains an optional `resolveAuthHeaders` hook, called once per tool round immediately before `ToolContext` objects are built. The hook receives the current session and returns the headers to copy into each tool's context for that round — useful for refreshing short-lived credentials mid-conversation without any engine change. The returned value is never written back to `session.authHeaders`, so the credential captured at upgrade stays stable. Throw `CredentialExpiredError` (exported from the package root) to end the turn with a named `CREDENTIAL_EXPIRED` error frame followed by `stream_end`, instead of a silent failure.
+- **`CredentialExpiredError`.** A new public error class exported from `@re-cinq/hal-engine`. Throw it from `resolveAuthHeaders` to signal that the credential cannot be renewed for this round; the engine sends `{type: 'error', code: 'CREDENTIAL_EXPIRED', message}` then `stream_end`. Any other `Error` from the hook keeps the existing `SERVER_ERROR` path.
+- **`ErrorCodes.CREDENTIAL_EXPIRED`.** A new entry in the `ErrorCodes` constant for clients that branch on error codes.
+
+**Upgrading from 0.11.x.** Additive only — no existing behaviour changes. `ToolContext.authHeaders` is now a per-round copy rather than a per-call alias of `session.authHeaders`; if a tool executor was relying on mutations to `context.authHeaders` being visible to sibling tools in the same round (undocumented and untested), that no longer works. Everything else is unchanged.
+
 ## [0.11.0] - 2026-10-23
 
 **Upgrading from 0.10.x.** Nothing breaks, but one default changes what a client sees: the engine now refuses an authenticated user's sixth message in a burst, and more than twenty a minute, with `TOO_MANY_REQUESTS` and a `retryAfterMs`. Set `transport.rateLimit: false` if your gateway already limits, or raise the numbers. Everything else is additive: `onFailover`, `countFor`, and the optional `retryAfterMs` field on the error frame.
