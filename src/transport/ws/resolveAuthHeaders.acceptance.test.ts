@@ -127,7 +127,7 @@ describe('Tool Credentials', () => {
     });
   });
 
-  it('keeps todays generic SERVER_ERROR path unchanged for any Error thrown from the hook that is not a CredentialExpiredError ([validated by specs/hal-engine-architecture/spec.md#L546])', async () => {
+  it('keeps todays generic SERVER_ERROR path unchanged for any Error thrown from the hook that is not a CredentialExpiredError ([validated by specs/hal-engine-architecture/spec.md#L548])', async () => {
     const hook = jest
       .fn<(session: ChatSession) => Promise<ChatSession['authHeaders']>>()
       .mockRejectedValue(new Error('boom'));
