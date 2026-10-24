@@ -97,6 +97,8 @@ interface SessionStore<T extends BaseSession = ChatSession> {
   lookup?(sessionId: string): Awaitable<SessionLookup<T>>;
   /** How many conversations this user owns; personal data scoped to one user — never the store-wide total (specs/hal-engine-conversation-list). */
   countFor?(userId: string | number): Awaitable<number>;
+  /** Stores a consumer-written title for the conversation; a missing session is silently ignored, and no document is created (specs/hal-engine-conversation-list/spec.md). */
+  setTitle?(sessionId: string, title: string): Awaitable<void>;
 }
 ```
 
@@ -496,14 +498,14 @@ When a connection drops, the frontend reconnects automatically:
 
 **The default error handler.** `createApp` always registers one last, after any `errorHandler` a consumer supplies, so nothing a route throws reaches Express's HTML page, and no response body carries an error's message or stack ([validated by: answers a truncated JSON body to POST /hal/chats with 400 {"error":"Bad Request"} as JSON, with no HTML or stack](../../src/transport/httpErrorHandler.test.ts#L48), [validated by: answers a synchronous throw and a rejected promise of boom-secret-42 with 500 {"error":"Internal Server Error"}, keeping the message out of the response](../../src/transport/httpErrorHandler.test.ts#L62)). It answers by the first row that applies:
 
-| The error                                                            | Status      | Body `error`                                      |
-| -------------------------------------------------------------------- | ----------- | ------------------------------------------------- |
-| carries `status` or `statusCode` in 400–599 with a standard phrase   | that status | Node's phrase from `http.STATUS_CODES`, e.g. `Not Found` |
-| an `AIError` coded `RATE_LIMITED`                                    | 429         | `AI service is busy, please try again`            |
-| an `AIError` coded `SERVICE_UNAVAILABLE`                             | 503         | `AI service temporarily unavailable`              |
-| an `AIError` coded `TIMEOUT`                                         | 504         | `AI service timed out`                            |
-| an `AIError` with any other code                                     | 502         | `AI service temporarily unavailable`              |
-| anything else                                                        | 500         | `Internal Server Error`                           |
+| The error                                                          | Status      | Body `error`                                             |
+| ------------------------------------------------------------------ | ----------- | -------------------------------------------------------- |
+| carries `status` or `statusCode` in 400–599 with a standard phrase | that status | Node's phrase from `http.STATUS_CODES`, e.g. `Not Found` |
+| an `AIError` coded `RATE_LIMITED`                                  | 429         | `AI service is busy, please try again`                   |
+| an `AIError` coded `SERVICE_UNAVAILABLE`                           | 503         | `AI service temporarily unavailable`                     |
+| an `AIError` coded `TIMEOUT`                                       | 504         | `AI service timed out`                                   |
+| an `AIError` with any other code                                   | 502         | `AI service temporarily unavailable`                     |
+| anything else                                                      | 500         | `Internal Server Error`                                  |
 
 - The four `AIError` rows are read from `src/transport/errorMapping.ts`, the one table the WebSocket error frame also reads, so a status here and a `code` there never disagree ([validated by: is the only non-test file under src/transport that maps a provider error code](../../src/transport/errorMapping.test.ts#L68)).
 - An explicit status wins over the `AIError` code, and one outside 400–599 or without a standard phrase, such as 302, 700 or 499, answers 500 ([validated by: honours status 404 and statusCode 403 with their standard phrases, and answers status 302, 700 and 499 with 500](../../src/transport/httpErrorHandler.test.ts#L100), [validated by: answers AIError codes RATE_LIMITED 429, SERVICE_UNAVAILABLE 503, TIMEOUT 504 and every other code 502, each with its fixed sentence](../../src/transport/httpErrorHandler.test.ts#L76)).
@@ -575,7 +577,7 @@ Each retry re-sends the entire conversation — every message verbatim — to th
 - `HalEngineConfig.onFailover` reaches the chain through `composeProvider`, labelled with each provider's config `type`, so a deployment records a durable failover entry from its own configuration ([validated by: hands config.onFailover to the chain, labelled by each provider's config type: failed mock, next vertex on SERVICE_UNAVAILABLE](../../src/config.test.ts#L425)).
 - A sustained Vertex `503`, retried to exhaustion, reaches the fallback: the Vertex classifier maps it to a retryable `SERVICE_UNAVAILABLE`, so the retry tier retries it and the fallback tier routes it ([validated by: routes a sustained Vertex 503, retried to exhaustion, to the fallback provider, whose answer the caller receives](../../src/vertexToolLoop.test.ts#L112)).
 
-**GDPR, transfer volume.** A failover re-sends the entire conversation, every message verbatim, to a *second* vendor. A deployer configuring `fallbackProviders` has a second processor to account for, possibly in a different jurisdiction from the first, and the conversation is sent in full to each vendor tried.
+**GDPR, transfer volume.** A failover re-sends the entire conversation, every message verbatim, to a _second_ vendor. A deployer configuring `fallbackProviders` has a second processor to account for, possibly in a different jurisdiction from the first, and the conversation is sent in full to each vendor tried.
 
 Fail-over is stateless and per request. It keeps no memory of a vendor being down, so every turn tries the primary first; a circuit breaker that skips a known-down vendor is a different feature with its own state.
 

@@ -8,6 +8,10 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+### Added
+
+- **Store a title for a conversation.** `SessionStore` gains an optional `setTitle(sessionId, title)`, implemented by `InMemorySessionStore` and `MongoSessionStore`; a store implementing only the original members still satisfies the interface. Call `setTitle` to write a consumer-authored label; `listFor` answers it in every row that holds one, with no option to ask. On MongoDB the title is read from the same projection `listFor` already fetches — no second query. A title lives in the same document as the conversation and is erased with it by every existing erasure method.
+
 ## [0.11.0] - 2026-10-23
 
 **Upgrading from 0.10.x.** Nothing breaks, but one default changes what a client sees: the engine now refuses an authenticated user's sixth message in a burst, and more than twenty a minute, with `TOO_MANY_REQUESTS` and a `retryAfterMs`. Set `transport.rateLimit: false` if your gateway already limits, or raise the numbers. Everything else is additive: `onFailover`, `countFor`, and the optional `retryAfterMs` field on the error frame.

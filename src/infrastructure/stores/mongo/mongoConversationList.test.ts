@@ -148,7 +148,7 @@ describe('the MongoDB store conversation list', () => {
         options: {
           sort: {updatedAt: -1, _id: -1},
           limit: 7,
-          projection: {_id: 1, createdAt: 1, updatedAt: 1, entryCount: 1},
+          projection: {_id: 1, createdAt: 1, updatedAt: 1, entryCount: 1, title: 1},
         },
       },
     ]);
@@ -162,8 +162,8 @@ describe('the MongoDB store conversation list', () => {
     await store.listFor('u1');
 
     expect(calls.map(call => call.options?.projection)).toEqual([
-      {_id: 1, createdAt: 1, updatedAt: 1, entryCount: 1, entries: {$slice: 1}},
-      {_id: 1, createdAt: 1, updatedAt: 1, entryCount: 1},
+      {_id: 1, createdAt: 1, updatedAt: 1, entryCount: 1, title: 1, entries: {$slice: 1}},
+      {_id: 1, createdAt: 1, updatedAt: 1, entryCount: 1, title: 1},
     ]);
   });
 
@@ -263,7 +263,7 @@ describe('the MongoDB store conversation list', () => {
     const [call] = calls;
 
     expect({projection: call?.options?.projection, labelled: 'preview' in row}).toEqual({
-      projection: {_id: 1, createdAt: 1, updatedAt: 1, entryCount: 1},
+      projection: {_id: 1, createdAt: 1, updatedAt: 1, entryCount: 1, title: 1},
       labelled: false,
     });
   });

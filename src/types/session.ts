@@ -66,6 +66,8 @@ export interface ChatSession {
   createdAt?: string;
   /** What `auth.ws` returned for the newest open socket: connection-scoped, never persisted, and re-derived on every upgrade. */
   user?: AuthenticatedUser;
+  /** A label the consumer wrote about this conversation; stored by `setTitle`, never derived. */
+  title?: string;
 }
 
 export interface AuthenticatedUser {
