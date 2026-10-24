@@ -19,6 +19,7 @@
 - [x] Implement `redactEntry` transformation logic in `entryMutations.ts` for ToolEntry and AssistantEntry.
 - [x] Add error checking in `entryMutations.ts` to ensure `redactEntry` preserves the entry `role`.
 - [x] Update documentation and examples (`docs/getting-started.md`) to reflect `SessionStore.delete` and retention policies.
+- [x] Add unit tests covering `commitStreamingEntries` (all branches) and `applyRedactionsForTurn` (via orchestrator), with spec citations.
 
 ## Out of scope
 

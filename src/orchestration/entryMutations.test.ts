@@ -1,5 +1,5 @@
-import {trimOldContent, applyRedaction} from './entryMutations.js';
-import type {ChatSession, ToolEntry} from '../types/session.js';
+import {trimOldContent, applyRedaction, commitStreamingEntries} from './entryMutations.js';
+import type {AssistantEntry, ChatSession, ThinkingEntry, ToolEntry} from '../types/session.js';
 
 describe('trimOldContent', () => {
   it('clears content of entries beyond the bound, keeping array length, roles and timestamps', () => {
@@ -54,5 +54,34 @@ describe('applyRedaction', () => {
     };
 
     expect(() => applyRedaction(session, 0, e => ({...e, role: 'user'}))).toThrow();
+  });
+});
+
+describe('commitStreamingEntries', () => {
+  it('marks every streaming assistant or thinking entry as committed, and sets truncated on any still-streaming entry', () => {
+    const open: AssistantEntry = {role: 'assistant', content: 'partial', timestamp: 't', isStreaming: true};
+    const committed: AssistantEntry = {role: 'assistant', content: 'done', timestamp: 't', isStreaming: false};
+    const thinking: ThinkingEntry = {role: 'thinking', content: 'a thought', isStreaming: true};
+    const session: ChatSession = {
+      sessionId: 's',
+      userId: 'u',
+      entries: [committed, open, thinking, {role: 'user', content: 'hello', timestamp: 't'}],
+    };
+
+    commitStreamingEntries(session);
+
+    expect({
+      committedTruncated: committed.truncated,
+      openStreaming: open.isStreaming,
+      openTruncated: open.truncated,
+      thinkingStreaming: thinking.isStreaming,
+      thinkingTruncated: thinking.truncated,
+    }).toEqual({
+      committedTruncated: undefined,
+      openStreaming: false,
+      openTruncated: true,
+      thinkingStreaming: false,
+      thinkingTruncated: true,
+    });
   });
 });

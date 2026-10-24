@@ -909,4 +909,24 @@ describe('ChatOrchestrator history policy', () => {
     await orchestrator.processMessage(session);
     expect(session.entries.map(e => e.content)).toEqual(['', '', '', 'old a2', 'hello']);
   });
+
+  it('applies the redactEntry transform to entries appended during a tool round', async () => {
+    const entry: SessionEntry = {role: 'assistant', content: 'tool output', timestamp: SENT_AT, isStreaming: false};
+    const session = createSession('ask');
+    const orchestrator = createChatOrchestrator(
+      scriptedProvider([[TOOL_CALL, STOP_FOR_TOOL], [STOP_DONE]]),
+      promptBuilder,
+      registryReturning({result: 'done', clientMessages: [{type: 'entry_upsert', index: 0, entry}]}),
+      {
+        history: {
+          redactEntry: (e: SessionEntry): {role: SessionEntry['role']} =>
+            e.role === 'assistant' ? {...e, content: 'redacted'} : e,
+        },
+      },
+    );
+
+    await orchestrator.processMessage(session);
+
+    expect(session.entries.find(e => e.role === 'assistant')?.content).toBe('redacted');
+  });
 });
