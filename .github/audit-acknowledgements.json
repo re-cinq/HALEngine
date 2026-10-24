@@ -1,0 +1,9 @@
+[
+  {
+    "advisory": "GHSA-27r3-jxmh-p828",
+    "package": "body-parser",
+    "why": "body-parser is a transitive dependency reached through an undisclosed path; the DoS vector requires a compressed request body with trailing bytes, which the HAL Engine WS transport does not expose directly. No fix is available at this time without a breaking upstream change.",
+    "expires": "2027-01-01",
+    "acknowledged_by": "re-cinq/HALEngine"
+  }
+]

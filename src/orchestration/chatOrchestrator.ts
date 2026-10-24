@@ -1,4 +1,4 @@
-import type {ChatSession} from '../types/session.js';
+import type {ChatSession, SessionEntry} from '../types/session.js';
 import type {ToolRegistry, ToolContext, ToolResponse} from './tools/registry.js';
 import {promptInstructionsOf} from './tools/registry.js';
 import type {
@@ -24,7 +24,7 @@ import {
   extractStopReason,
   extractUsage,
 } from './orchestratorHelpers.js';
-import {appendEntry, commitStreamingEntries} from './entryMutations.js';
+import {appendEntry, commitStreamingEntries, trimOldContent, applyRedaction} from './entryMutations.js';
 import {log} from '../shared/logger.js';
 
 const DEFAULT_MAX_TOOL_ROUNDS = 5;
@@ -65,6 +65,11 @@ export interface ChatOrchestrator {
   processMessageStream(session: ChatSession, options?: {signal?: AbortSignal}): AsyncGenerator<MessageChunk>;
 }
 
+export interface HistoryPolicy {
+  maxContentEntries?: number;
+  redactEntry?: (entry: SessionEntry) => {role: SessionEntry['role']};
+}
+
 export interface ChatOrchestratorOptions {
   maxToolRounds?: number;
   /** How long one tool call may take before it is abandoned and answered with a timeout result; default 30000, and 0 waits forever (specs/hal-engine-tool-budget/spec.md). */
@@ -73,12 +78,14 @@ export interface ChatOrchestratorOptions {
   promptBuilderOptions?: PromptBuilderOptions;
   hooks?: OrchestratorHooks;
   sessionStore?: SessionStore;
+  history?: HistoryPolicy;
 }
 
 interface ToolExecutionResult {
   clientMessages: OutgoingMessage[];
   suppressOutput: boolean;
 }
+
 export function createChatOrchestrator(
   provider: AIProvider,
   promptBuilder: PromptBuilder,
@@ -91,6 +98,7 @@ export function createChatOrchestrator(
   const promptBuilderOptions = options?.promptBuilderOptions;
   const hooks = options?.hooks;
   const sessionStore = options?.sessionStore;
+  const history = options?.history;
 
   return {
     async processMessage(session: ChatSession): Promise<string> {
@@ -98,6 +106,7 @@ export function createChatOrchestrator(
     },
 
     async *processMessageStream(session: ChatSession, options?: {signal?: AbortSignal}): AsyncGenerator<MessageChunk> {
+      const turnStart = session.entries.length;
       try {
         if (hooks?.beforeSession) await hooks.beforeSession(session);
 
@@ -177,6 +186,8 @@ export function createChatOrchestrator(
       } finally {
         // Before both: a provider that threw mid-stream leaves an entry open, and nothing should persist it that way.
         commitStreamingEntries(session);
+        if (history?.maxContentEntries !== undefined) trimOldContent(session, history.maxContentEntries);
+        if (history?.redactEntry) applyRedactionsForTurn(session, turnStart, history.redactEntry);
         try {
           if (hooks?.afterSession) await hooks.afterSession(session);
         } finally {
@@ -469,5 +480,17 @@ function serializedOrNull(value: unknown): string | null {
     return JSON.stringify(value) ?? null;
   } catch {
     return null;
+  }
+}
+
+function applyRedactionsForTurn(
+  session: ChatSession,
+  turnStart: number,
+  redact: (entry: SessionEntry) => {role: SessionEntry['role']}
+): void {
+  for (let i = turnStart; i < session.entries.length; i++) {
+    const entry = session.entries[i];
+    if (entry.role !== 'tool' && entry.role !== 'assistant') continue;
+    applyRedaction(session, i, redact);
   }
 }

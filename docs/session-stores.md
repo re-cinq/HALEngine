@@ -6,14 +6,14 @@ getting it wrong either destroys a customer's history or fails to honour their e
 
 ## Erases or evicts
 
-| Method | Cache | Durable storage |
-|---|---|---|
-| `delete(sessionId)` | evicts | **erases** — the consumer's erasure primitive; the engine never calls it |
-| `clear()` | evicts everything | untouched |
-| `evict(sessionId)` | evicts | **erases** — the engine's own call, for a session no client received |
-| `eraseConversation(sessionId)` | evicts | **erases that document, permanently** |
-| `eraseOlderThan(cutoff)` | evicts | **erases every document created before `cutoff`** |
-| `eraseAll()` | evicts everything | **erases every document** |
+| Method                         | Cache             | Durable storage                                                          |
+| ------------------------------ | ----------------- | ------------------------------------------------------------------------ |
+| `delete(sessionId)`            | evicts            | **erases** — the consumer's erasure primitive; the engine never calls it |
+| `clear()`                      | evicts everything | untouched                                                                |
+| `evict(sessionId)`             | evicts            | **erases** — the engine's own call, for a session no client received     |
+| `eraseConversation(sessionId)` | evicts            | **erases that document, permanently**                                    |
+| `eraseOlderThan(cutoff)`       | evicts            | **erases every document created before `cutoff`**                        |
+| `eraseAll()`                   | evicts everything | **erases every document**                                                |
 
 `delete` is the interface's own member and the engine never calls it, so `MongoSessionStore`
 implements it as a durable deletion — the same thing `eraseConversation` does, reachable by a
@@ -120,6 +120,7 @@ document that has the newest `updatedAt`, which each `save` moves forward, so cr
 where the collection lives; the store creates none itself:
 
 <!-- doc-block: none -- a mongo shell command run against the deployment, not code the package ships -->
+
 ```js
 db.hal_sessions.createIndex({userId: 1, updatedAt: -1, _id: -1});
 ```
@@ -196,10 +197,10 @@ should know that. A per-user count is personal data about that user, and never t
 the entries away, so a page of summaries never carries a conversation out of the database.
 
 **Create the three-key index from § Latest session.** `{userId: 1, updatedAt: -1}` cannot satisfy a
-two-key sort, so Mongo answers with a blocking sort over *every* conversation the user has and
+two-key sort, so Mongo answers with a blocking sort over _every_ conversation the user has and
 applies the limit after it: measured on 300 conversations, a 50-row page examined all 300 documents,
 where the three-key index made the same page an indexed sort examining exactly the 50 it returns. The
-index does not *cover* the query — `createdAt` and `entryCount` are not in it, so Mongo still fetches
+index does not _cover_ the query — `createdAt` and `entryCount` are not in it, so Mongo still fetches
 each row it answers with — and that is the point: with it, the work is the page; without it, the work
 is the history, so paging a long history that way is quadratic. It crawls rather than fails: the sort
 carries a limit, so Mongo bounds it to the page rather than materialising the history — measured, 400
@@ -213,12 +214,13 @@ all; under the old two-key index it examines every conversation the user has to 
 Either way the session itself is then read by `_id`, through the store's cache, which is one document
 and no sort.
 
-It answers a `limit` of `0` without querying at all, because MongoDB reads `limit: 0` as *no* limit
+It answers a `limit` of `0` without querying at all, because MongoDB reads `limit: 0` as _no_ limit
 and would otherwise hand back everything the filter matches. It counts a conversation from an
 `entryCount` field each `save` writes beside the entries. A document saved before 0.6 has no such
 field and lists as a conversation of no entries until you backfill it:
 
 <!-- doc-block: none -- a mongo shell command run against the deployment, not code the package ships -->
+
 ```js
 db.hal_sessions.updateMany({entryCount: {$exists: false}}, [{$set: {entryCount: {$size: '$entries'}}}]);
 ```
@@ -249,6 +251,52 @@ retention period, and a tombstone index of ids a store no longer holds is reject
 session is reported once and then forgotten. `InMemorySessionStore` implements it that way.
 `MongoSessionStore` does not implement it: its documents do not expire, and one that
 `eraseOlderThan` removed reads `unknown`.
+
+## Data retention statement
+
+This section names every personal-data category the engine holds, where it is held, what bounds it, and what the erasure path is. It is written for a deployer with a data-protection obligation.
+
+### Conversation entries
+
+**Held in:** `ChatSession.entries` — in memory for the session's life; persisted to durable storage by the session store after each turn.
+
+**Default retention:** When `transport.resume` is absent or disabled, `connectionHandler.ts` calls `store.evict(sessionId)` on socket close — the socket lifetime is the retention period by default, and no configuration is required to achieve it.
+
+**With resume enabled:** A conversation outlives its socket. The deployer owns the retention bound. Set `InMemorySessionStore.maxAgeMs` for a memory-eviction limit (not a data-retention policy), or call `MongoSessionStore.eraseOlderThan(cutoff)` on a schedule.
+
+**Content bound:** `history.maxContentEntries` on `HalEngineConfig` clears the content of older entries in place, never removing array elements. No content bound is configured by default.
+
+**Erasure:** `SessionStore.delete(sessionId)` is the consumer's erasure primitive — the method to call for a GDPR Article 17 request. The engine never calls it on its own. Implementations must erase from durable storage, not only from cache.
+
+### Tool inputs
+
+**Held in:** `ToolEntry.toolInput` inside `ChatSession.entries` alongside the conversation.
+
+**Bounds:** `history.redactEntry` on `HalEngineConfig` rewrites a `ToolEntry` before it is stored; a policy returning `{...entry, toolInput: {}}` leaves no arguments in the stored session. No redaction is configured by default.
+
+**Erasure:** Same path as conversation entries — `SessionStore.delete(sessionId)`.
+
+### Session credentials (`authHeaders`)
+
+**Held in:** `ChatSession.authHeaders` — in memory only, for the socket's life. A bearer token stored beside a conversation outlives the request it was issued for; implementations must not write `authHeaders` to durable storage. `MongoSessionStore` enforces this by stripping credential keys at every depth before writing.
+
+**Retention period:** Request lifetime. No configuration needed; the field is never written to disk.
+
+### Connection-scoped user claims (`session.user`)
+
+**Held in:** `ChatSession.user` — in memory only for the socket's life. Never persisted by either shipped store.
+
+**Retention period:** Socket lifetime. No configuration needed.
+
+### Session metadata (`sessionId`, `userId`, `createdAt`)
+
+**Held in:** The session store, alongside conversation entries.
+
+**Erasure:** `SessionStore.delete(sessionId)` removes the session and its metadata together.
+
+### REST chat routes
+
+The REST chat routes (`createChatRoutes`) keep a router-local map separate from the injected session store. They are documented as demo-only; a production deployment that must honour erasure requests must not rely on those routes as its conversation store.
 
 ## Driver versions
 

@@ -889,3 +889,63 @@ describe('ChatOrchestrator tool loop gating, observed from outside', () => {
     expect(await gatedTurn([TOOL_CALL])).toEqual({ran: [], types: ['tool_use']});
   });
 });
+
+describe('ChatOrchestrator history policy', () => {
+  it('trims session entries to the configured maxContentEntries bound after a turn completes', async () => {
+    const session: ChatSession = {
+      sessionId: 's1',
+      userId: 'u1',
+      entries: [
+        {role: 'user', content: 'old q1', timestamp: SENT_AT},
+        {role: 'assistant', content: 'old a1', timestamp: SENT_AT, isStreaming: false},
+        {role: 'user', content: 'old q2', timestamp: SENT_AT},
+        {role: 'assistant', content: 'old a2', timestamp: SENT_AT, isStreaming: false},
+        {role: 'user', content: 'hello', timestamp: SENT_AT},
+      ],
+    };
+    const orchestrator = createChatOrchestrator(createMockProvider('response'), promptBuilder, undefined, {
+      history: {maxContentEntries: 2},
+    });
+    await orchestrator.processMessage(session);
+    expect(session.entries.map(e => e.content)).toEqual(['', '', '', 'old a2', 'hello']);
+  });
+
+  function makeToolRoundSetup(upsertEntry: SessionEntry, redact: (e: SessionEntry) => SessionEntry) {
+    const session = createSession('ask');
+    const orchestrator = createChatOrchestrator(
+      scriptedProvider([[TOOL_CALL, STOP_FOR_TOOL], [STOP_DONE]]),
+      promptBuilder,
+      registryReturning({result: 'done', clientMessages: [{type: 'entry_upsert', index: 0, entry: upsertEntry}]}),
+      {history: {redactEntry: redact}}
+    );
+    return {session, orchestrator};
+  }
+
+  it('applies the redactEntry transform to entries appended during a tool round', async () => {
+    const entry: SessionEntry = {role: 'assistant', content: 'tool output', timestamp: SENT_AT, isStreaming: false};
+    const {session, orchestrator} = makeToolRoundSetup(entry, (e: SessionEntry): SessionEntry =>
+      e.role === 'assistant' ? {...e, content: 'redacted'} : e
+    );
+
+    await orchestrator.processMessage(session);
+
+    const assistantEntry = session.entries.find(e => e.role === 'assistant');
+    expect(assistantEntry?.content).toBe('redacted');
+  });
+
+  it('redactEntry does not transform a user entry added during a tool round', async () => {
+    const userEntry: SessionEntry = {role: 'user', content: 'injected question', timestamp: SENT_AT};
+    const redactedRoles: string[] = [];
+    const {session, orchestrator} = makeToolRoundSetup(userEntry, (e: SessionEntry): SessionEntry => {
+      redactedRoles.push(e.role);
+      return e;
+    });
+
+    await orchestrator.processMessage(session);
+
+    expect({
+      userRedacted: redactedRoles.includes('user'),
+      userEntryPreserved: session.entries.some(e => e.role === 'user' && e.content === 'injected question'),
+    }).toEqual({userRedacted: false, userEntryPreserved: true});
+  });
+});

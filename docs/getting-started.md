@@ -13,6 +13,7 @@ npm install @re-cinq/hal-engine
 The simplest possible setup requires two things: an AI provider configuration and a WebSocket authenticator.
 
 <!-- doc-block: example/minimal.ts#minimal -->
+
 ```typescript
 import {createHalEngine, credentialFromSubprotocol} from '@re-cinq/hal-engine';
 
@@ -50,6 +51,7 @@ This starts a server with:
 Tools let the AI fetch data or perform actions. Register them on the engine's `toolRegistry`:
 
 <!-- doc-block: example/with-tools.ts#with-tools -->
+
 ```typescript
 import {createHalEngine, credentialFromSubprotocol, ToolRegistry} from '@re-cinq/hal-engine';
 import type {ToolDefinition} from '@re-cinq/hal-engine';
@@ -89,7 +91,8 @@ const engine = createHalEngine({
   },
   tools: toolRegistry,
   auth: {
-    ws: async req => verifyToken(req.headers.authorization ?? credentialFromSubprotocol(req.headers['sec-websocket-protocol'])),
+    ws: async req =>
+      verifyToken(req.headers.authorization ?? credentialFromSubprotocol(req.headers['sec-websocket-protocol'])),
   },
 });
 ```
@@ -99,6 +102,7 @@ const engine = createHalEngine({
 Here is every option available on `HalEngineConfig`:
 
 <!-- doc-block: example/full-config.ts#full-config -->
+
 ```typescript
 import process from 'node:process';
 import {createHalEngine, InMemorySessionStore, ToolRegistry, log} from '@re-cinq/hal-engine';
@@ -239,6 +243,7 @@ The WebSocket protocol is documented in [websocket-protocol.md](../specs/hal-eng
 The demo chat routes are not part of this flow. A `POST /chats` id is not a WebSocket session id -- the socket mints its own and ignores whatever follows `/ws` in the path -- so there is no create-then-connect handshake to perform. Rejoining a session after a reconnect is a query parameter, not a path segment; see [Session Resume](#session-resume).
 
 <!-- doc-block: none -- illustrates assembling the parts by hand, which no single declaration or example region carries -->
+
 ```typescript
 // 1. Connect. Offer the `hal.v1` marker (exported as HAL_WS_SUBPROTOCOL) beside the token; the server answers
 // the marker, so the token never appears in the response. The server mints the session id and sends it back
@@ -308,9 +313,17 @@ An answer still streaming when the client reconnects, because its turn is runnin
 Resume gets a client back into one conversation. It does not tell it which conversations the user has, which is a second disclosure and a second switch: `transport: {history: {enabled: true}}`, off by default like `resume`. With it on, a client sends `{"type": "list_conversations"}` and is answered with one `conversation_list` frame carrying the user's conversations, newest activity first:
 
 ```json
-{"type": "conversation_list", "conversations": [
-  {"sessionId": "0f9c…", "createdAt": "2026-10-06T08:12:04.001Z", "updatedAt": "2026-10-06T09:30:22.517Z", "entryCount": 12}
-]}
+{
+  "type": "conversation_list",
+  "conversations": [
+    {
+      "sessionId": "0f9c…",
+      "createdAt": "2026-10-06T08:12:04.001Z",
+      "updatedAt": "2026-10-06T09:30:22.517Z",
+      "entryCount": 12
+    }
+  ]
+}
 ```
 
 The frame names no user and has no field for one: the engine lists the conversations of the user your `WsAuthenticator` returned for that connection, so a client cannot ask for anybody else's. The conversation the connection is itself in is listed like any other, so a fresh connect sees a row with `entryCount: 0` among the user's older ones. A summary carries no message content — see [session stores](session-stores.md#listing-a-users-conversations) for the shape and for what the store does to answer it.
@@ -320,7 +333,13 @@ The frame names no user and has no field for one: the engine lists the conversat
 **Labelling the rows.** A row of an id and two timestamps makes a user pick their history by date arithmetic, so `transport: {history: {enabled: true, preview: true}}` adds the conversation's opening question to each row:
 
 ```json
-{"sessionId": "0f9c…", "createdAt": "2026-10-06T08:12:04.001Z", "updatedAt": "2026-10-06T09:30:22.517Z", "entryCount": 12, "preview": "How do I cancel my subscription?"}
+{
+  "sessionId": "0f9c…",
+  "createdAt": "2026-10-06T08:12:04.001Z",
+  "updatedAt": "2026-10-06T09:30:22.517Z",
+  "entryCount": 12,
+  "preview": "How do I cancel my subscription?"
+}
 ```
 
 It is trimmed, has its internal whitespace collapsed, and is cut to 120 code points with no ellipsis — mark a cut however you like, remembering that the row carries no cut flag: 120 code points means it was almost certainly cut, but a cut label can come back slightly shorter where the cut stranded a space, so treat the bound as a hint rather than a signal. A cut counts code points, so it never splits a surrogate pair, though it can still land inside a longer grapheme cluster. This is the deployer's switch and not the client's: a client cannot ask for a preview, and with `preview` off no row carries the key. Only the user's own first message is ever read, never anything the model wrote, so a list cannot show text a tool suppressed; a conversation that opens with no user message carries no label. If a `beforeUserInput` hook of yours rewrites the user's message, the label shows the rewritten text, because the hook's return value is written back to that entry. The engine generates no titles — that is a provider call per conversation, and your decision rather than ours — and it has nowhere to keep one you generate yourself yet, which re-cinq/HALEngine#155 tracks. Do not use `beforeUserInput` as a stand-in: it overwrites the user's own words in the stored conversation.
@@ -340,6 +359,7 @@ The package ships two stores. `InMemorySessionStore` is the default and keeps co
 conversation outlives the process:
 
 <!-- doc-block: none -- a consumer's wiring, not code this repository ships -->
+
 ```typescript
 import {createHalEngine, createMongoSessionStore} from '@re-cinq/hal-engine';
 
@@ -357,6 +377,7 @@ To write your own, implement `SessionStore`. Every member may be synchronous or 
 and `save` is the write signal the engine calls once per processed user message:
 
 <!-- doc-block: none -- a Redis store a reader writes, not code this repository ships -->
+
 ```typescript
 import type {Awaitable, ChatSession, SessionCreateOptions, SessionStore} from '@re-cinq/hal-engine';
 
@@ -379,9 +400,11 @@ class RedisSessionStore implements SessionStore {
     return stored ? (JSON.parse(stored) as ChatSession) : undefined;
   }
 
-  // Eviction, not erasure: the engine never calls this, and a durable delete here would destroy history.
-  delete(sessionId: string): boolean {
-    return this.cache.delete(sessionId);
+  // The consumer's erasure primitive: removes the conversation from cache and Redis; the engine never calls it.
+  async delete(sessionId: string): Promise<boolean> {
+    this.cache.delete(sessionId);
+    const count = await this.redis.del(`session:${sessionId}`);
+    return count > 0;
   }
 
   count(): Awaitable<number> {
@@ -392,15 +415,10 @@ class RedisSessionStore implements SessionStore {
     this.cache.clear();
   }
 
-  // Never persist authHeaders: the credentials outlive the request they were issued for.
+  // Never persist authHeaders: a bearer token outlives the request it was issued for.
   async save(session: ChatSession): Promise<void> {
     const {authHeaders: _ignored, ...storable} = session;
     await this.redis.set(`session:${session.sessionId}`, JSON.stringify(storable));
-  }
-
-  async eraseConversation(sessionId: string): Promise<void> {
-    this.cache.delete(sessionId);
-    await this.redis.del(`session:${sessionId}`);
   }
 }
 ```
