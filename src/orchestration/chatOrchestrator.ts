@@ -190,7 +190,8 @@ export function createChatOrchestrator(
           const redact = history.redactEntry;
           for (let i = turnStart; i < session.entries.length; i++) {
             const entry = session.entries[i];
-            if (entry.role === 'tool' || entry.role === 'assistant') applyRedaction(session, i, redact);
+            if (entry.role !== 'tool' && entry.role !== 'assistant') continue;
+            applyRedaction(session, i, redact);
           }
         }
         try {

@@ -7,9 +7,9 @@
 ## Done when these pass
 
 - [ ] **maxContentEntries bound** — retains the exact array length but clears the content of older entries (leaving their roles, indices and timestamps intact), preserving their slots for subsequent delta merges
-      `src/orchestration/historyPolicy.acceptance.test.ts`
+      `src/historyPolicy.acceptance.test.ts`
 - [ ] **redactEntry transform** — rewrites ToolEntry and AssistantEntry contents when they are finalized, leaves UserEntry untouched, and is rejected if it alters an entry's role
-      `src/orchestration/historyPolicy.acceptance.test.ts`
+      `src/historyPolicy.acceptance.test.ts`
 
 ## Facets
 

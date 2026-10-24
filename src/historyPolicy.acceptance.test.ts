@@ -1,10 +1,37 @@
 /* eslint-disable re-lint/max-expects -- acceptance tests assert across an end-to-end scenario; one toEqual cannot capture all the invariants */
-import {createHalEngine} from '../config.js';
-import {InMemorySessionStore} from '../infrastructure/stores/inMemorySessionStore.js';
-import type {ChatSession, SessionEntry, ToolEntry} from '../types/session.js';
-import {ToolRegistry} from './tools/registry.js';
-import {appendDelta} from './entryMutations.js';
-import {connectClient, askOnOpen, stopEngines} from '../transport/wsTestSupport.js';
+import {createHalEngine} from './config.js';
+import {InMemorySessionStore} from './infrastructure/stores/inMemorySessionStore.js';
+import type {ChatSession, SessionEntry, ToolEntry} from './types/session.js';
+import {ToolRegistry} from './orchestration/tools/registry.js';
+import {appendDelta} from './orchestration/entryMutations.js';
+import {connectClient, askOnOpen, stopEngines} from './transport/wsTestSupport.js';
+
+function sharedConfig(store: InMemorySessionStore) {
+  return {
+    prompt: {identity: 'test'},
+    auth: {ws: async () => ({id: 'u1'}), forwardHeaders: []},
+    session: store,
+    transport: {resume: {enabled: true}},
+  };
+}
+
+async function runSession(
+  engine: ReturnType<typeof createHalEngine>,
+  store: InMemorySessionStore,
+  sessionId: string
+): Promise<ChatSession> {
+  await engine.start(0);
+  const server = engine.server;
+  // @ts-expect-error - address() returns AddressInfo when listening
+  const {port} = server.address();
+  const url = `ws://127.0.0.1:${port}/hal/ws/c1?sessionId=${sessionId}`;
+  const {client, finished} = askOnOpen(url, {until: 'stream_end', token: 't'});
+  await finished;
+  client.close();
+  const session = (await store.get(sessionId)) as ChatSession;
+  expect(session).toBeDefined();
+  return session;
+}
 
 describe('HalEngineConfig history policy', () => {
   afterEach(async () => {
@@ -30,24 +57,11 @@ describe('HalEngineConfig history policy', () => {
         type: 'mock',
         turns: [{text: 'final response'}],
       },
-      prompt: {identity: 'test'},
-      auth: {ws: async () => ({id: 'u1'}), forwardHeaders: []},
-      session: store,
-      transport: {resume: {enabled: true}},
+      ...sharedConfig(store),
       history: {maxContentEntries: 10},
     });
 
-    await engine.start(0);
-    // @ts-ignore - address is an AddressInfo object
-    const port = engine.server.address().port;
-    const url = `ws://127.0.0.1:${port}/hal/ws/c1?sessionId=${urlId}`;
-
-    const {client, finished} = askOnOpen(url, {until: 'stream_end', token: 't'});
-    await finished;
-    client.close();
-
-    const finalSession = (await store.get(urlId)) as ChatSession;
-    expect(finalSession).toBeDefined();
+    const finalSession = await runSession(engine, store, urlId);
 
     // 24 dummy + 1 user + 1 assistant = 26 entries
     expect(finalSession.entries.length).toBe(26);
@@ -88,11 +102,8 @@ describe('HalEngineConfig history policy', () => {
           {text: 'assistant response with secret'},
         ],
       },
-      prompt: {identity: 'test'},
-      auth: {ws: async () => ({id: 'u1'}), forwardHeaders: []},
-      session: store,
+      ...sharedConfig(store),
       tools: registry,
-      transport: {resume: {enabled: true}},
       history: {
         redactEntry: (entry: SessionEntry) => {
           if (entry.role === 'tool') return {...entry, toolInput: {}};
@@ -106,17 +117,7 @@ describe('HalEngineConfig history policy', () => {
     const urlId = 's2';
     store.create(urlId, 'u1');
 
-    await engine.start(0);
-    // @ts-ignore
-    const port = engine.server.address().port;
-    const url = `ws://127.0.0.1:${port}/hal/ws/c1?sessionId=${urlId}`;
-
-    const {client, finished} = askOnOpen(url, {until: 'stream_end', token: 't'});
-    await finished;
-    client.close();
-
-    const finalSession = (await store.get(urlId)) as ChatSession;
-    expect(finalSession).toBeDefined();
+    const finalSession = await runSession(engine, store, urlId);
 
     const userEntry = finalSession.entries.find(e => e.role === 'user');
     expect(userEntry!.content).toBe('hello'); // askOnOpen sends 'hello'
@@ -134,10 +135,7 @@ describe('HalEngineConfig history policy', () => {
     // Rejection logic for invalid role
     const engineBad = createHalEngine({
       provider: {type: 'mock', turns: [{text: 'response'}]},
-      prompt: {identity: 'test'},
-      auth: {ws: async () => ({id: 'u1'}), forwardHeaders: []},
-      session: store,
-      transport: {resume: {enabled: true}},
+      ...sharedConfig(store),
       history: {
         redactEntry: (entry: SessionEntry) => ({...entry, role: 'user'}),
       },
@@ -147,11 +145,11 @@ describe('HalEngineConfig history policy', () => {
     store.create(urlIdBad, 'u1');
 
     await engineBad.start(0);
-    // @ts-ignore
-    const portBad = engineBad.server.address().port;
+    const serverBad = engineBad.server;
+    // @ts-expect-error - address() returns AddressInfo when listening
+    const {port: portBad} = serverBad.address();
     const urlBad = `ws://127.0.0.1:${portBad}/hal/ws/c1?sessionId=${urlIdBad}`;
 
-    // Expecting the socket to close with an error because the role corruption throws
     const events: string[] = [];
     const badClient = connectClient(urlBad, 't');
     await new Promise<void>(resolve => {
@@ -165,7 +163,6 @@ describe('HalEngineConfig history policy', () => {
       badClient.on('close', () => resolve());
     });
 
-    // The pipeline throws on invalid role, so it should send an error frame
     expect(events).toContain('error');
   });
 });

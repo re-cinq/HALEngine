@@ -34,9 +34,9 @@ export function trimOldContent(session: ChatSession, maxContentEntries: number):
     const entry = session.entries[i];
     if (entry.role === 'tool') {
       entry.toolInput = {};
-    } else {
-      entry.content = '';
+      continue;
     }
+    entry.content = '';
   }
 }
 
