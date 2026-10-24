@@ -9,8 +9,11 @@ describe('InMemorySessionStore setTitle', () => {
 
     store.setTitle('s1', 'Cancel subscription');
 
-    expect(session.title).toBe('Cancel subscription');
-    expect(store.listFor('u1')[0]?.title).toBe('Cancel subscription');
+    const summary = store.listFor('u1')[0];
+    expect({sessionTitle: session.title, summaryTitle: summary?.title}).toMatchObject({
+      sessionTitle: 'Cancel subscription',
+      summaryTitle: 'Cancel subscription',
+    });
   });
 
   it('is a no-op for a session id the store does not hold, without throwing', () => {
