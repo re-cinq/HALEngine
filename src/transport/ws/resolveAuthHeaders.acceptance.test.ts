@@ -139,7 +139,7 @@ describe('Tool Credentials', () => {
     expect('CredentialExpiredError' in halEngine).toBe(true);
   });
 
-  it('produces error CREDENTIAL_EXPIRED and stream_end over a real connection ([validated by specs/hal-engine-websocket-protocol/spec.md#L379] [validated by specs/hal-engine-architecture/spec.md#L547])', async () => {
+  it('produces error CREDENTIAL_EXPIRED and stream_end over a real connection ([validated by specs/hal-engine-websocket-protocol/spec.md#L379] [validated by specs/hal-engine-architecture/spec.md#L549])', async () => {
     const CredentialExpiredError = halEngine.CredentialExpiredError;
     const thrownError = new CredentialExpiredError('the credential expired msg');
     const hook = jest

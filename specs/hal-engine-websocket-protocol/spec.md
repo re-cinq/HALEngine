@@ -352,18 +352,18 @@ Reports an error condition. The connection remains open unless the error is fata
 
 Defined error codes:
 
-| Code                  | Kind               | Description                                                                                | HTTP |
-| --------------------- | ------------------ | ------------------------------------------------------------------------------------------ | ---- |
-| `INVALID_MESSAGE`     | client             | Message failed validation (missing fields, empty content, length)                          | —    |
-| `INVALID_FORMAT`      | client             | Message body is not valid JSON                                                             | —    |
-| `TOO_MANY_REQUESTS`   | client             | The user sent more than `transport.rateLimit` allows; `retryAfterMs` says how long to wait | 429  |
-| `RATE_LIMITED`        | provider condition | The AI provider is rate limiting                                                           | 429  |
-| `SERVICE_UNAVAILABLE` | provider condition | The AI provider is unavailable                                                             | 503  |
-| `TIMEOUT`             | provider condition | The AI provider timed out                                                                  | 504  |
-| `UPSTREAM_ERROR`      | provider condition | Any other AI provider failure                                                              | 502  |
-| `SERVER_ERROR`        | engine defect      | An unexpected error that is no AI provider error                                           | 500  |
-| `UNSUPPORTED`         | feature            | The server does not serve this frame: the feature is off, or its store cannot              | —    |
-| `CREDENTIAL_EXPIRED`  | credential         | The `resolveAuthHeaders` hook threw `CredentialExpiredError`: the credential cannot be renewed for this round; a `stream_end` follows | — |
+| Code                  | Kind               | Description                                                                                                                           | HTTP |
+| --------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| `INVALID_MESSAGE`     | client             | Message failed validation (missing fields, empty content, length)                                                                     | —    |
+| `INVALID_FORMAT`      | client             | Message body is not valid JSON                                                                                                        | —    |
+| `TOO_MANY_REQUESTS`   | client             | The user sent more than `transport.rateLimit` allows; `retryAfterMs` says how long to wait                                            | 429  |
+| `RATE_LIMITED`        | provider condition | The AI provider is rate limiting                                                                                                      | 429  |
+| `SERVICE_UNAVAILABLE` | provider condition | The AI provider is unavailable                                                                                                        | 503  |
+| `TIMEOUT`             | provider condition | The AI provider timed out                                                                                                             | 504  |
+| `UPSTREAM_ERROR`      | provider condition | Any other AI provider failure                                                                                                         | 502  |
+| `SERVER_ERROR`        | engine defect      | An unexpected error that is no AI provider error                                                                                      | 500  |
+| `UNSUPPORTED`         | feature            | The server does not serve this frame: the feature is off, or its store cannot                                                         | —    |
+| `CREDENTIAL_EXPIRED`  | credential         | The `resolveAuthHeaders` hook threw `CredentialExpiredError`: the credential cannot be renewed for this round; a `stream_end` follows | —    |
 
 A client MUST treat a `code` it does not recognise as `SERVER_ERROR`.
 
@@ -376,7 +376,7 @@ Semantics:
 - A `TOO_MANY_REQUESTS` frame carries `retryAfterMs`, is the only frame that does, and ends its turn with `stream_end` like any other, since a refused `user_message` is still a turn under the single-terminal-frame contract ([validated by: refuses the sixth user_message of user u1 in a row with one error TOO_MANY_REQUESTS carrying retryAfterMs 3000 and a stream_end, running no sixth turn](../../src/transport/ws/rateLimitWs.test.ts#L57)).
 - `RATE_LIMITED` is unchanged, and `SERVER_ERROR` is sent only for a throw that is no `AIError` ([validated by: still sends RATE_LIMITED byte-identically, and SERVER_ERROR only for a throw that is no AIError](../../src/transport/ws/messageHandler.test.ts#L944)).
 - No frame carries an `AIError`'s own message, which can echo request content; it reaches only the log ([validated by: keeps the AIError message secret-detail-77 out of every frame it sends](../../src/transport/ws/messageHandler.test.ts#L956)).
-- When `resolveAuthHeaders` throws `CredentialExpiredError`, the engine sends `CREDENTIAL_EXPIRED` then `stream_end`, ending the client's busy state cleanly with a code it can act on; the message is the consumer-authored string passed to the constructor, so the engine never authors credential error copy. ([validated by: produces error CREDENTIAL_EXPIRED and stream_end over a real connection](../../src/transport/ws/resolveAuthHeaders.acceptance.test.ts#L136))
+- When `resolveAuthHeaders` throws `CredentialExpiredError`, the engine sends `CREDENTIAL_EXPIRED` then `stream_end`, ending the client's busy state cleanly with a code it can act on; the message is the consumer-authored string passed to the constructor, so the engine never authors credential error copy. ([validated by: produces error CREDENTIAL_EXPIRED and stream_end over a real connection](../../src/transport/ws/resolveAuthHeaders.acceptance.test.ts#L142))
 - A provider failure ends its turn with the same terminal frames as an engine defect: the `error` frame, then `stream_end` ([validated by: ends a SERVICE_UNAVAILABLE turn with the same terminal frames as an engine defect](../../src/transport/ws/messageHandler.test.ts#L970)).
 - The protocol takes additive changes only: every client frame that shipped before the conversation list is still read by the validator as the frame it was, field for field, and the same literals are typed as `IncomingMessage`, so a required field added to one of them fails `npm run typecheck` ([validated by: are each still read by the validator as the frame they were, field for field](../../src/transport/ws/protocolAdditive.test.ts#L28)).
 - Every server frame that shipped before it still goes out through the sender as the frame it was, `connected` with none of the optional fields resume added to it included ([validated by: are each still sent on the wire as the frame they were, field for field](../../src/transport/ws/protocolAdditive.test.ts#L34)).
