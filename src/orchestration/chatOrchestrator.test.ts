@@ -926,6 +926,7 @@ describe('ChatOrchestrator history policy', () => {
 
     await orchestrator.processMessage(session);
 
-    expect(session.entries.find(e => e.role === 'assistant')?.content).toBe('redacted');
+    const assistantEntry = session.entries.find(e => e.role === 'assistant');
+    expect(assistantEntry?.content).toBe('redacted');
   });
 });
