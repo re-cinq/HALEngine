@@ -98,7 +98,7 @@ describe('Tool Credentials', () => {
     expect(ctx?.authHeaders).toEqual({authorization: 'Bearer original'});
   });
 
-  it('keeps session.authHeaders equal to the value captured at upgrade after a hook returns a different value ([validated by specs/hal-engine-architecture/spec.md#L544])', async () => {
+  it('keeps session.authHeaders equal to the value captured at upgrade after a hook returns a different value ([validated by specs/hal-engine-architecture/spec.md#L546])', async () => {
     const hook = jest
       .fn<(session: ChatSession) => Promise<ChatSession['authHeaders']>>()
       .mockResolvedValue({authorization: 'Bearer new'});
