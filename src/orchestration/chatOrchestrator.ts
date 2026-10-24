@@ -85,17 +85,6 @@ interface ToolExecutionResult {
   clientMessages: OutgoingMessage[];
   suppressOutput: boolean;
 }
-function applyRedactionsForTurn(
-  session: ChatSession,
-  turnStart: number,
-  redact: (entry: SessionEntry) => {role: SessionEntry['role']}
-): void {
-  for (let i = turnStart; i < session.entries.length; i++) {
-    const entry = session.entries[i];
-    if (entry.role !== 'tool' && entry.role !== 'assistant') continue;
-    applyRedaction(session, i, redact);
-  }
-}
 
 export function createChatOrchestrator(
   provider: AIProvider,
@@ -491,5 +480,17 @@ function serializedOrNull(value: unknown): string | null {
     return JSON.stringify(value) ?? null;
   } catch {
     return null;
+  }
+}
+
+function applyRedactionsForTurn(
+  session: ChatSession,
+  turnStart: number,
+  redact: (entry: SessionEntry) => {role: SessionEntry['role']}
+): void {
+  for (let i = turnStart; i < session.entries.length; i++) {
+    const entry = session.entries[i];
+    if (entry.role !== 'tool' && entry.role !== 'assistant') continue;
+    applyRedaction(session, i, redact);
   }
 }

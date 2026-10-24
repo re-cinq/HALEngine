@@ -19,7 +19,7 @@ The history policy bounds what `HalEngineConfig` stores in server-side conversat
 ## Entry redaction
 
 - `redactEntry(entry) => entry` runs on a `ToolEntry` before it is stored and on an `AssistantEntry` when `commitEntry` fires, leaving `UserEntry` untouched — `beforeUserInput` already owns the user-message path, and a second mechanism for the same content is duplication; a transform that returns a different `role` than it was given is rejected rather than stored
-  ([validated by: redactEntry runs on ToolEntry and AssistantEntry, but not UserEntry, and rejects invalid role](../../src/historyPolicy.acceptance.test.ts#L84)).
+  ([validated by: redactEntry runs on ToolEntry and AssistantEntry, but not UserEntry, and rejects invalid role](../../src/historyPolicy.acceptance.test.ts#L86)).
 - `applyRedaction(session, index, redactEntry)` writes the transform's result back to `session.entries[index]`, leaving the stored entry identical to the redacted object the transform returned
   ([validated by: stores the result of the redact transform in the session entry](../../src/orchestration/entryMutations.test.ts#L37)).
 - When `applyRedaction` receives a transform that returns a different `role` than the original entry carried, it throws before writing to the session, so no partially-redacted entry is ever stored
