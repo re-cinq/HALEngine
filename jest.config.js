@@ -26,6 +26,7 @@ export default {
     '!src/shared/logCaptureTestSupport.ts',
     '!src/transport/wsTestSupport.ts',
     '!src/transport/ws/recordingSocketTestSupport.ts',
+    '!src/transport/ws/wsToolTestSupport.ts',
     '!src/transport/whoamiTestSupport.ts',
     '!src/providers/maskTestSupport.ts',
     '!src/testing/writeFrames.ts',
