@@ -139,10 +139,10 @@ Sends a user chat message. `user_message` is the only accepted type: the server 
 }
 ```
 
-| Field     | Type   | Required | Description                            |
-| --------- | ------ | -------- | -------------------------------------- |
-| `type`    | string | Yes      | `"user_message"`                       |
-| `content` | string | Yes      | Message text                           |
+| Field     | Type   | Required | Description      |
+| --------- | ------ | -------- | ---------------- |
+| `type`    | string | Yes      | `"user_message"` |
+| `content` | string | Yes      | Message text     |
 
 Any other field is ignored, and the validator forwards only the fields the frame defines. In particular the server does not read a `chatId` from this message: the connection already determines the session ([validated by: drops any field the frame does not define, rather than forwarding it](../../src/transport/ws/validation.test.ts#L18)).
 
@@ -172,10 +172,10 @@ Application-level heartbeat. The server MUST respond with a `pong` message echoi
 }
 ```
 
-| Field       | Type   | Required | Description                       |
-| ----------- | ------ | -------- | --------------------------------- |
-| `type`      | string | Yes      | `"ping"`                          |
-| `timestamp` | number | Yes      | Client timestamp in milliseconds  |
+| Field       | Type   | Required | Description                      |
+| ----------- | ------ | -------- | -------------------------------- |
+| `type`      | string | Yes      | `"ping"`                         |
+| `timestamp` | number | Yes      | Client timestamp in milliseconds |
 
 ### 4.3 list_conversations
 
@@ -190,10 +190,10 @@ Asks for the connecting user's own conversations. Served only when the server en
 }
 ```
 
-| Field    | Type   | Required | Description                                                              |
-| -------- | ------ | -------- | ------------------------------------------------------------------------ |
-| `type`   | string | Yes      | `"list_conversations"`                                                   |
-| `limit`  | number | No       | Whole number 1-200; how many rows to answer with, 50 when absent         |
+| Field    | Type   | Required | Description                                                                |
+| -------- | ------ | -------- | -------------------------------------------------------------------------- |
+| `type`   | string | Yes      | `"list_conversations"`                                                     |
+| `limit`  | number | No       | Whole number 1-200; how many rows to answer with, 50 when absent           |
 | `before` | object | No       | The last row received, `{updatedAt, sessionId}`; answers the ones after it |
 
 The frame carries no user id and there is no field for one: the server lists the conversations of
@@ -207,14 +207,14 @@ only carrying both fields, since a cursor on a time alone skips a conversation w
 
 Sent exactly once after a successful handshake. See Section 2.3.
 
-| Field            | Type     | Description                                            |
-| ---------------- | -------- | ------------------------------------------------------ |
-| `type`           | string   | `"connected"`                                          |
-| `sessionId`      | string   | UUID v4 identifying the session                        |
-| `message`        | string   | Consumer-controlled text, `transport.connectMessage`, defaulting to `Connected to HAL Engine`; a client SHOULD display it before the first user message |
-| `examplePrompts` | string[] | Example queries derived from registered tool definitions |
-| `resumed`        | boolean  | Present only with resume enabled: whether the requested conversation was rejoined |
-| `entryCount`     | number   | Present only when `resumed` is `true`: how many stored entries the replay covers, skipped ones included |
+| Field            | Type     | Description                                                                                                                                                                                                                                                                                         |
+| ---------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`           | string   | `"connected"`                                                                                                                                                                                                                                                                                       |
+| `sessionId`      | string   | UUID v4 identifying the session                                                                                                                                                                                                                                                                     |
+| `message`        | string   | Consumer-controlled text, `transport.connectMessage`, defaulting to `Connected to HAL Engine`; a client SHOULD display it before the first user message                                                                                                                                             |
+| `examplePrompts` | string[] | Example queries derived from registered tool definitions                                                                                                                                                                                                                                            |
+| `resumed`        | boolean  | Present only with resume enabled: whether the requested conversation was rejoined                                                                                                                                                                                                                   |
+| `entryCount`     | number   | Present only when `resumed` is `true`: how many stored entries the replay covers, skipped ones included                                                                                                                                                                                             |
 | `resumeFailure`  | string   | Present only when the connection named an id and `resumed` is `false`: `expired` when the caller's own session aged out, `unknown` otherwise. `unknown` deliberately covers both an id the server never issued and one that is not the caller's, so the answer reveals nothing about ids that exist |
 
 ### 5.2 entry_upsert
@@ -281,10 +281,10 @@ Marks an entry as finalized. No further `entry_delta` messages will be sent for 
 }
 ```
 
-| Field   | Type   | Description                   |
-| ------- | ------ | ----------------------------- |
-| `type`  | string | `"entry_commit"`              |
-| `index` | number | Index of the entry to commit  |
+| Field   | Type   | Description                  |
+| ------- | ------ | ---------------------------- |
+| `type`  | string | `"entry_commit"`             |
+| `index` | number | Index of the entry to commit |
 
 Semantics:
 
@@ -302,10 +302,10 @@ Notifies the client that a session entry was created on the server and will neve
 }
 ```
 
-| Field   | Type   | Description                                    |
-| ------- | ------ | ---------------------------------------------- |
-| `type`  | string | `"entry_skip"`                                 |
-| `index` | number | Server-side index of the skipped entry         |
+| Field   | Type   | Description                            |
+| ------- | ------ | -------------------------------------- |
+| `type`  | string | `"entry_skip"`                         |
+| `index` | number | Server-side index of the skipped entry |
 
 Suppression can begin before or after the server has started sending a reply, and the two cases produce different messages. This distinction is the whole of the protocol here:
 
@@ -341,28 +341,28 @@ Reports an error condition. The connection remains open unless the error is fata
 }
 ```
 
-| Field     | Type   | Description              |
-| --------- | ------ | ------------------------ |
-| `type`    | string | `"error"`                |
-| `code`    | string | Machine-readable code    |
-| `message` | string | Human-readable detail    |
+| Field          | Type   | Description                                                                                                    |
+| -------------- | ------ | -------------------------------------------------------------------------------------------------------------- |
+| `type`         | string | `"error"`                                                                                                      |
+| `code`         | string | Machine-readable code                                                                                          |
+| `message`      | string | Human-readable detail                                                                                          |
 | `retryAfterMs` | number | Only with `TOO_MANY_REQUESTS`: milliseconds to wait before sending again (specs/hal-engine-rate-limit/spec.md) |
 
 `ErrorCodes` defines nine error codes ([validated by: defines nine ErrorCodes: TOO_MANY_REQUESTS and the three provider conditions added beside the five the protocol first had](../../src/transport/errorMapping.test.ts#L54)).
 
 Defined error codes:
 
-| Code                  | Kind               | Description                                                                   | HTTP |
-| --------------------- | ------------------ | ----------------------------------------------------------------------------- | ---- |
-| `INVALID_MESSAGE`     | client             | Message failed validation (missing fields, empty content, length)             | —    |
-| `INVALID_FORMAT`      | client             | Message body is not valid JSON                                                | —    |
+| Code                  | Kind               | Description                                                                                | HTTP |
+| --------------------- | ------------------ | ------------------------------------------------------------------------------------------ | ---- |
+| `INVALID_MESSAGE`     | client             | Message failed validation (missing fields, empty content, length)                          | —    |
+| `INVALID_FORMAT`      | client             | Message body is not valid JSON                                                             | —    |
 | `TOO_MANY_REQUESTS`   | client             | The user sent more than `transport.rateLimit` allows; `retryAfterMs` says how long to wait | 429  |
-| `RATE_LIMITED`        | provider condition | The AI provider is rate limiting                                              | 429  |
-| `SERVICE_UNAVAILABLE` | provider condition | The AI provider is unavailable                                                | 503  |
-| `TIMEOUT`             | provider condition | The AI provider timed out                                                     | 504  |
-| `UPSTREAM_ERROR`      | provider condition | Any other AI provider failure                                                 | 502  |
-| `SERVER_ERROR`        | engine defect      | An unexpected error that is no AI provider error                              | 500  |
-| `UNSUPPORTED`         | feature            | The server does not serve this frame: the feature is off, or its store cannot | —    |
+| `RATE_LIMITED`        | provider condition | The AI provider is rate limiting                                                           | 429  |
+| `SERVICE_UNAVAILABLE` | provider condition | The AI provider is unavailable                                                             | 503  |
+| `TIMEOUT`             | provider condition | The AI provider timed out                                                                  | 504  |
+| `UPSTREAM_ERROR`      | provider condition | Any other AI provider failure                                                              | 502  |
+| `SERVER_ERROR`        | engine defect      | An unexpected error that is no AI provider error                                           | 500  |
+| `UNSUPPORTED`         | feature            | The server does not serve this frame: the feature is off, or its store cannot              | —    |
 
 A client MUST treat a `code` it does not recognise as `SERVER_ERROR`.
 
@@ -410,9 +410,9 @@ Signals that the server has finished processing a user message. Sent exactly onc
 }
 ```
 
-| Field  | Type   | Description      |
-| ------ | ------ | ---------------- |
-| `type` | string | `"stream_end"`   |
+| Field  | Type   | Description    |
+| ------ | ------ | -------------- |
+| `type` | string | `"stream_end"` |
 
 Semantics:
 
@@ -442,15 +442,15 @@ first. Sent only when asked for, never pushed.
 }
 ```
 
-| Field                      | Type   | Description                                                   |
-| -------------------------- | ------ | ------------------------------------------------------------- |
-| `type`                     | string | `"conversation_list"`                                         |
-| `conversations`            | array  | Summaries, most recent activity first                         |
-| `conversations[].sessionId`| string | The id to reconnect with to rejoin that conversation          |
-| `conversations[].createdAt`| string | ISO 8601 timestamp                                            |
-| `conversations[].updatedAt`| string | ISO 8601 timestamp of the conversation's most recent activity |
-| `conversations[].entryCount`| number| How many entries the conversation holds                       |
-| `conversations[].preview`  | string | Optional. The conversation's opening question, at most 120 code points, present only where the server enables previews |
+| Field                        | Type   | Description                                                                                                            |
+| ---------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `type`                       | string | `"conversation_list"`                                                                                                  |
+| `conversations`              | array  | Summaries, most recent activity first                                                                                  |
+| `conversations[].sessionId`  | string | The id to reconnect with to rejoin that conversation                                                                   |
+| `conversations[].createdAt`  | string | ISO 8601 timestamp                                                                                                     |
+| `conversations[].updatedAt`  | string | ISO 8601 timestamp of the conversation's most recent activity                                                          |
+| `conversations[].entryCount` | number | How many entries the conversation holds                                                                                |
+| `conversations[].preview`    | string | Optional. The conversation's opening question, at most 120 code points, present only where the server enables previews |
 
 Apart from `preview`, a summary carries no message content, and the two times are ISO strings rather than `Date`s, which
 is what survives the wire ([validated by: answers the user's conversations newest first, with both times as ISO strings](../../src/transport/conversationList.test.ts#L100)). A row's `sessionId` is what a client reconnects with to rejoin that
@@ -477,11 +477,11 @@ A message authored by the user.
 }
 ```
 
-| Field       | Type   | Description                  |
-| ----------- | ------ | ---------------------------- |
-| `role`      | string | `"user"`                     |
-| `content`   | string | The message text             |
-| `timestamp` | string | ISO 8601 datetime            |
+| Field       | Type   | Description       |
+| ----------- | ------ | ----------------- |
+| `role`      | string | `"user"`          |
+| `content`   | string | The message text  |
+| `timestamp` | string | ISO 8601 datetime |
 
 ### 6.2 AssistantEntry
 
@@ -497,14 +497,14 @@ A response generated by the AI model. Content is delivered incrementally via `en
 }
 ```
 
-| Field         | Type    | Description                                 |
-| ------------- | ------- | ------------------------------------------- |
-| `role`        | string  | `"assistant"`                               |
-| `content`     | string  | Markdown text, built incrementally by deltas |
-| `timestamp`   | string  | ISO 8601 datetime                           |
-| `isStreaming`  | boolean | `true` while deltas are arriving            |
-| `truncated`    | `true`  | Optional. Present only when the run ended before this entry finished, or when a resume replays it still streaming; see § 7.1 and § 11.3 |
-| `persona`      | string  | Optional; consumer-defined identifier of the persona that produced this entry |
+| Field         | Type    | Description                                                                                                                             |
+| ------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `role`        | string  | `"assistant"`                                                                                                                           |
+| `content`     | string  | Markdown text, built incrementally by deltas                                                                                            |
+| `timestamp`   | string  | ISO 8601 datetime                                                                                                                       |
+| `isStreaming` | boolean | `true` while deltas are arriving                                                                                                        |
+| `truncated`   | `true`  | Optional. Present only when the run ended before this entry finished, or when a resume replays it still streaming; see § 7.1 and § 11.3 |
+| `persona`     | string  | Optional; consumer-defined identifier of the persona that produced this entry                                                           |
 
 The `persona` field is how a consumer attributes each answer to the persona that gave it:
 
@@ -533,12 +533,12 @@ Internal AI reasoning, separated from user-facing content by the server's thinki
 }
 ```
 
-| Field        | Type    | Description                               |
-| ------------ | ------- | ----------------------------------------- |
-| `role`       | string  | `"thinking"`                              |
-| `content`    | string  | Reasoning text, built incrementally       |
-| `timestamp`  | string  | ISO 8601 datetime. Optional: absent on a thinking entry stored before 0.9 |
-| `isStreaming` | boolean | `true` while deltas are arriving          |
+| Field         | Type    | Description                                                                                                                             |
+| ------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `role`        | string  | `"thinking"`                                                                                                                            |
+| `content`     | string  | Reasoning text, built incrementally                                                                                                     |
+| `timestamp`   | string  | ISO 8601 datetime. Optional: absent on a thinking entry stored before 0.9                                                               |
+| `isStreaming` | boolean | `true` while deltas are arriving                                                                                                        |
 | `truncated`   | `true`  | Optional. Present only when the run ended before this entry finished, or when a resume replays it still streaming; see § 7.1 and § 11.3 |
 
 - A thinking entry carries a `timestamp`, ISO 8601, like the other entries, and it round-trips through `Date` ([validated by: stamps a thinking entry with an ISO 8601 timestamp that round-trips through Date](../../src/orchestration/entryFactories.test.ts#L8)).
@@ -560,12 +560,12 @@ A tool invocation requested by the AI model. The server executes the tool and fe
 }
 ```
 
-| Field       | Type   | Description                               |
-| ----------- | ------ | ----------------------------------------- |
-| `role`      | string | `"tool"`                                  |
-| `toolName`  | string | Registered tool name                      |
-| `toolInput` | object | Key-value pairs passed to the tool        |
-| `timestamp` | string | ISO 8601 datetime                         |
+| Field       | Type   | Description                        |
+| ----------- | ------ | ---------------------------------- |
+| `role`      | string | `"tool"`                           |
+| `toolName`  | string | Registered tool name               |
+| `toolInput` | object | Key-value pairs passed to the tool |
+| `timestamp` | string | ISO 8601 datetime                  |
 
 Note: ToolEntry does not participate in the delta/commit cycle. It is delivered as a single `entry_upsert`.
 
@@ -792,11 +792,11 @@ Once the `101` is sent the socket speaks WebSocket, so the server never writes a
 
 ## 13. Source Files
 
-| Concern                  | File                                              |
-| ------------------------ | ------------------------------------------------- |
-| Shared entry types       | `src/types/session.ts`                            |
-| Backend message types    | `src/types/messages.ts`                           |
-| Backend sender helpers   | `src/transport/ws/sender.ts`                      |
-| Message validation       | `src/transport/ws/validation.ts`                  |
-| Message handling         | `src/transport/ws/messageHandler.ts`              |
-| Connection handler       | `src/transport/ws/connectionHandler.ts`           |
+| Concern                | File                                    |
+| ---------------------- | --------------------------------------- |
+| Shared entry types     | `src/types/session.ts`                  |
+| Backend message types  | `src/types/messages.ts`                 |
+| Backend sender helpers | `src/transport/ws/sender.ts`            |
+| Message validation     | `src/transport/ws/validation.ts`        |
+| Message handling       | `src/transport/ws/messageHandler.ts`    |
+| Connection handler     | `src/transport/ws/connectionHandler.ts` |

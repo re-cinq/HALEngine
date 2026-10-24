@@ -78,6 +78,7 @@ hal-engine is designed around pluggable interfaces that let consumers customize 
 Controls where session data is stored: the default `InMemorySessionStore` keeps sessions in a `Map` ([validated by: creates and retrieves a session](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L13)). Implement this interface to persist sessions in Redis, a database, or any other backing store. The store is generic -- pass your own session type extending `BaseSession`.
 
 <!-- doc-block: src/types/sessionStore.ts#SessionStore -->
+
 ```typescript
 interface SessionStore<T extends BaseSession = ChatSession> {
   create(sessionId: string, userId: string | number, options?: SessionCreateOptions): Awaitable<T>;
@@ -121,11 +122,13 @@ interface SessionStore<T extends BaseSession = ChatSession> {
 Authenticates WebSocket connections during the handshake. It receives the whole Node `IncomingMessage`, not a pre-extracted token, so it can read credentials from wherever the client put them. Return the authenticated user to accept the connection, or `null` to reject it with HTTP 401 -- a rejection is a returned `null`, not a thrown error.
 
 <!-- doc-block: src/types/auth.ts#WsAuthenticator -->
+
 ```typescript
 type WsAuthenticator = (req: IncomingMessage) => Promise<AuthenticatedUser | null>;
 ```
 
 <!-- doc-block: src/types/session.ts#AuthenticatedUser -->
+
 ```typescript
 interface AuthenticatedUser {
   id: string | number;
@@ -151,6 +154,7 @@ The connection handler takes `id` as the session's `userId` and picks up `worksp
 The core abstraction for AI model communication. Each provider (Bedrock, Vertex, OpenAI, Anthropic) implements this interface. The orchestrator depends only on this interface, never on provider-specific code.
 
 <!-- doc-block: src/types/ai.ts#AIProvider -->
+
 ```typescript
 interface AIProvider {
   sendMessage(params: SendMessageParams): AsyncGenerator<MessageChunk>;
@@ -166,6 +170,7 @@ interface AIProvider {
 Loads prompt templates by name with variable substitution ([validated by: returns prompt template when found](../../src/infrastructure/stores/inMemoryPromptStore.test.ts#L11), [resolve](../../src/infrastructure/stores/inMemoryPromptStore.test.ts#L28)). Use this for database-driven prompts instead of static `PromptBuilder` configuration.
 
 <!-- doc-block: src/types/promptStore.ts#PromptStore -->
+
 ```typescript
 interface PromptStore {
   findByName(name: string): Promise<PromptTemplate | undefined>;
@@ -185,6 +190,7 @@ interface PromptStore {
 Tracks AI call metadata such as token counts and model version, for cost monitoring ([validated by: records and retrieves usage by session](../../src/infrastructure/stores/inMemoryUsageStore.test.ts#L24)).
 
 <!-- doc-block: src/types/usageStore.ts#UsageStore -->
+
 ```typescript
 interface UsageStore {
   record(entry: UsageRecord): Promise<void>;
@@ -200,6 +206,7 @@ interface UsageStore {
 Configures static system prompt assembly. Provide your AI identity, domain context, response guidelines, and custom instructions. The `PromptBuilder` combines these with tool instructions from the registry into the final system prompt.
 
 <!-- doc-block: src/infrastructure/builders/promptBuilder.ts#PromptBuilderConfig -->
+
 ```typescript
 interface PromptBuilderConfig {
   identity: string;
@@ -216,6 +223,7 @@ interface PromptBuilderConfig {
 Async lifecycle hooks for customizing the orchestration flow. Every hook is optional and receives the current session, and an orchestrator built with none behaves exactly as one built with an empty set ([validated by: works without any hooks configured](../../src/orchestration/chatOrchestrator.test.ts#L447)). Install hooks through `HalEngineConfig.orchestrator.hooks`; `createHalEngine` forwards the set to the orchestrator ([validated by: forwards an orchestrator hook, so one passed through the config actually fires](../../src/config.test.ts#L27)).
 
 <!-- doc-block: src/orchestration/chatOrchestrator.ts#OrchestratorHooks -->
+
 ```typescript
 interface OrchestratorHooks {
   beforeSession?: (session: ChatSession) => Promise<void>;
@@ -496,14 +504,14 @@ When a connection drops, the frontend reconnects automatically:
 
 **The default error handler.** `createApp` always registers one last, after any `errorHandler` a consumer supplies, so nothing a route throws reaches Express's HTML page, and no response body carries an error's message or stack ([validated by: answers a truncated JSON body to POST /hal/chats with 400 {"error":"Bad Request"} as JSON, with no HTML or stack](../../src/transport/httpErrorHandler.test.ts#L48), [validated by: answers a synchronous throw and a rejected promise of boom-secret-42 with 500 {"error":"Internal Server Error"}, keeping the message out of the response](../../src/transport/httpErrorHandler.test.ts#L62)). It answers by the first row that applies:
 
-| The error                                                            | Status      | Body `error`                                      |
-| -------------------------------------------------------------------- | ----------- | ------------------------------------------------- |
-| carries `status` or `statusCode` in 400–599 with a standard phrase   | that status | Node's phrase from `http.STATUS_CODES`, e.g. `Not Found` |
-| an `AIError` coded `RATE_LIMITED`                                    | 429         | `AI service is busy, please try again`            |
-| an `AIError` coded `SERVICE_UNAVAILABLE`                             | 503         | `AI service temporarily unavailable`              |
-| an `AIError` coded `TIMEOUT`                                         | 504         | `AI service timed out`                            |
-| an `AIError` with any other code                                     | 502         | `AI service temporarily unavailable`              |
-| anything else                                                        | 500         | `Internal Server Error`                           |
+| The error                                                          | Status      | Body `error`                                             |
+| ------------------------------------------------------------------ | ----------- | -------------------------------------------------------- |
+| carries `status` or `statusCode` in 400–599 with a standard phrase | that status | Node's phrase from `http.STATUS_CODES`, e.g. `Not Found` |
+| an `AIError` coded `RATE_LIMITED`                                  | 429         | `AI service is busy, please try again`                   |
+| an `AIError` coded `SERVICE_UNAVAILABLE`                           | 503         | `AI service temporarily unavailable`                     |
+| an `AIError` coded `TIMEOUT`                                       | 504         | `AI service timed out`                                   |
+| an `AIError` with any other code                                   | 502         | `AI service temporarily unavailable`                     |
+| anything else                                                      | 500         | `Internal Server Error`                                  |
 
 - The four `AIError` rows are read from `src/transport/errorMapping.ts`, the one table the WebSocket error frame also reads, so a status here and a `code` there never disagree ([validated by: is the only non-test file under src/transport that maps a provider error code](../../src/transport/errorMapping.test.ts#L68)).
 - An explicit status wins over the `AIError` code, and one outside 400–599 or without a standard phrase, such as 302, 700 or 499, answers 500 ([validated by: honours status 404 and statusCode 403 with their standard phrases, and answers status 302, 700 and 499 with 500](../../src/transport/httpErrorHandler.test.ts#L100), [validated by: answers AIError codes RATE_LIMITED 429, SERVICE_UNAVAILABLE 503, TIMEOUT 504 and every other code 502, each with its fixed sentence](../../src/transport/httpErrorHandler.test.ts#L76)).
@@ -575,7 +583,7 @@ Each retry re-sends the entire conversation — every message verbatim — to th
 - `HalEngineConfig.onFailover` reaches the chain through `composeProvider`, labelled with each provider's config `type`, so a deployment records a durable failover entry from its own configuration ([validated by: hands config.onFailover to the chain, labelled by each provider's config type: failed mock, next vertex on SERVICE_UNAVAILABLE](../../src/config.test.ts#L425)).
 - A sustained Vertex `503`, retried to exhaustion, reaches the fallback: the Vertex classifier maps it to a retryable `SERVICE_UNAVAILABLE`, so the retry tier retries it and the fallback tier routes it ([validated by: routes a sustained Vertex 503, retried to exhaustion, to the fallback provider, whose answer the caller receives](../../src/vertexToolLoop.test.ts#L112)).
 
-**GDPR, transfer volume.** A failover re-sends the entire conversation, every message verbatim, to a *second* vendor. A deployer configuring `fallbackProviders` has a second processor to account for, possibly in a different jurisdiction from the first, and the conversation is sent in full to each vendor tried.
+**GDPR, transfer volume.** A failover re-sends the entire conversation, every message verbatim, to a _second_ vendor. A deployer configuring `fallbackProviders` has a second processor to account for, possibly in a different jurisdiction from the first, and the conversation is sent in full to each vendor tried.
 
 Fail-over is stateless and per request. It keeps no memory of a vendor being down, so every turn tries the primary first; a circuit breaker that skips a known-down vendor is a different feature with its own state.
 
