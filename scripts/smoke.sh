@@ -101,7 +101,7 @@ run_variant() {
   echo "smoke [$name]: installing tarball + typescript${peers:+ + optional peers} into $work"
   # ${arr[@]+...} because bash 3.2 - which is /bin/bash on macOS - calls an empty array unbound
   # under `set -u`, and AGENTS.md tells a maintainer to run this locally before a release.
-  npm install --silent --save "./$tarball" "typescript@$typescript_version" ${peers[@]+"${peers[@]}"} >/dev/null
+  npm install --save "./$tarball" "typescript@$typescript_version" ${peers[@]+"${peers[@]}"}
 
   for peer in @google/genai @aws-sdk/client-bedrock-runtime; do
     if [ -d "node_modules/$peer" ] && [ "$name" = "bare" ]; then
