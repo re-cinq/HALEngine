@@ -2,6 +2,8 @@ export interface UserEntry {
   role: 'user';
   content: string;
   timestamp: string;
+  /** Present only when the entry policy emptied this entry, by its content bound or a failed redaction; its slot, role and timestamp remain. */
+  cleared?: true;
 }
 
 export interface AssistantEntry {
@@ -9,6 +11,8 @@ export interface AssistantEntry {
   content: string;
   timestamp: string;
   isStreaming: boolean;
+  /** Present only when the entry policy emptied this entry, by its content bound or a failed redaction; its slot, role and timestamp remain. */
+  cleared?: true;
   /** Present only when the run ended before this entry finished (a provider failure or a round with no stop), or on a resume's replay of an entry still streaming. */
   truncated?: true;
   /** Present only when a tool suppressed the response and the client was shown this entry blank or not at all. */
@@ -23,6 +27,8 @@ export interface ThinkingEntry {
   /** When the entry was created, ISO 8601: `2026-01-15T14:30:00.000Z` or `2026-01-15T15:30:00.000+01:00` alike, so parse before comparing; absent on an entry stored before 0.9. */
   timestamp?: string;
   isStreaming: boolean;
+  /** Present only when the entry policy emptied this entry, by its content bound or a failed redaction; its slot, role and timestamp remain. */
+  cleared?: true;
   /** Present only when the run ended before this entry finished (a provider failure or a round with no stop), or on a resume's replay of an entry still streaming. */
   truncated?: true;
   /** Present only when a tool suppressed the response and the client was shown this entry blank or not at all. */
@@ -34,6 +40,8 @@ export interface ToolEntry {
   toolName: string;
   toolInput: Record<string, unknown>;
   timestamp: string;
+  /** Present only when the entry policy emptied this entry, by its content bound or a failed redaction; its slot, role and timestamp remain. */
+  cleared?: true;
 }
 
 export type SessionEntry = UserEntry | AssistantEntry | ThinkingEntry | ToolEntry;

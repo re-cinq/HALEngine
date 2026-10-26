@@ -8,6 +8,14 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+### Added
+
+- **Bound and redact what a stored conversation keeps.** `orchestrator.entries` takes two optional settings. `maxContentEntries: n` empties every entry older than the newest `n` when a turn ends; a cleared entry keeps its index, role and timestamp and is marked `cleared: true`, so no index a client holds shifts. `redactEntry(entry)` rewrites every entry but a user's once its content is final: tool calls and entries tools return before they are stored, answers and thoughts when they are committed. A redaction that throws or changes the role stores the entry cleared and logs its role. Cleared entries are left out of what the provider is sent and replayed to a resumed client as `entry_skip`, and a client is sent a tool entry as it was stored. Unset, nothing changes. `docs/session-stores.md` now lists every category of data the engine holds, where, what bounds it and what erases it.
+
+### Fixed
+
+- **A turn's history no longer starts with a tool result whose call was cut away.** When `contextConfig.maxMessages` cut between a tool call and its result, the provider was sent a leading tool result with no call before it, which vendors refuse. The window now starts at the first user message of text.
+
 ## [0.11.0] - 2026-10-23
 
 **Upgrading from 0.10.x.** Nothing breaks, but one default changes what a client sees: the engine now refuses an authenticated user's sixth message in a burst, and more than twenty a minute, with `TOO_MANY_REQUESTS` and a `retryAfterMs`. Set `transport.rateLimit: false` if your gateway already limits, or raise the numbers. Everything else is additive: `onFailover`, `countFor`, and the optional `retryAfterMs` field on the error frame.

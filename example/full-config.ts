@@ -108,6 +108,12 @@ const engine = createHalEngine({
       maxMessages: 50,
       maxContentLength: 4000,
     },
+    entries: {
+      // When a turn ends, the newest 40 entries keep their content; older ones keep only their slot, role and timestamp.
+      maxContentEntries: 40,
+      // Runs on every entry but a user's once its content is final; here no tool argument reaches the store.
+      redactEntry: entry => (entry.role === 'tool' ? {...entry, toolInput: {}} : entry),
+    },
     toolTimeoutMs: 30_000, // Abandon a tool call after this long, answering the model with a timeout result (default 30000; 0 = no deadline)
     hooks,
   },
