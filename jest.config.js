@@ -60,7 +60,8 @@ export default {
     'src/infrastructure/stores/': {statements: 100, branches: 100, functions: 100, lines: 100},
     'src/providers/vertex/': {statements: 94.23, branches: 84.7, functions: 100, lines: 97.72},
     'src/providers/mock/': {statements: 100, branches: 81.25, functions: 100, lines: 100},
+    'src/transport/': {statements: 97.19, branches: 93.77, functions: 96.81, lines: 97.3},
     // Measured over the files no path floor above claims, which is what Jest holds `global` to.
-    global: {statements: 95.05, branches: 90.7, functions: 93.75, lines: 95.74},
+    global: {statements: 92.33, branches: 85.71, functions: 90.9, lines: 93.77},
   },
 };

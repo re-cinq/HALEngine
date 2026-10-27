@@ -148,8 +148,8 @@ Any other field is ignored, and the validator forwards only the fields the frame
 
 Constraints:
 
-- `content` MUST NOT be empty or whitespace-only after trimming.
-- `content` MUST NOT exceed 10,000 characters.
+- `content` MUST NOT be empty or whitespace-only after trimming ([validated by: refuses content of three spaces as empty](../../src/transport/ws/validation.test.ts#L82)).
+- `content` MUST NOT exceed 10,000 characters: 10,000 is accepted and 10,001 refused, the error naming the limit ([validated by: accepts content of exactly 10,000 characters and refuses 10,001, naming the limit](../../src/transport/ws/validation.test.ts#L72)).
 - Violation of these constraints results in an `error` response with code `INVALID_MESSAGE`.
 
 One at a time:
@@ -176,6 +176,8 @@ Application-level heartbeat. The server MUST respond with a `pong` message echoi
 | ----------- | ------ | -------- | --------------------------------- |
 | `type`      | string | Yes      | `"ping"`                          |
 | `timestamp` | number | Yes      | Client timestamp in milliseconds  |
+
+A `ping` whose `timestamp` is missing or is not a number is refused, its error naming the field, and a numeric `timestamp` is passed on unchanged for the `pong` to echo ([validated by: refuses a ping with no timestamp or a text one, and passes a numeric timestamp through unchanged](../../src/transport/ws/validation.test.ts#L92)).
 
 ### 4.3 list_conversations
 
@@ -381,6 +383,8 @@ Semantics:
 - A `list_conversations` the server does not serve is answered with `UNSUPPORTED`, whether because `transport.history` is off or because its store implements no `listFor`, and never with an empty list, which a client could not tell from a user who has no conversations ([validated by: refuses the frame when conversation history is not turned on](../../src/transport/conversationList.test.ts#L302), [validated by: refuses the frame when the store cannot list, rather than reporting no conversations](../../src/transport/conversationList.test.ts#L353)).
 - A store that fails while listing is answered `SERVER_ERROR` carrying none of the store's own words, and the server logs the session id, the user id and the error's type rather than its message, since a driver's message can hold a connection string and its password; the user id in that line is personal data, as it is in every log line the engine writes ([validated by: answers a failing store with a server error, keeps the socket open, and logs no word the store said](../../src/transport/conversationList.test.ts#L388)).
 - A message the server cannot parse into a known type is answered with `INVALID_MESSAGE`, and no message stream is started for it ([validated by: rejects an unparseable message and never starts a stream](../../src/transport/ws/messageHandler.test.ts#L72)).
+- Each frame's bytes are parsed as JSON as they arrive, and bytes that do not parse read as no frame at all, without throwing ([validated by: reads a JSON object from text or from bytes, and an unterminated brace as null, without throwing](../../src/transport/ws/helpers.test.ts#L63)).
+- A frame that is not JSON is answered with `INVALID_FORMAT` and the message `Invalid JSON`, and the connection stays open: the frame after it is handled as usual ([validated by: answers a frame that is not JSON with INVALID_FORMAT and Invalid JSON, and keeps the socket open for the next frame](../../src/transport/invalidFrame.test.ts#L16)).
 - A rate limit reported by the AI provider is surfaced as `RATE_LIMITED`, which tells the client the same request is worth retrying ([validated by: tells the client to retry when the provider is rate limited](../../src/transport/ws/messageHandler.test.ts#L372)).
 - Any other failure raised while processing a message that is no `AIError` is reported as `SERVER_ERROR` ([validated by: reports any other failure as a server error](../../src/transport/ws/messageHandler.test.ts#L381)).
 
@@ -779,6 +783,7 @@ Once the `101` is sent the socket speaks WebSocket, so the server never writes a
 - A failure while the session opens, such as a session store whose `create` throws, is answered first with an `error` frame and then the same `1011` close ([validated by: sends an error frame and closes with 1011, with no client error, through createHalEngine when the session store create throws synchronously](../../src/sessionSetupFailure.test.ts#L15)).
 - The failure is logged once at `error` under `ws` as `connection failed after the handshake`, with the error's message; the upgrade request's `authorization` and `cookie` values reach no log line ([validated by: logs the failure at error under ws and keeps the authorization and cookie values out of every log line](../../src/transport/upgradeFailure.test.ts#L64)).
 - Before the handshake completes, the server still answers in HTTP: a `wsAuth` that rejects gets `500 Internal Server Error` and one that resolves `null` gets `401 Unauthorized`, with no `101` and no connection opened ([validated by: answers a rejecting wsAuth with 500 and a null one with 401, with no 101 and no connection event](../../src/transport/upgradeFailure.test.ts#L85)).
+- Every answer the engine itself writes before the handshake, these two and its `400`s, is a status line and an empty header block alone, such as `HTTP/1.1 401 Unauthorized\r\n\r\n`, with no header and no body, so nothing from the request is echoed into it, and the socket is destroyed once it is written. A refusal `ws` writes for an upgrade it cannot parse is its own ([validated by: writes HTTP/1.1 401 Unauthorized and an empty header block, nothing else, then destroys the socket](../../src/transport/ws/helpers.test.ts#L73)).
 
 ## 12. Security Considerations
 
@@ -787,8 +792,9 @@ Once the `101` is sent the socket speaks WebSocket, so the server never writes a
 - No offered subprotocol value is written to the engine's own log at any level. Every place a credential exists during a connection - request headers, the socket's and the session's `authHeaders`, and the tool context - is listed in [the subprotocol marker spec](../hal-engine-subprotocol-marker/spec.md#where-a-credential-exists).
 - An upgrade whose `Authorization` header and subprotocol carry different credentials is refused with `400` before authentication, so the credential a `WsAuthenticator` validated is the one forwarded to the session and to every tool ([validated by: refuses Bearer attacker-token beside a victim-token subprotocol with 400 before wsAuth runs, and neither value reaches the response or a log line](../../src/transport/handshake.test.ts#L182)).
 - **NIS-2 (Art. 21), supply-chain security.** Before that rule, a tool calling a downstream API could receive a bearer token no authenticator had validated: the authenticator could check one carrier while the other's value was forwarded, defeating the per-user data boundary downstream ([validated by: refuses Bearer attacker-token beside a victim-token subprotocol with 400 before wsAuth runs, and neither value reaches the response or a log line](../../src/transport/handshake.test.ts#L182)).
-- Message content is validated at the server boundary. Content exceeding 10,000 characters is rejected.
-- The server validates all incoming messages against known types. Unrecognized types receive an `INVALID_MESSAGE` error.
+- Message content is validated at the server boundary. Content exceeding 10,000 characters is rejected ([validated by: accepts content of exactly 10,000 characters and refuses 10,001, naming the limit](../../src/transport/ws/validation.test.ts#L72)).
+- The server validates all incoming messages against known types. Unrecognized types receive an `INVALID_MESSAGE` error ([validated by: refuses a frame of type nope, naming the type](../../src/transport/ws/validation.test.ts#L88), [validated by: rejects an unparseable message and never starts a stream](../../src/transport/ws/messageHandler.test.ts#L72)).
+- **GDPR (Art. 5(1)(c)), data minimisation.** A turn's log lines record the length of the user's message as `contentLength`, never its text. At every level, `debug` included, no line carries the message, a tool's arguments or result, or the answer ([validated by: logs a 32-character question as contentLength 32 at debug level, and no line carries the question, a tool argument or result, or the answer](../../src/contentFreeLogs.test.ts#L59)).
 
 ## 13. Source Files
 

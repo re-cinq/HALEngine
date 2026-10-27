@@ -1,4 +1,5 @@
-import {newSessionRequested, sessionIdFromUpgrade} from './helpers.js';
+import {Duplex} from 'node:stream';
+import {newSessionRequested, parseWsData, rejectSocket, sessionIdFromUpgrade} from './helpers.js';
 
 const read = (url: string): string | undefined => sessionIdFromUpgrade(url, '/hal');
 
@@ -54,6 +55,36 @@ describe('newSessionRequested', () => {
       word: false,
       elsewhere: false,
       doubleSlash: false,
+    });
+  });
+});
+
+describe('parseWsData', () => {
+  it('reads a JSON object from text or from bytes, and an unterminated brace as null, without throwing', () => {
+    expect({
+      text: parseWsData('{"a":1}'),
+      bytes: parseWsData(Buffer.from('{"a":1}')),
+      unterminated: parseWsData('{'),
+    }).toEqual({text: {a: 1}, bytes: {a: 1}, unterminated: null});
+  });
+});
+
+describe('rejectSocket', () => {
+  it('writes HTTP/1.1 401 Unauthorized and an empty header block, nothing else, then destroys the socket', () => {
+    const written: string[] = [];
+    const socket = new Duplex({
+      read: () => undefined,
+      write: (chunk: Buffer, _encoding, done) => {
+        written.push(chunk.toString());
+        done();
+      },
+    });
+
+    rejectSocket(socket, '401 Unauthorized');
+
+    expect({written, destroyed: socket.destroyed}).toEqual({
+      written: ['HTTP/1.1 401 Unauthorized\r\n\r\n'],
+      destroyed: true,
     });
   });
 });

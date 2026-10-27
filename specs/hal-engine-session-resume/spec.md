@@ -9,10 +9,10 @@ A reconnect used to resume nothing: the server minted a fresh id on every connec
 
 ## Reading the requested id
 
-- The id is the `sessionId` query parameter of the upgrade request, never a path segment, and only 1–128 characters of `[A-Za-z0-9_-]` count: an empty value, a longer one and a path-traversal value read as no id at all ([validated by: reads abc-123 from the query and nothing from a bare path, a path segment, an empty, a 129-character or a traversal value](../../src/transport/ws/helpers.test.ts#L6)).
-- A 128-character id is the longest one read ([validated by: reads a 128-character id, the longest it accepts](../../src/transport/ws/helpers.test.ts#L24)).
-- An upgrade outside `{basePath}/ws` carries no id ([validated by: reads nothing from an upgrade outside the base path](../../src/transport/ws/helpers.test.ts#L30)).
-- Reading the id never throws: a target that is not a URL, such as `//`, or an empty one carries no id ([validated by: reads nothing, without throwing, from a target that is not a URL or is empty](../../src/transport/ws/helpers.test.ts#L34)).
+- The id is the `sessionId` query parameter of the upgrade request, never a path segment, and only 1–128 characters of `[A-Za-z0-9_-]` count: an empty value, a longer one and a path-traversal value read as no id at all ([validated by: reads abc-123 from the query and nothing from a bare path, a path segment, an empty, a 129-character or a traversal value](../../src/transport/ws/helpers.test.ts#L7)).
+- A 128-character id is the longest one read ([validated by: reads a 128-character id, the longest it accepts](../../src/transport/ws/helpers.test.ts#L25)).
+- An upgrade outside `{basePath}/ws` carries no id ([validated by: reads nothing from an upgrade outside the base path](../../src/transport/ws/helpers.test.ts#L31)).
+- Reading the id never throws: a target that is not a URL, such as `//`, or an empty one carries no id ([validated by: reads nothing, without throwing, from a target that is not a URL or is empty](../../src/transport/ws/helpers.test.ts#L35)).
 
 ## Opt-in
 
@@ -52,7 +52,7 @@ A reconnect used to resume nothing: the server minted a fresh id on every connec
 - A connect that names an id rejoins that session, whichever is latest ([validated by: with latest on, still rejoins the session a connect names rather than the latest one](../../src/transport/sessionResume.test.ts#L488)).
 - A session `latestFor` answers for another user is never rejoined, and a `latestFor` that throws or that the store does not implement starts a new session ([validated by: starts a new session when the store's latestFor answers another user's session, throws, or is absent](../../src/transport/sessionResume.test.ts#L500)).
 - Without `latest`, a connect that names no id starts a new session, as before ([validated by: with resume on but latest off, starts a new session for a connect that names none](../../src/transport/sessionResume.test.ts#L524)).
-- `?new=1` counts only when it is exactly `1`, and only on an upgrade inside `{basePath}/ws` ([validated by: reads exactly ?new=1 inside the base path as a request for a new session, and nothing else](../../src/transport/ws/helpers.test.ts#L40)).
+- `?new=1` counts only when it is exactly `1`, and only on an upgrade inside `{basePath}/ws` ([validated by: reads exactly ?new=1 inside the base path as a request for a new session, and nothing else](../../src/transport/ws/helpers.test.ts#L41)).
 - `InMemorySessionStore.latestFor` goes by a session's newest timed entry, so the conversation the user last wrote to beats one created later, and an entry with no time, such as a thought, counts for nothing ([validated by: returns the user's session with the newest entry, not the one created last, a thought counting for nothing](../../src/infrastructure/stores/inMemoryLatestSession.test.ts#L17)).
 - A session with no entries counts from its creation, and of two last active at the same moment the larger session id wins, the rule `listFor` orders by, so a resume rejoins the conversation at the head of the list ([validated by: falls back to creation time for sessions with no entries, the one created later winning](../../src/infrastructure/stores/inMemoryLatestSession.test.ts#L30), [validated by: breaks a tie between two sessions created in the same millisecond by the larger session id, zeta over alpha](../../src/infrastructure/stores/inMemoryLatestSession.test.ts#L39)).
 - It never returns a session that has aged out, nor one belonging to another user ([validated by: returns nothing for a user whose only session aged out, nor another user's live one](../../src/infrastructure/stores/inMemoryLatestSession.test.ts#L47)).
