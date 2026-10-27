@@ -15,6 +15,7 @@ package, not for somebody reading this repository's commit log.
 ### Added
 
 - **Bound and redact what a stored conversation keeps.** `orchestrator.entries` takes two optional settings. `maxContentEntries: n` empties every entry older than the newest `n` when a turn ends; a cleared entry keeps its index, role and timestamp and is marked `cleared: true`, so no index a client holds shifts. `redactEntry(entry)` rewrites every entry but a user's once its content is final: tool calls and entries tools return before they are stored, answers and thoughts when they are committed. A redaction that throws or changes the role stores the entry cleared and logs its role. Cleared entries are left out of what the provider is sent and replayed to a resumed client as `entry_skip`, and a client is sent a tool entry as it was stored. Unset, nothing changes. `docs/session-stores.md` now lists every category of data the engine holds, where, what bounds it and what erases it.
+- **Store a title for a conversation.** `SessionStore` gains an optional `setTitle(sessionId, title)`, implemented by `InMemorySessionStore` and `MongoSessionStore`; a store implementing only the original members still satisfies the interface. Call `setTitle` to write a consumer-authored label; `listFor` answers it in every row that holds one, with no option to ask. On MongoDB the title is read from the same projection `listFor` already fetches — no second query. A title lives in the same document as the conversation and is erased with it by every existing erasure method.
 
 ### Fixed
 

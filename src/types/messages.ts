@@ -44,6 +44,8 @@ export interface ConversationSummary {
   entryCount: number;
   /** The conversation's opening question, present only where the deployer turned previews on (specs/hal-engine-conversation-list/spec.md). */
   preview?: string;
+  /** A consumer-written title for the conversation, present only when the store holds one (specs/hal-engine-conversation-list/spec.md). */
+  title?: string;
 }
 
 /** The answer to `list_conversations`: the connecting user's own conversations, newest activity first. */

@@ -14,6 +14,8 @@ export interface MongoSessionDocument {
   workspaceId?: string | number;
   createdAt: Date;
   updatedAt: Date;
+  /** A label the consumer stored about this conversation; absent when none has been set. */
+  title?: string;
 }
 
 /** Returns a deep copy with every credential-bearing key removed, leaving the input untouched. */
@@ -47,6 +49,7 @@ export function toChatSession(document: MongoSessionDocument): ChatSession {
     entries: document.entries as SessionEntry[],
     workspaceId: document.workspaceId,
     ...isoCreatedAt(document.createdAt),
+    ...(document.title !== undefined ? {title: document.title} : {}),
   };
 }
 
@@ -63,6 +66,7 @@ export function toSessionSummary(document: MongoSessionDocument): SessionSummary
     createdAt: document.createdAt,
     updatedAt: document.updatedAt,
     entryCount: document.entryCount ?? 0,
+    ...(document.title !== undefined ? {title: document.title} : {}),
   };
 }
 
