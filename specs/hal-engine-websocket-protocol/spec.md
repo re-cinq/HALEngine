@@ -65,9 +65,9 @@ The two carriers must agree when an upgrade uses both:
 - The credential is the `Authorization` header, or the first offered subprotocol value that is not the marker, read as `Bearer <value>`; with neither, there is no credential ([validated by: returns Bearer t-1 when both carriers hold t-1, and refuses Bearer t-1 beside a subprotocol t-2](../../src/transport/ws/credential.test.ts#L9), [validated by: returns no value for neither carrier, and the one value when only the header or only the subprotocol holds it](../../src/transport/ws/credential.test.ts#L16)).
 - An upgrade presenting both must present the same credential, compared byte for byte, so another scheme such as `Basic` and a lowercase `bearer` are each a different credential ([validated by: refuses Basic t-1 beside a subprotocol t-1, another scheme being another credential](../../src/transport/ws/credential.test.ts#L28), [validated by: refuses a lowercase bearer t-1 beside a subprotocol t-1, the comparison being exact](../../src/transport/ws/credential.test.ts#L34)).
 - A subprotocol offered without the marker carries no credential, so beside it the header stands alone ([validated by: reads the subprotocol credential only beside hal.v1, so a markerless t-2 leaves the header Bearer t-1 standing alone](../../src/transport/ws/credential.test.ts#L40)).
-- Two different credentials are refused with `400 Bad Request` before the `WsAuthenticator` runs, not `401`, since the authenticator was never consulted, and the refusal is logged once at `warn` naming neither value ([validated by: refuses Bearer attacker-token beside a victim-token subprotocol with 400 before wsAuth runs, and neither value reaches the response or a log line](../../src/transport/handshake.test.ts#L180)).
-- The same credential in both carriers connects and is forwarded once ([validated by: connects a client presenting the same token in the header and the subprotocol, and forwards it once as a bearer](../../src/transport/handshake.test.ts#L216)).
-- An upgrade presenting neither still reaches the `WsAuthenticator`, since a consumer may authenticate by cookie ([validated by: still hands an upgrade with no credential to wsAuth, since a consumer may authenticate by cookie](../../src/transport/handshake.test.ts#L201)).
+- Two different credentials are refused with `400 Bad Request` before the `WsAuthenticator` runs, not `401`, since the authenticator was never consulted, and the refusal is logged once at `warn` naming neither value ([validated by: refuses Bearer attacker-token beside a victim-token subprotocol with 400 before wsAuth runs, and neither value reaches the response or a log line](../../src/transport/handshake.test.ts#L182)).
+- The same credential in both carriers connects and is forwarded once ([validated by: connects a client presenting the same token in the header and the subprotocol, and forwards it once as a bearer](../../src/transport/handshake.test.ts#L218)).
+- An upgrade presenting neither still reaches the `WsAuthenticator`, since a consumer may authenticate by cookie ([validated by: still hands an upgrade with no credential to wsAuth, since a consumer may authenticate by cookie](../../src/transport/handshake.test.ts#L203)).
 - `presentedCredential`, which applies this rule, is internal and not exported from the package root ([validated by: keeps presentedCredential and the module it lives in out of the package root](../../src/index.test.ts#L17)).
 
 A subprotocol is validated client-side as an HTTP token (RFC 7230 `tchar`), so a value carried this way can contain only letters, digits and ``!#$%&'*+-.^_`|~``: a JWT fits, but a padded base64 token (`=`, `/`) cannot use this carrier at all.
@@ -75,6 +75,13 @@ A subprotocol is validated client-side as an HTTP token (RFC 7230 `tchar`), so a
 A client that offers a bare token without the marker, the shape `0.2.x` documented, is refused: `0.3.x` and `0.4.x` still echoed such an offer for one MINOR, and later releases read no credential from it. An authenticator that reads the credential with `credentialFromSubprotocol` therefore rejects the upgrade with HTTP 401; one that admits the request anyway gets a 101 with no `Sec-WebSocket-Protocol` header, which `ws` and Chromium both fail. Either way every client must offer `hal.v1` beside its token (see [the subprotocol marker spec](../hal-engine-subprotocol-marker/spec.md)).
 
 The server MUST validate the token via the configured `WsAuthenticator` before completing the upgrade. If authentication fails, the server MUST reject the connection with HTTP 401.
+
+The `id` of the user a `WsAuthenticator` resolves is the only thing separating one user's conversations from another's in every store query, so the engine refuses a value it cannot use as an identity rather than passing it to a database:
+
+- An `id` that is not a string or a finite number is answered `401`, the same as `null`, and no session is created. A decoded token can hand back an object, and a Mongo filter reads `{$ne: null}` as every user ([validated by: answers 401 to a wsAuth resolving {id: {$ne: null}}, and creates no session](../../src/transport/scalarUserId.test.ts#L41)).
+- `undefined`, `null`, an array, `NaN` and `Infinity` are refused the same way, with no session created, while a string and a finite number connect ([validated by: answers 401 for undefined, null, an array, NaN and Infinity, while a string and a finite number connect](../../src/transport/scalarUserId.test.ts#L45)).
+- The refusal is logged at `error` under `ws` as an authenticator fault, naming the id's kind and none of its contents, which can carry whatever the token held ([validated by: logs the refusal at error with the id's kind and none of its contents](../../src/transport/scalarUserId.test.ts#L62)).
+- **GDPR / NIS-2.** The vector is closed end to end: a socket authenticated as `{$ne: null}` against a store holding other users' conversations is refused before any store method runs ([validated by: never reaches listFor for a socket authenticated as {$ne: null} against a store holding two other users' conversations](../../src/transport/scalarUserId.test.ts#L78)).
 
 No upgrade request can end the server process: the `upgrade` event has nothing above it to catch a throw, so every refusal is an HTTP status instead.
 
@@ -132,17 +139,17 @@ Sends a user chat message. `user_message` is the only accepted type: the server 
 }
 ```
 
-| Field     | Type   | Required | Description                            |
-| --------- | ------ | -------- | -------------------------------------- |
-| `type`    | string | Yes      | `"user_message"`                       |
-| `content` | string | Yes      | Message text                           |
+| Field     | Type   | Required | Description      |
+| --------- | ------ | -------- | ---------------- |
+| `type`    | string | Yes      | `"user_message"` |
+| `content` | string | Yes      | Message text     |
 
 Any other field is ignored, and the validator forwards only the fields the frame defines. In particular the server does not read a `chatId` from this message: the connection already determines the session ([validated by: drops any field the frame does not define, rather than forwarding it](../../src/transport/ws/validation.test.ts#L18)).
 
 Constraints:
 
-- `content` MUST NOT be empty or whitespace-only after trimming.
-- `content` MUST NOT exceed 10,000 characters.
+- `content` MUST NOT be empty or whitespace-only after trimming ([validated by: refuses content of three spaces as empty](../../src/transport/ws/validation.test.ts#L82)).
+- `content` MUST NOT exceed 10,000 characters: 10,000 is accepted and 10,001 refused, the error naming the limit ([validated by: accepts content of exactly 10,000 characters and refuses 10,001, naming the limit](../../src/transport/ws/validation.test.ts#L72)).
 - Violation of these constraints results in an `error` response with code `INVALID_MESSAGE`.
 
 One at a time:
@@ -165,10 +172,12 @@ Application-level heartbeat. The server MUST respond with a `pong` message echoi
 }
 ```
 
-| Field       | Type   | Required | Description                       |
-| ----------- | ------ | -------- | --------------------------------- |
-| `type`      | string | Yes      | `"ping"`                          |
-| `timestamp` | number | Yes      | Client timestamp in milliseconds  |
+| Field       | Type   | Required | Description                      |
+| ----------- | ------ | -------- | -------------------------------- |
+| `type`      | string | Yes      | `"ping"`                         |
+| `timestamp` | number | Yes      | Client timestamp in milliseconds |
+
+A `ping` whose `timestamp` is missing or is not a number is refused, its error naming the field, and a numeric `timestamp` is passed on unchanged for the `pong` to echo ([validated by: refuses a ping with no timestamp or a text one, and passes a numeric timestamp through unchanged](../../src/transport/ws/validation.test.ts#L92)).
 
 ### 4.3 list_conversations
 
@@ -183,10 +192,10 @@ Asks for the connecting user's own conversations. Served only when the server en
 }
 ```
 
-| Field    | Type   | Required | Description                                                              |
-| -------- | ------ | -------- | ------------------------------------------------------------------------ |
-| `type`   | string | Yes      | `"list_conversations"`                                                   |
-| `limit`  | number | No       | Whole number 1-200; how many rows to answer with, 50 when absent         |
+| Field    | Type   | Required | Description                                                                |
+| -------- | ------ | -------- | -------------------------------------------------------------------------- |
+| `type`   | string | Yes      | `"list_conversations"`                                                     |
+| `limit`  | number | No       | Whole number 1-200; how many rows to answer with, 50 when absent           |
 | `before` | object | No       | The last row received, `{updatedAt, sessionId}`; answers the ones after it |
 
 The frame carries no user id and there is no field for one: the server lists the conversations of
@@ -200,14 +209,14 @@ only carrying both fields, since a cursor on a time alone skips a conversation w
 
 Sent exactly once after a successful handshake. See Section 2.3.
 
-| Field            | Type     | Description                                            |
-| ---------------- | -------- | ------------------------------------------------------ |
-| `type`           | string   | `"connected"`                                          |
-| `sessionId`      | string   | UUID v4 identifying the session                        |
-| `message`        | string   | Consumer-controlled text, `transport.connectMessage`, defaulting to `Connected to HAL Engine`; a client SHOULD display it before the first user message |
-| `examplePrompts` | string[] | Example queries derived from registered tool definitions |
-| `resumed`        | boolean  | Present only with resume enabled: whether the requested conversation was rejoined |
-| `entryCount`     | number   | Present only when `resumed` is `true`: how many stored entries the replay covers, skipped ones included |
+| Field            | Type     | Description                                                                                                                                                                                                                                                                                         |
+| ---------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`           | string   | `"connected"`                                                                                                                                                                                                                                                                                       |
+| `sessionId`      | string   | UUID v4 identifying the session                                                                                                                                                                                                                                                                     |
+| `message`        | string   | Consumer-controlled text, `transport.connectMessage`, defaulting to `Connected to HAL Engine`; a client SHOULD display it before the first user message                                                                                                                                             |
+| `examplePrompts` | string[] | Example queries derived from registered tool definitions                                                                                                                                                                                                                                            |
+| `resumed`        | boolean  | Present only with resume enabled: whether the requested conversation was rejoined                                                                                                                                                                                                                   |
+| `entryCount`     | number   | Present only when `resumed` is `true`: how many stored entries the replay covers, skipped ones included                                                                                                                                                                                             |
 | `resumeFailure`  | string   | Present only when the connection named an id and `resumed` is `false`: `expired` when the caller's own session aged out, `unknown` otherwise. `unknown` deliberately covers both an id the server never issued and one that is not the caller's, so the answer reveals nothing about ids that exist |
 
 ### 5.2 entry_upsert
@@ -274,10 +283,10 @@ Marks an entry as finalized. No further `entry_delta` messages will be sent for 
 }
 ```
 
-| Field   | Type   | Description                   |
-| ------- | ------ | ----------------------------- |
-| `type`  | string | `"entry_commit"`              |
-| `index` | number | Index of the entry to commit  |
+| Field   | Type   | Description                  |
+| ------- | ------ | ---------------------------- |
+| `type`  | string | `"entry_commit"`             |
+| `index` | number | Index of the entry to commit |
 
 Semantics:
 
@@ -295,10 +304,10 @@ Notifies the client that a session entry was created on the server and will neve
 }
 ```
 
-| Field   | Type   | Description                                    |
-| ------- | ------ | ---------------------------------------------- |
-| `type`  | string | `"entry_skip"`                                 |
-| `index` | number | Server-side index of the skipped entry         |
+| Field   | Type   | Description                            |
+| ------- | ------ | -------------------------------------- |
+| `type`  | string | `"entry_skip"`                         |
+| `index` | number | Server-side index of the skipped entry |
 
 Suppression can begin before or after the server has started sending a reply, and the two cases produce different messages. This distinction is the whole of the protocol here:
 
@@ -334,27 +343,29 @@ Reports an error condition. The connection remains open unless the error is fata
 }
 ```
 
-| Field     | Type   | Description              |
-| --------- | ------ | ------------------------ |
-| `type`    | string | `"error"`                |
-| `code`    | string | Machine-readable code    |
-| `message` | string | Human-readable detail    |
+| Field          | Type   | Description                                                                                                    |
+| -------------- | ------ | -------------------------------------------------------------------------------------------------------------- |
+| `type`         | string | `"error"`                                                                                                      |
+| `code`         | string | Machine-readable code                                                                                          |
+| `message`      | string | Human-readable detail                                                                                          |
+| `retryAfterMs` | number | Only with `TOO_MANY_REQUESTS`: milliseconds to wait before sending again (specs/hal-engine-rate-limit/spec.md) |
 
-`ErrorCodes` defines nine error codes ([validated by: defines nine ErrorCodes: the five the protocol had, three provider conditions, and CREDENTIAL_EXPIRED](../../src/transport/errorMapping.test.ts#L54)).
+`ErrorCodes` defines ten error codes ([validated by: defines ten ErrorCodes: TOO_MANY_REQUESTS, CREDENTIAL_EXPIRED and the three provider conditions added beside the five the protocol first had](../../src/transport/errorMapping.test.ts#L54)).
 
 Defined error codes:
 
-| Code                  | Kind               | Description                                                                   | HTTP |
-| --------------------- | ------------------ | ----------------------------------------------------------------------------- | ---- |
-| `INVALID_MESSAGE`     | client             | Message failed validation (missing fields, empty content, length)             | —    |
-| `INVALID_FORMAT`      | client             | Message body is not valid JSON                                                | —    |
-| `RATE_LIMITED`        | provider condition | The AI provider is rate limiting                                              | 429  |
-| `SERVICE_UNAVAILABLE` | provider condition | The AI provider is unavailable                                                | 503  |
-| `TIMEOUT`             | provider condition | The AI provider timed out                                                     | 504  |
-| `UPSTREAM_ERROR`      | provider condition | Any other AI provider failure                                                 | 502  |
-| `SERVER_ERROR`        | engine defect      | An unexpected error that is no AI provider error                              | 500  |
-| `UNSUPPORTED`         | feature            | The server does not serve this frame: the feature is off, or its store cannot | —    |
-| `CREDENTIAL_EXPIRED`  | credential         | A tool credential `resolveAuthHeaders` could not renew; `stream_end` follows  | —    |
+| Code                  | Kind               | Description                                                                                | HTTP |
+| --------------------- | ------------------ | ------------------------------------------------------------------------------------------ | ---- |
+| `INVALID_MESSAGE`     | client             | Message failed validation (missing fields, empty content, length)                          | —    |
+| `INVALID_FORMAT`      | client             | Message body is not valid JSON                                                             | —    |
+| `TOO_MANY_REQUESTS`   | client             | The user sent more than `transport.rateLimit` allows; `retryAfterMs` says how long to wait | 429  |
+| `RATE_LIMITED`        | provider condition | The AI provider is rate limiting                                                           | 429  |
+| `SERVICE_UNAVAILABLE` | provider condition | The AI provider is unavailable                                                             | 503  |
+| `TIMEOUT`             | provider condition | The AI provider timed out                                                                  | 504  |
+| `UPSTREAM_ERROR`      | provider condition | Any other AI provider failure                                                              | 502  |
+| `SERVER_ERROR`        | engine defect      | An unexpected error that is no AI provider error                                           | 500  |
+| `UNSUPPORTED`         | feature            | The server does not serve this frame: the feature is off, or its store cannot              | —    |
+| `CREDENTIAL_EXPIRED`  | credential         | A tool credential `resolveAuthHeaders` could not renew; `stream_end` follows               | —    |
 
 A `CREDENTIAL_EXPIRED` error carries, verbatim, the message of the `CredentialExpiredError` the consumer's `resolveAuthHeaders` threw, and a `stream_end` follows it, as [the credential resolver spec](../hal-engine-credential-resolver/spec.md) describes ([validated by: sends error CREDENTIAL_EXPIRED with the hook's own message, then stream_end, over a real connection](../../src/transport/credentialExpired.test.ts#L61)).
 
@@ -364,8 +375,9 @@ A client MUST treat a `code` it does not recognise as `SERVER_ERROR`.
 
 Semantics:
 
-- Every `AIError` maps through one table, `src/transport/errorMapping.ts`, which both transports read, so the WebSocket `code` and the HTTP status always agree; no other transport file maps a provider code ([validated by: answers RATE_LIMITED, SERVICE_UNAVAILABLE and TIMEOUT with their own code, status and fixed sentence](../../src/transport/errorMapping.test.ts#L24), [validated by: answers nine other AIError codes and one named constructor from the one fallback row, UPSTREAM_ERROR and 502](../../src/transport/errorMapping.test.ts#L36), [validated by: is the only non-test file under src/transport that maps a provider error code, rateLimit.ts aside](../../src/transport/errorMapping.test.ts#L68)).
+- Every `AIError` maps through one table, `src/transport/errorMapping.ts`, which both transports read, so the WebSocket `code` and the HTTP status always agree; no other transport file maps a provider code ([validated by: answers RATE_LIMITED, SERVICE_UNAVAILABLE and TIMEOUT with their own code, status and fixed sentence](../../src/transport/errorMapping.test.ts#L24), [validated by: answers nine other AIError codes and one named constructor from the one fallback row, UPSTREAM_ERROR and 502](../../src/transport/errorMapping.test.ts#L36), [validated by: is the only non-test file under src/transport that maps a provider error code](../../src/transport/errorMapping.test.ts#L69)).
 - `SERVICE_UNAVAILABLE` and `TIMEOUT` frames carry fixed sentences, `AI service temporarily unavailable` and `AI service timed out` ([validated by: sends SERVICE_UNAVAILABLE and TIMEOUT error frames with their fixed sentences](../../src/transport/ws/messageHandler.test.ts#L932)).
+- A `TOO_MANY_REQUESTS` frame carries `retryAfterMs`, is the only frame that does, and ends its turn with `stream_end` like any other, since a refused `user_message` is still a turn under the single-terminal-frame contract ([validated by: refuses the sixth user_message of user u1 in a row with one error TOO_MANY_REQUESTS carrying retryAfterMs 3000 and a stream_end, running no sixth turn](../../src/transport/ws/rateLimitWs.test.ts#L57)).
 - `RATE_LIMITED` is unchanged, and `SERVER_ERROR` is sent only for a throw that is no `AIError` ([validated by: still sends RATE_LIMITED byte-identically, and SERVER_ERROR only for a throw that is no AIError](../../src/transport/ws/messageHandler.test.ts#L944)).
 - No frame carries an `AIError`'s own message, which can echo request content; it reaches only the log ([validated by: keeps the AIError message secret-detail-77 out of every frame it sends](../../src/transport/ws/messageHandler.test.ts#L956)).
 - A provider failure ends its turn with the same terminal frames as an engine defect: the `error` frame, then `stream_end` ([validated by: ends a SERVICE_UNAVAILABLE turn with the same terminal frames as an engine defect](../../src/transport/ws/messageHandler.test.ts#L970)).
@@ -374,6 +386,8 @@ Semantics:
 - A `list_conversations` the server does not serve is answered with `UNSUPPORTED`, whether because `transport.history` is off or because its store implements no `listFor`, and never with an empty list, which a client could not tell from a user who has no conversations ([validated by: refuses the frame when conversation history is not turned on](../../src/transport/conversationList.test.ts#L302), [validated by: refuses the frame when the store cannot list, rather than reporting no conversations](../../src/transport/conversationList.test.ts#L353)).
 - A store that fails while listing is answered `SERVER_ERROR` carrying none of the store's own words, and the server logs the session id, the user id and the error's type rather than its message, since a driver's message can hold a connection string and its password; the user id in that line is personal data, as it is in every log line the engine writes ([validated by: answers a failing store with a server error, keeps the socket open, and logs no word the store said](../../src/transport/conversationList.test.ts#L388)).
 - A message the server cannot parse into a known type is answered with `INVALID_MESSAGE`, and no message stream is started for it ([validated by: rejects an unparseable message and never starts a stream](../../src/transport/ws/messageHandler.test.ts#L72)).
+- Each frame's bytes are parsed as JSON as they arrive, and bytes that do not parse read as no frame at all, without throwing ([validated by: reads a JSON object from text or from bytes, and an unterminated brace as null, without throwing](../../src/transport/ws/helpers.test.ts#L63)).
+- A frame that is not JSON is answered with `INVALID_FORMAT` and the message `Invalid JSON`, and the connection stays open: the frame after it is handled as usual ([validated by: answers a frame that is not JSON with INVALID_FORMAT and Invalid JSON, and keeps the socket open for the next frame](../../src/transport/invalidFrame.test.ts#L16)).
 - A rate limit reported by the AI provider is surfaced as `RATE_LIMITED`, which tells the client the same request is worth retrying ([validated by: tells the client to retry when the provider is rate limited](../../src/transport/ws/messageHandler.test.ts#L372)).
 - Any other failure raised while processing a message that is no `AIError` is reported as `SERVER_ERROR` ([validated by: reports any other failure as a server error](../../src/transport/ws/messageHandler.test.ts#L381)).
 
@@ -403,9 +417,9 @@ Signals that the server has finished processing a user message. Sent exactly onc
 }
 ```
 
-| Field  | Type   | Description      |
-| ------ | ------ | ---------------- |
-| `type` | string | `"stream_end"`   |
+| Field  | Type   | Description    |
+| ------ | ------ | -------------- |
+| `type` | string | `"stream_end"` |
 
 Semantics:
 
@@ -435,15 +449,15 @@ first. Sent only when asked for, never pushed.
 }
 ```
 
-| Field                      | Type   | Description                                                   |
-| -------------------------- | ------ | ------------------------------------------------------------- |
-| `type`                     | string | `"conversation_list"`                                         |
-| `conversations`            | array  | Summaries, most recent activity first                         |
-| `conversations[].sessionId`| string | The id to reconnect with to rejoin that conversation          |
-| `conversations[].createdAt`| string | ISO 8601 timestamp                                            |
-| `conversations[].updatedAt`| string | ISO 8601 timestamp of the conversation's most recent activity |
-| `conversations[].entryCount`| number| How many entries the conversation holds                       |
-| `conversations[].preview`  | string | Optional. The conversation's opening question, at most 120 code points, present only where the server enables previews |
+| Field                        | Type   | Description                                                                                                            |
+| ---------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `type`                       | string | `"conversation_list"`                                                                                                  |
+| `conversations`              | array  | Summaries, most recent activity first                                                                                  |
+| `conversations[].sessionId`  | string | The id to reconnect with to rejoin that conversation                                                                   |
+| `conversations[].createdAt`  | string | ISO 8601 timestamp                                                                                                     |
+| `conversations[].updatedAt`  | string | ISO 8601 timestamp of the conversation's most recent activity                                                          |
+| `conversations[].entryCount` | number | How many entries the conversation holds                                                                                |
+| `conversations[].preview`    | string | Optional. The conversation's opening question, at most 120 code points, present only where the server enables previews |
 
 Apart from `preview`, a summary carries no message content, and the two times are ISO strings rather than `Date`s, which
 is what survives the wire ([validated by: answers the user's conversations newest first, with both times as ISO strings](../../src/transport/conversationList.test.ts#L100)). A row's `sessionId` is what a client reconnects with to rejoin that
@@ -470,11 +484,11 @@ A message authored by the user.
 }
 ```
 
-| Field       | Type   | Description                  |
-| ----------- | ------ | ---------------------------- |
-| `role`      | string | `"user"`                     |
-| `content`   | string | The message text             |
-| `timestamp` | string | ISO 8601 datetime            |
+| Field       | Type   | Description       |
+| ----------- | ------ | ----------------- |
+| `role`      | string | `"user"`          |
+| `content`   | string | The message text  |
+| `timestamp` | string | ISO 8601 datetime |
 
 ### 6.2 AssistantEntry
 
@@ -490,14 +504,14 @@ A response generated by the AI model. Content is delivered incrementally via `en
 }
 ```
 
-| Field         | Type    | Description                                 |
-| ------------- | ------- | ------------------------------------------- |
-| `role`        | string  | `"assistant"`                               |
-| `content`     | string  | Markdown text, built incrementally by deltas |
-| `timestamp`   | string  | ISO 8601 datetime                           |
-| `isStreaming`  | boolean | `true` while deltas are arriving            |
-| `truncated`    | `true`  | Optional. Present only when the run ended before this entry finished, or when a resume replays it still streaming; see § 7.1 and § 11.3 |
-| `persona`      | string  | Optional; consumer-defined identifier of the persona that produced this entry |
+| Field         | Type    | Description                                                                                                                             |
+| ------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `role`        | string  | `"assistant"`                                                                                                                           |
+| `content`     | string  | Markdown text, built incrementally by deltas                                                                                            |
+| `timestamp`   | string  | ISO 8601 datetime                                                                                                                       |
+| `isStreaming` | boolean | `true` while deltas are arriving                                                                                                        |
+| `truncated`   | `true`  | Optional. Present only when the run ended before this entry finished, or when a resume replays it still streaming; see § 7.1 and § 11.3 |
+| `persona`     | string  | Optional; consumer-defined identifier of the persona that produced this entry                                                           |
 
 The `persona` field is how a consumer attributes each answer to the persona that gave it:
 
@@ -521,18 +535,21 @@ Internal AI reasoning, separated from user-facing content by the server's thinki
 {
   "role": "thinking",
   "content": "I should look up the weather for Berlin using the get_weather tool.",
+  "timestamp": "2026-01-15T14:30:00.000Z",
   "isStreaming": false
 }
 ```
 
-| Field        | Type    | Description                               |
-| ------------ | ------- | ----------------------------------------- |
-| `role`       | string  | `"thinking"`                              |
-| `content`    | string  | Reasoning text, built incrementally       |
-| `isStreaming` | boolean | `true` while deltas are arriving          |
+| Field         | Type    | Description                                                                                                                             |
+| ------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `role`        | string  | `"thinking"`                                                                                                                            |
+| `content`     | string  | Reasoning text, built incrementally                                                                                                     |
+| `timestamp`   | string  | ISO 8601 datetime. Optional: absent on a thinking entry stored before 0.9                                                               |
+| `isStreaming` | boolean | `true` while deltas are arriving                                                                                                        |
 | `truncated`   | `true`  | Optional. Present only when the run ended before this entry finished, or when a resume replays it still streaming; see § 7.1 and § 11.3 |
 
-Note: ThinkingEntry does not include a `timestamp` field.
+- A thinking entry carries a `timestamp`, ISO 8601, like the other entries, and it round-trips through `Date` ([validated by: stamps a thinking entry with an ISO 8601 timestamp that round-trips through Date](../../src/orchestration/entryFactories.test.ts#L8)).
+- The field is optional as a statement about stored data: a thinking entry written before it existed is still a valid `SessionEntry`, and `timestamp` can be read off any entry without narrowing on `role` ([validated by: reads timestamp off any SessionEntry with no role narrowing, and accepts a thinking entry without one](../../src/orchestration/entryFactories.test.ts#L14)).
 
 ### 6.4 ToolEntry
 
@@ -550,12 +567,12 @@ A tool invocation requested by the AI model. The server executes the tool and fe
 }
 ```
 
-| Field       | Type   | Description                               |
-| ----------- | ------ | ----------------------------------------- |
-| `role`      | string | `"tool"`                                  |
-| `toolName`  | string | Registered tool name                      |
-| `toolInput` | object | Key-value pairs passed to the tool        |
-| `timestamp` | string | ISO 8601 datetime                         |
+| Field       | Type   | Description                        |
+| ----------- | ------ | ---------------------------------- |
+| `role`      | string | `"tool"`                           |
+| `toolName`  | string | Registered tool name               |
+| `toolInput` | object | Key-value pairs passed to the tool |
+| `timestamp` | string | ISO 8601 datetime                  |
 
 Note: ToolEntry does not participate in the delta/commit cycle. It is delivered as a single `entry_upsert`.
 
@@ -608,18 +625,17 @@ In multi-tool scenarios, multiple ToolEntry objects may appear between the Think
 ### 8.1 Example: Full Conversation Exchange
 
 ```json
-<-- {"type": "connected", "sessionId": "550e8400-...", "message": "Connected to HAL Engine", "examplePrompts": ["..."]}
+<-- {"type": "connected", "sessionId": "550e8400-...", "message": "Connected to HAL Engine", "examplePrompts": []}
 
 --> {"type": "user_message", "content": "What is the weather in Berlin?"}
 
 <-- {"type": "entry_upsert", "index": 0, "entry": {"role": "user", "content": "What is the weather in Berlin?", "timestamp": "2026-01-15T14:30:00Z"}}
-<-- {"type": "entry_upsert", "index": 1, "entry": {"role": "thinking", "content": "", "isStreaming": true}}
-<-- {"type": "entry_delta",  "index": 1, "delta": "I should look up the weather for Berlin."}
-<-- {"type": "entry_upsert", "index": 2, "entry": {"role": "tool", "toolName": "get_weather", "toolInput": {"location": "Berlin"}}}
+<-- {"type": "entry_upsert", "index": 1, "entry": {"role": "thinking", "content": "", "timestamp": "2026-01-15T14:30:00Z", "isStreaming": true}}
+<-- {"type": "entry_delta",  "index": 1, "delta": "Berlin"}
+<-- {"type": "entry_upsert", "index": 2, "entry": {"role": "tool", "toolName": "weather", "toolInput": {"city": "Berlin"}, "timestamp": "2026-01-15T14:30:01Z"}}
 <-- {"type": "entry_commit", "index": 1}
 <-- {"type": "entry_upsert", "index": 3, "entry": {"role": "assistant", "content": "", "timestamp": "2026-01-15T14:30:02Z", "isStreaming": true}}
-<-- {"type": "entry_delta",  "index": 3, "delta": "Berlin currently has "}
-<-- {"type": "entry_delta",  "index": 3, "delta": "a temperature of 18 degrees Celsius with clear skies."}
+<-- {"type": "entry_delta",  "index": 3, "delta": "18 degrees and clear"}
 <-- {"type": "entry_commit", "index": 3}
 <-- {"type": "stream_end"}
 ```
@@ -756,8 +772,8 @@ If the connection drops unexpectedly, the client SHOULD reconnect using exponent
 - Maximum retries: 5
 - On reconnection success, any queued `user_message` messages MUST be flushed immediately.
 - On reconnection, the client MUST clear its local entries array and SHOULD send `?sessionId=` with the id from its last `connected` frame. When the server has resume enabled and the conversation is the user's own, it answers `resumed: true` and replays the conversation; otherwise the client is starting a new session.
-- An entry still streaming when its conversation is resumed is replayed with `isStreaming: false` and `truncated: true`: the rest of its turn streams to the connection that started it, so this one would wait for a commit that never comes ([validated by: replays an entry whose turn is still running as finished and truncated, leaving the stored entry as it is](../../src/transport/sessionResume.test.ts#L371)).
-- With the server's `latest` option, a client that has lost the id, after a page refresh for instance, MAY connect without one and still rejoin its user's most recent conversation, and sends `?new=1` to start a new conversation instead ([validated by: with latest on, rejoins the most recently active session of a user whose connect names none](../../src/transport/sessionResume.test.ts#L435), [validated by: with latest on, starts a new session for a user with none, and on ?new=1 even when one exists](../../src/transport/sessionResume.test.ts#L452)).
+- An entry still streaming when its conversation is resumed is replayed with `isStreaming: false` and `truncated: true`: the rest of its turn streams to the connection that started it, so this one would wait for a commit that never comes ([validated by: replays an entry whose turn is still running as finished and truncated, leaving the stored entry as it is](../../src/transport/sessionResume.test.ts#L392)).
+- With the server's `latest` option, a client that has lost the id, after a page refresh for instance, MAY connect without one and still rejoin its user's most recent conversation, and sends `?new=1` to start a new conversation instead ([validated by: with latest on, rejoins the most recently active session of a user whose connect names none](../../src/transport/sessionResume.test.ts#L456), [validated by: with latest on, starts a new session for a user with none, and on ?new=1 even when one exists](../../src/transport/sessionResume.test.ts#L473)).
 
 After 5 failed attempts, the client MUST stop reconnecting and report a disconnected state.
 
@@ -769,24 +785,26 @@ Once the `101` is sent the socket speaks WebSocket, so the server never writes a
 - A failure while the session opens, such as a session store whose `create` throws, is answered first with an `error` frame and then the same `1011` close ([validated by: sends an error frame and closes with 1011, with no client error, through createHalEngine when the session store create throws synchronously](../../src/sessionSetupFailure.test.ts#L15)).
 - The failure is logged once at `error` under `ws` as `connection failed after the handshake`, with the error's message; the upgrade request's `authorization` and `cookie` values reach no log line ([validated by: logs the failure at error under ws and keeps the authorization and cookie values out of every log line](../../src/transport/upgradeFailure.test.ts#L64)).
 - Before the handshake completes, the server still answers in HTTP: a `wsAuth` that rejects gets `500 Internal Server Error` and one that resolves `null` gets `401 Unauthorized`, with no `101` and no connection opened ([validated by: answers a rejecting wsAuth with 500 and a null one with 401, with no 101 and no connection event](../../src/transport/upgradeFailure.test.ts#L85)).
+- Every answer the engine itself writes before the handshake, these two and its `400`s, is a status line and an empty header block alone, such as `HTTP/1.1 401 Unauthorized\r\n\r\n`, with no header and no body, so nothing from the request is echoed into it, and the socket is destroyed once it is written. A refusal `ws` writes for an upgrade it cannot parse is its own ([validated by: writes HTTP/1.1 401 Unauthorized and an empty header block, nothing else, then destroys the socket](../../src/transport/ws/helpers.test.ts#L73)).
 
 ## 12. Security Considerations
 
 - Access tokens are transmitted in the `Sec-WebSocket-Protocol` request header, which keeps them out of the request line and so out of a URL-based access log. They are not hidden from logging in general: an ingress or proxy that captures request headers records them, as it records an `Authorization` header, so header capture must redact `Sec-WebSocket-Protocol` too.
 - The server answers with the `hal.v1` marker, so the token is never written into the 101 response headers or held as the connected socket's `protocol` property. An offer without the marker is answered with no subprotocol, so no offered value is ever echoed.
 - No offered subprotocol value is written to the engine's own log at any level. Every place a credential exists during a connection - request headers, the socket's and the session's `authHeaders`, and the tool context - is listed in [the subprotocol marker spec](../hal-engine-subprotocol-marker/spec.md#where-a-credential-exists).
-- An upgrade whose `Authorization` header and subprotocol carry different credentials is refused with `400` before authentication, so the credential a `WsAuthenticator` validated is the one forwarded to the session and to every tool ([validated by: refuses Bearer attacker-token beside a victim-token subprotocol with 400 before wsAuth runs, and neither value reaches the response or a log line](../../src/transport/handshake.test.ts#L180)).
-- **NIS-2 (Art. 21), supply-chain security.** Before that rule, a tool calling a downstream API could receive a bearer token no authenticator had validated: the authenticator could check one carrier while the other's value was forwarded, defeating the per-user data boundary downstream ([validated by: refuses Bearer attacker-token beside a victim-token subprotocol with 400 before wsAuth runs, and neither value reaches the response or a log line](../../src/transport/handshake.test.ts#L180)).
-- Message content is validated at the server boundary. Content exceeding 10,000 characters is rejected.
-- The server validates all incoming messages against known types. Unrecognized types receive an `INVALID_MESSAGE` error.
+- An upgrade whose `Authorization` header and subprotocol carry different credentials is refused with `400` before authentication, so the credential a `WsAuthenticator` validated is the one forwarded to the session and to every tool ([validated by: refuses Bearer attacker-token beside a victim-token subprotocol with 400 before wsAuth runs, and neither value reaches the response or a log line](../../src/transport/handshake.test.ts#L182)).
+- **NIS-2 (Art. 21), supply-chain security.** Before that rule, a tool calling a downstream API could receive a bearer token no authenticator had validated: the authenticator could check one carrier while the other's value was forwarded, defeating the per-user data boundary downstream ([validated by: refuses Bearer attacker-token beside a victim-token subprotocol with 400 before wsAuth runs, and neither value reaches the response or a log line](../../src/transport/handshake.test.ts#L182)).
+- Message content is validated at the server boundary. Content exceeding 10,000 characters is rejected ([validated by: accepts content of exactly 10,000 characters and refuses 10,001, naming the limit](../../src/transport/ws/validation.test.ts#L72)).
+- The server validates all incoming messages against known types. Unrecognized types receive an `INVALID_MESSAGE` error ([validated by: refuses a frame of type nope, naming the type](../../src/transport/ws/validation.test.ts#L88), [validated by: rejects an unparseable message and never starts a stream](../../src/transport/ws/messageHandler.test.ts#L72)).
+- **GDPR (Art. 5(1)(c)), data minimisation.** A turn's log lines record the length of the user's message as `contentLength`, never its text. At every level, `debug` included, no line carries the message, a tool's arguments or result, or the answer ([validated by: logs a 32-character question as contentLength 32 at debug level, and no line carries the question, a tool argument or result, or the answer](../../src/contentFreeLogs.test.ts#L59)).
 
 ## 13. Source Files
 
-| Concern                  | File                                              |
-| ------------------------ | ------------------------------------------------- |
-| Shared entry types       | `src/types/session.ts`                            |
-| Backend message types    | `src/types/messages.ts`                           |
-| Backend sender helpers   | `src/transport/ws/sender.ts`                      |
-| Message validation       | `src/transport/ws/validation.ts`                  |
-| Message handling         | `src/transport/ws/messageHandler.ts`              |
-| Connection handler       | `src/transport/ws/connectionHandler.ts`           |
+| Concern                | File                                    |
+| ---------------------- | --------------------------------------- |
+| Shared entry types     | `src/types/session.ts`                  |
+| Backend message types  | `src/types/messages.ts`                 |
+| Backend sender helpers | `src/transport/ws/sender.ts`            |
+| Message validation     | `src/transport/ws/validation.ts`        |
+| Message handling       | `src/transport/ws/messageHandler.ts`    |
+| Connection handler     | `src/transport/ws/connectionHandler.ts` |

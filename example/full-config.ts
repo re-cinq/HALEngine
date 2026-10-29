@@ -71,6 +71,8 @@ const engine = createHalEngine({
   auth: {
     ws: async () => ({id: 'user-1'}),
     http: authMiddleware,
+    // The caller headers a tool may receive as authHeaders; list only what your tools need, [] for none.
+    forwardHeaders: ['authorization'],
   },
 
   // OPTIONAL: Tool registry
@@ -86,6 +88,8 @@ const engine = createHalEngine({
     // basePath defaults to '/hal' and the heartbeat to 30s.
     basePath: '/hal',
     heartbeatIntervalMs: 30_000,
+    // One user's inbound budget across WebSocket and HTTP, the default shown; false turns it off for a deployment whose gateway already limits.
+    rateLimit: {limit: 20, windowMs: 60_000, burst: 5},
     // The connected frame's text, sent before any entry; a deployer serving EU users may carry its AI disclosure here.
     connectMessage: 'You are chatting with an AI assistant.',
     // additionalRoutes mounts under basePath and rootRoutes at /, neither gated by auth.http; errorHandler replaces Express's default HTML error page.
@@ -103,6 +107,12 @@ const engine = createHalEngine({
       // How many messages are kept, and how much of each.
       maxMessages: 50,
       maxContentLength: 4000,
+    },
+    entries: {
+      // When a turn ends, the newest 40 entries keep their content; older ones keep only their slot, role and timestamp.
+      maxContentEntries: 40,
+      // Runs on every entry but a user's once its content is final; here no tool argument reaches the store.
+      redactEntry: entry => (entry.role === 'tool' ? {...entry, toolInput: {}} : entry),
     },
     toolTimeoutMs: 30_000, // Abandon a tool call after this long, answering the model with a timeout result (default 30000; 0 = no deadline)
     hooks,

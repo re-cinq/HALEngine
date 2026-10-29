@@ -51,10 +51,11 @@ describe('the one AIError table', () => {
     expect([...rows]).toEqual([{code: 'UPSTREAM_ERROR', status: 502, message: UNAVAILABLE}]);
   });
 
-  it('defines nine ErrorCodes: the five the protocol had, three provider conditions, and CREDENTIAL_EXPIRED', () => {
+  it('defines ten ErrorCodes: TOO_MANY_REQUESTS, CREDENTIAL_EXPIRED and the three provider conditions added beside the five the protocol first had', () => {
     expect(Object.keys(ErrorCodes)).toEqual([
       'INVALID_MESSAGE',
       'INVALID_FORMAT',
+      'TOO_MANY_REQUESTS',
       'RATE_LIMITED',
       'SERVICE_UNAVAILABLE',
       'TIMEOUT',
@@ -65,9 +66,8 @@ describe('the one AIError table', () => {
     ]);
   });
 
-  it('is the only non-test file under src/transport that maps a provider error code, rateLimit.ts aside', () => {
+  it('is the only non-test file under src/transport that maps a provider error code', () => {
     const mapping = sourceFiles(TRANSPORT)
-      .filter(path => !path.endsWith('rateLimit.ts'))
       .filter(path => MAPS_A_PROVIDER_CODE.test(readFileSync(path, 'utf8')))
       .map(path => relative(process.cwd(), path));
 

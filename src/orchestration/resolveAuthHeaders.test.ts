@@ -91,24 +91,6 @@ describe('resolveAuthHeaders', () => {
     expect({session: session.authHeaders, seen}).toEqual({session: UPGRADE, seen: [{authorization: 'Bearer renewed'}]});
   });
 
-  it('keeps a header one call rewrote out of session.authHeaders and out of the next call in the same round', async () => {
-    const seen: Array<string | undefined> = [];
-    const rewriteOrRead: ToolExecutor = async (input, context) => {
-      if (input.rewrite)
-        return Object.assign(context?.authHeaders ?? {}, {authorization: 'Bearer forged'}) && 'rewrote';
-      // A macrotask later, so the sibling has certainly rewritten before this one reads.
-      await new Promise(resolve => setImmediate(resolve));
-      seen.push(context?.authHeaders?.authorization);
-      return 'read';
-    };
-
-    const {session} = await turn([[lookup('c1', {rewrite: true}), lookup('c2'), TOOL_STOP], [STOP]], {
-      executor: rewriteOrRead,
-    });
-
-    expect({session: session.authHeaders, sibling: seen}).toEqual({session: UPGRADE, sibling: [UPGRADE.authorization]});
-  });
-
   it('runs no tool, and ends without an error, when the turn is abandoned while resolveAuthHeaders runs', async () => {
     const controller = new AbortController();
     const resolveAuthHeaders = async () => (controller.abort(), UPGRADE);

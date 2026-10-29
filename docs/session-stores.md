@@ -43,14 +43,56 @@ One consequence worth planning for: a conversation reloaded in a fresh process h
 re-authenticates. That is the correct trade-off — a bearer token stored beside a conversation
 outlives the request it was issued for — and it matches what the transport does on socket close.
 
+`ChatSession.user`, everything `auth.ws` returned for the newest open socket, is never persisted
+either. It is connection-scoped: `MongoSessionStore` writes only the fields it lists, so `user`
+never reaches a document and a session read back carries none, and the transport re-derives it
+from the next upgrade. A store you write yourself must leave it out the same way, since it can
+hold any claim your authenticator resolved, a role, an account id, or a token.
+
 ## Retention
 
 `eraseOlderThan(cutoff)` is a method you call. The engine ships no scheduler, because a
 library-owned timer keeps your process alive; how often you call it, and what cutoff you pass, is
 the retention decision, and it belongs to your deployment with a named person behind it.
 
+Two timestamps exist to enforce a retention period against: `ChatSession.createdAt`, written by
+the store when it creates a session (never by the engine), and each entry's `timestamp`, written by
+`src/orchestration/entryFactories.ts`. Both shipped stores set `createdAt`: `InMemorySessionStore`
+at `create`, and `MongoSessionStore` from the creation time it writes to each document, so a session
+read back from MongoDB carries the time it was first created. A `SessionStore` you implement is the
+other producer of `createdAt`. Both are ISO 8601, and ISO 8601 values may arrive in different forms - `Z`-suffixed UTC
+or a numeric offset such as `+01:00` - that parse to the same instant but sort differently as
+strings, so parse before comparing. Both are optional on the types: a thinking entry stored before
+0.9 has no `timestamp`, and a session has no `createdAt` when its store holds no creation time for
+it. `MongoSessionStore` has written one to every document since 0.4.0, so its sessions carry
+`createdAt` even when they were stored before 0.9.
+
+**GDPR.** A creation time attached to an identified user's conversation is personal data like the
+rest of the session, a retained metadata category of its own; the fields exist precisely so a
+retention period can be enforced against them.
+
 `InMemorySessionStore`'s `maxAgeMs` is **not** a retention policy. It is a memory bound so the
 default store does not grow without limit, and it defaults to eight hours.
+
+## What the engine holds
+
+Every category of data the engine keeps, where it keeps it, what bounds it, and what erases it. "None configured" means exactly that: nothing removes the data until you do.
+
+| Category | Where | Bound | Erased by |
+| --- | --- | --- | --- |
+| Conversation entries: the user's questions, the model's answers and thoughts, tool calls with their `toolInput`, and entries tools return | The session store: process memory for `InMemorySessionStore`, MongoDB plus a per-process cache for `MongoSessionStore` | Content: `orchestrator.entries.maxContentEntries`, none configured by default. The session: the store's own, `maxAgeMs` (eight hours) for `InMemorySessionStore`, none configured for `MongoSessionStore` until you call `eraseOlderThan` | `SessionStore.delete(sessionId)`; on `MongoSessionStore` also `eraseConversation`, `eraseOlderThan` and `eraseAll` |
+| Session metadata: `sessionId`, `userId`, `workspaceId`, `createdAt`, when it was last written, and `activePersona` | The session store, beside the entries | As for the entries' session | As for the entries |
+| `authHeaders`, the caller headers `auth.forwardHeaders` lets through | Process memory, on the session, while a socket holds it | Cleared when the session's last socket closes; never persisted by `MongoSessionStore` | The close |
+| `ChatSession.user`, what `auth.ws` returned | Process memory, per connection | The connection; never persisted | The close |
+| Conversation list previews | Derived from the opening user entry when a list is read; stored nowhere | Whatever bounds that entry: a cleared opening question has no preview | The entry |
+| Rate-limit counters: a user id, a token count and a time | Process memory | Dropped once a key's bucket has refilled, see `specs/hal-engine-rate-limit/spec.md` | The refill |
+| Usage records, if you record them through a `UsageStore` | The store you give | Yours: the engine writes none itself | Yours |
+| REST chat history, from `POST /chats/:id/messages` | A map inside the chat router, in process memory | None configured: it lives as long as the process | A restart. Neither the session store nor `orchestrator.entries` reaches it |
+| Log lines | Your log sink | Yours | Yours. The engine logs ids, counts and names, never message text, see `docs/logging.md` |
+
+With `transport.resume` on, a socket no longer bounds a conversation: a close keeps the session (`specs/hal-engine-session-lifetime/spec.md`), so the store's bound is the retention bound. `SessionStore.delete(sessionId)` is the erasure primitive a consumer holding only the interface can call, and a store you write must not persist `authHeaders` (see [What is never persisted](#what-is-never-persisted)).
+
+**GDPR.** Each row is a place personal data can rest. Where the bound reads "none configured", a deployer with a retention obligation has to configure one. `orchestrator.entries` (`specs/hal-engine-history-controls/spec.md`) bounds and redacts the entries' content without deleting the conversation.
 
 ## Truth and cache
 
@@ -87,8 +129,8 @@ anything.
 
 `count()` reports documents, not cache entries, so `delete` does not change it. It counts **every**
 user's, not one user's: it is an operational figure, and putting it in front of a user would both
-misreport their history and disclose the size of everyone else's. There is no per-user count — see
-§ Listing a user's conversations for what to do instead.
+misreport their history and disclose the size of everyone else's. `countFor(userId)` is the per-user
+count, see § Listing a user's conversations; `count()` is never a user's own.
 
 ## Latest session
 
@@ -165,7 +207,10 @@ either accept one final round-trip that comes back empty, or ask for one row mor
 show — `{limit: pageSize + 1}`, display the first `pageSize`, and take the cursor from the last row
 you displayed. The extra row's presence is your `hasMore`. Because the limit is capped at 200, that
 trick works up to a `pageSize` of 199. Do not reach for `count()` for this: it counts every user's
-conversations, not this user's, and there is no per-user total today.
+conversations, not this user's. `countFor(userId)` answers this user's total, on both shipped stores;
+on MongoDB it is an index-only scan whose cost grows with the user's conversation count, cheap next to
+reading documents, not cheap next to nothing, so a consumer labelling a sidebar on every connect
+should know that. A per-user count is personal data about that user, and never the store-wide total.
 
 `MongoSessionStore` filters on the user in the query, sorts `{updatedAt: -1, _id: -1}` and projects
 the entries away, so a page of summaries never carries a conversation out of the database.
@@ -224,3 +269,11 @@ retention period, and a tombstone index of ids a store no longer holds is reject
 session is reported once and then forgotten. `InMemorySessionStore` implements it that way.
 `MongoSessionStore` does not implement it: its documents do not expire, and one that
 `eraseOlderThan` removed reads `unknown`.
+
+## Driver versions
+
+`MongoSessionStore` runs on `mongodb` 6.10 or later and on 7.x; install whichever your application
+already uses, and pass its `MongoClient` or collection as it is, with no cast. Driver 7 needs Node
+20.19 or later, which this package's own Node 22 floor already covers. One driver 7 change reaches
+the URL you pass: `MONGODB-AWS` no longer takes credentials in the connection string, and needs
+`@aws-sdk/credential-providers` installed to resolve them instead.

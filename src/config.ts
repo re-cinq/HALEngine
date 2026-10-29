@@ -1,10 +1,15 @@
 import type {WsAuthenticator, HttpAuthMiddleware} from './types/auth.js';
+import type {ForwardableHeader} from './transport/authHeaders.js';
+import {rateLimiterFrom} from './transport/rateLimit.js';
+import type {RateLimitConfig} from './transport/rateLimit.js';
 import type {SessionStore} from './types/sessionStore.js';
+import type {EntryPolicy} from './types/entryPolicy.js';
 import type {PromptBuilderConfig} from './infrastructure/builders/promptBuilder.js';
 import type {ContextConfig} from './orchestration/conversationContext.js';
 import type {ProviderConfig} from './providers/providerFactory.js';
 import {withRetry} from './providers/withRetry.js';
 import {withFallback} from './providers/withFallback.js';
+import type {FailoverEvent} from './providers/withFallback.js';
 import {withMask} from './providers/withMask.js';
 import type {PromptMask} from './providers/withMask.js';
 import type {RetryPolicy} from './providers/withRetry.js';
@@ -50,16 +55,22 @@ export interface HalEngineConfig {
     errorHandler?: HalAppOptions['errorHandler'];
     resume?: SessionResumeOptions;
     history?: ConversationHistoryOptions;
+    /** One user's request budget across both transports: 20 a minute, 5 at once, when unset; `false` turns it off (specs/hal-engine-rate-limit/spec.md). */
+    rateLimit?: RateLimitConfig | false;
   };
   auth: {
     ws: WsAuthenticator;
     http?: HttpAuthMiddleware;
+    /** Which caller headers reach a tool as `authHeaders`; unset, none (specs/hal-engine-tool-header-allowlist/spec.md). */
+    forwardHeaders?: ForwardableHeader[];
   };
   orchestrator?: {
     maxToolRounds?: number;
     /** How long one tool call may take before it is abandoned and answered with a timeout result; default 30000, and 0 waits forever. */
     toolTimeoutMs?: number;
     contextConfig?: Partial<ContextConfig>;
+    /** What a stored conversation keeps of its entries: a content bound and a redaction (specs/hal-engine-history-controls/spec.md). */
+    entries?: EntryPolicy;
     /** Lifecycle hooks: called before and after each phase of processing a user message. */
     hooks?: OrchestratorHooks;
   };
@@ -67,6 +78,8 @@ export interface HalEngineConfig {
   logger?: Logger;
   onConnect?: (session: ChatSession, connection: ConnectInfo) => void | Promise<void>;
   onDisconnect?: (sessionId: string) => void | Promise<void>;
+  /** Called once each time a provider in `fallbackProviders` takes over, with the two providers' config types, the code and the elapsed time; a throw is logged and changes nothing. */
+  onFailover?: (event: FailoverEvent) => void | Promise<void>;
 }
 
 export interface HalEngine extends HalServer {
@@ -90,14 +103,19 @@ export function createHalEngine(config: HalEngineConfig): HalEngine {
     maxToolRounds: config.orchestrator?.maxToolRounds,
     toolTimeoutMs: config.orchestrator?.toolTimeoutMs,
     contextConfig: config.orchestrator?.contextConfig,
+    entries: config.orchestrator?.entries,
     hooks: config.orchestrator?.hooks,
     sessionStore,
   });
 
+  // One limiter for both transports, so a user's HTTP and WebSocket requests draw on one budget.
+  const rateLimiter = rateLimiterFrom(config.transport?.rateLimit);
   const app = createApp({
+    rateLimit: rateLimiter,
     corsOrigin: config.transport?.corsOrigin,
     basePath,
     authMiddleware: config.auth.http,
+    forwardHeaders: config.auth.forwardHeaders,
     orchestrator,
     sessionStore,
     additionalRoutes: config.transport?.additionalRoutes,
@@ -108,6 +126,7 @@ export function createHalEngine(config: HalEngineConfig): HalEngine {
   const halServer = createServer({
     app,
     wsAuth: config.auth.ws,
+    forwardHeaders: config.auth.forwardHeaders,
     sessionStore,
     orchestrator,
     toolRegistry,
@@ -119,6 +138,8 @@ export function createHalEngine(config: HalEngineConfig): HalEngine {
     onDisconnect: config.onDisconnect,
     resume: config.transport?.resume,
     history: config.transport?.history,
+    rateLimiter,
+    entries: config.orchestrator?.entries,
   });
 
   return {
@@ -139,7 +160,7 @@ function refuseBlankConnectMessage(connectMessage: string | undefined): void {
 
 /** The provider the orchestrator receives: retry innermost per provider, then the fallback chain, then the mask; with none configured, exactly what `create` returned. */
 export function composeProvider(
-  config: Pick<HalEngineConfig, 'provider' | 'resilience' | 'fallbackProviders' | 'privacy'>,
+  config: Pick<HalEngineConfig, 'provider' | 'resilience' | 'fallbackProviders' | 'privacy' | 'onFailover'>,
   create: (providerConfig: ProviderConfig) => AIProvider = createProvider
 ): AIProvider {
   const resilient = (provider: AIProvider): AIProvider =>
@@ -153,7 +174,7 @@ export function composeProvider(
       : withFallback(
           primary,
           fallbacks.map(fallback => resilient(create(fallback))),
-          {labels: [config.provider.type, ...fallbacks.map(fallback => fallback.type)]}
+          {labels: [config.provider.type, ...fallbacks.map(fallback => fallback.type)], onFailover: config.onFailover}
         );
   // Outermost, so a retry replays masked parameters and every vendor tried receives text from one binding.
   const mask = config.privacy?.mask;

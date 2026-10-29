@@ -88,6 +88,8 @@ const startEngine = async (
     sessionStore: store,
     orchestrator,
     resume,
+    // These tests follow which socket lends the session its credential, so they forward it; unset forwards none.
+    forwardHeaders: ['authorization'],
     onConnect: (session, {resumed}) => void connects.push({sessionId: session.sessionId, resumed}),
     onDisconnect: sessionId => void disconnected.push(sessionId),
   });
@@ -353,6 +355,25 @@ describe('resuming a conversation on reconnect', () => {
       types: frames.map(({type, index}) => (index === undefined ? type : `${type} ${index}`)),
       leaked: JSON.stringify(frames).includes('hidden'),
     }).toEqual({types: ['connected', 'entry_upsert 0', 'entry_skip 1', 'pong'], leaked: false});
+  });
+
+  it('replays an entry the content bound cleared as a skip, so a resumed client is shown no empty bubble', async () => {
+    const store = new InMemorySessionStore();
+    const known = await store.create('known', 'u1');
+    known.entries.push(
+      {role: 'user', content: '', timestamp: '2026-09-30T08:00:00.000Z', cleared: true},
+      {role: 'assistant', content: 'It ships today.', timestamp: '2026-09-30T08:00:01.000Z', isStreaming: false}
+    );
+    const {base} = await startEngine(store, RESUME_ON);
+
+    const frames = await connectAndSettle(`${base}?sessionId=known`);
+
+    expect(frames.map(({type, index}) => (index === undefined ? type : `${type} ${index}`))).toEqual([
+      'connected',
+      'entry_skip 0',
+      'entry_upsert 1',
+      'pong',
+    ]);
   });
 
   it('replays an answer suppressed while it was still open as skips, as blank as the live client was left', async () => {

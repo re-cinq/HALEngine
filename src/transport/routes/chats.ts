@@ -6,13 +6,17 @@
 
 // Demo only - see specs/hal-engine-chat-routes/spec.md; content sits in process memory, unredacted.
 
-import {Router, Response} from 'express';
+import {Router, Response, RequestHandler} from 'express';
 import {randomUUID} from 'crypto';
 import type {ChatOrchestrator} from '../../orchestration/chatOrchestrator.js';
 import type {SessionStore} from '../../types/sessionStore.js';
 import type {AuthenticatedRequest, HttpAuthMiddleware} from '../../types/auth.js';
 import type {AuthenticatedUser} from '../../types/session.js';
 import {log} from '../../shared/logger.js';
+import {filterAuthHeaders, forwardedHeaders} from '../authHeaders.js';
+import type {ForwardableHeader} from '../authHeaders.js';
+import {rateLimitMiddleware} from '../rateLimit.js';
+import type {RateLimiter} from '../rateLimit.js';
 import type {ChatSession, SessionEntry} from '../../types/session.js';
 
 interface ChatMessage {
@@ -32,9 +36,15 @@ interface Chat {
 export function createChatRoutes(
   orchestrator: ChatOrchestrator,
   sessionStore: SessionStore,
-  authMiddleware?: HttpAuthMiddleware
+  authMiddleware?: HttpAuthMiddleware,
+  forwardHeaders?: readonly ForwardableHeader[],
+  rateLimit?: RateLimiter
 ): Router {
   const router = Router();
+  // After auth on every route, so a chat request is keyed on its user rather than on an address an office shares.
+  const limit: RequestHandler = rateLimit ? rateLimitMiddleware(rateLimit) : (_req, _res, next) => next();
+  // Resolved once at construction, so the headers a turn may carry are fixed before any request arrives.
+  const allow = forwardedHeaders(forwardHeaders);
   const chats = new Map<string, Chat>();
 
   // No middleware means no way to identify a caller, so deny rather than serve everyone as one shared user.
@@ -44,7 +54,7 @@ export function createChatRoutes(
       deny(res, 'no auth middleware is configured');
     });
 
-  router.post('/', auth, async (req: AuthenticatedRequest, res: Response) => {
+  router.post('/', auth, limit, async (req: AuthenticatedRequest, res: Response) => {
     const user = requireUser(req, res);
     if (!user) return;
 
@@ -66,14 +76,14 @@ export function createChatRoutes(
     res.status(201).json({id: chatId, createdAt});
   });
 
-  router.get('/:id', auth, (req: AuthenticatedRequest<{id: string}>, res: Response) => {
+  router.get('/:id', auth, limit, (req: AuthenticatedRequest<{id: string}>, res: Response) => {
     const chat = authorizedChat(req, res, chats);
     if (!chat) return;
 
     res.json({id: chat.id, messages: chat.messages, createdAt: chat.createdAt});
   });
 
-  router.post('/:id/messages', auth, async (req: AuthenticatedRequest<{id: string}>, res: Response) => {
+  router.post('/:id/messages', auth, limit, async (req: AuthenticatedRequest<{id: string}>, res: Response) => {
     const chat = authorizedChat(req, res, chats);
     if (!chat) return;
 
@@ -97,11 +107,14 @@ export function createChatRoutes(
       sessionId: chat.id,
       userId: chat.userId,
       workspaceId: chat.workspaceId,
-      authHeaders: {
-        cookie: req.headers.cookie,
-        authorization: req.headers.authorization,
-        host: (req.headers['x-forwarded-host'] as string) || req.headers.host,
-      },
+      authHeaders: filterAuthHeaders(
+        {
+          cookie: req.headers.cookie,
+          authorization: req.headers.authorization,
+          host: (req.headers['x-forwarded-host'] as string) || req.headers.host,
+        },
+        allow
+      ),
       entries: chatMessagesToEntries(chat.messages),
     };
 

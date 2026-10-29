@@ -149,7 +149,7 @@ describe('ToolRegistry.execute — a tool name the model invented', () => {
     const response = await registryWith('get_weather', 'list_locations').execute('nope', {});
 
     const absent = ['nope', 'get_weather', 'list_locations'].filter(name => !response.result.includes(name));
-    expect({response, absent}).toEqual({response: {result: expect.any(String)}, absent: []});
+    expect({response, absent}).toEqual({response: {result: expect.any(String), isError: true}, absent: []});
   });
 
   it('says that no tools are registered when the registry is empty, ending in no empty list', async () => {
@@ -176,7 +176,10 @@ describe('ToolRegistry.execute — an executor that throws', () => {
     const response = await throwing('get_weather', new Error('ECONNREFUSED 10.0.0.4:8080')).execute('get_weather', {});
 
     const leaks = ['ECONNREFUSED', '10.0.0.4'].filter(text => response.result.includes(text));
-    expect({response, leaks}).toEqual({response: {result: expect.stringContaining('get_weather')}, leaks: []});
+    expect({response, leaks}).toEqual({
+      response: {result: expect.stringContaining('get_weather'), isError: true},
+      leaks: [],
+    });
   });
 
   it('answers a throw of any shape alike: a string, undefined, a plain object, an object with no prototype', async () => {
@@ -184,7 +187,9 @@ describe('ToolRegistry.execute — an executor that throws', () => {
 
     const responses = await Promise.all(thrown.map(value => throwing('get_weather', value).execute('get_weather', {})));
 
-    expect(responses).toEqual(thrown.map(() => ({result: 'The get_weather tool failed and returned no result.'})));
+    expect(responses).toEqual(
+      thrown.map(() => ({result: 'The get_weather tool failed and returned no result.', isError: true}))
+    );
   });
 
   it('logs a throw once, at error under tool, with the tool name and error type, its message cut to 500 characters', async () => {

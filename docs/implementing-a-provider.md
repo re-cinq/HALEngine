@@ -12,6 +12,11 @@ reference implementation for streaming, and
 [vertexProvider.ts](../src/providers/vertex/vertexProvider.ts) for
 `generateStructured`.
 
+Bedrock reports token counts on its stop chunk, read from the Converse stream's
+`metadata` event; AWS sends that event after `messageStop`, so the stop chunk
+waits for the stream to end. A provider you finish reports its counts on its
+stop chunk the same way, as `usage`.
+
 ## Anthropic ([anthropicProvider.ts](../src/providers/anthropic/anthropicProvider.ts))
 
 1. Install `@anthropic-ai/sdk`
@@ -46,6 +51,28 @@ silently breaks orchestration. Until it is implemented it must keep throwing
 Both SDKs take the signal as a request option, so an abort cancels the request at
 the vendor, and both reject the pending call when it does. Honour it the way
 § Cancellation below describes.
+
+## Scripting the mock provider
+
+The mock provider echoes the user by default. To exercise a tool round with no cloud account, give it
+`turns`: a queue of answers, consumed one per `sendMessage` call rather than one per user message,
+because a tool round is several calls within one user turn.
+
+<!-- doc-block: none -- a two-turn script; MockTurn is checked through src/providers/mock/mockProvider.ts by typecheck -->
+```typescript
+const provider = createProvider({
+  type: 'mock',
+  turns: [
+    {toolCalls: [{id: 't1', name: 'echo', input: {q: 'hi'}}]}, // call 1: ask for the tool
+    {text: 'done'}, // call 2: answer once the result is back
+  ],
+  onSendMessage: params => console.log(params.messages.length),
+});
+```
+
+Each turn emits its text, then its tool calls, then a `stop` whose reason follows from them:
+`tool_use` when the turn calls a tool, `end_turn` otherwise, which is what Bedrock and Vertex report.
+A call past the end of the script throws rather than falling back to the echo.
 
 ## Cancellation
 

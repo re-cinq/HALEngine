@@ -124,11 +124,14 @@ interface HalEngineConfig {
   tools?: ToolRegistry; // Registered tools (optional)
   session?: SessionStore; // Custom session store (default: in-memory)
   privacy?: {mask?: PromptMask}; // opt-in: the model sees your detector's tokens, everything else the real values
+  fallbackProviders?: ProviderConfig[]; // tried in order, once each, when the provider before it is down before its first chunk
+  onFailover?: (event: FailoverEvent) => void | Promise<void>; // once per failover: {failed, next, code, elapsedMs}, the providers by config type
   transport?: {
     port?: number; // Server port (default: 8086)
     corsOrigin?: string | string[];
     basePath?: string; // URL prefix (default: '/hal')
     heartbeatIntervalMs?: number; // WS heartbeat (default: 30000)
+    rateLimit?: RateLimitConfig | false; // one user's inbound budget across WS and HTTP: 20 a minute, 5 at once (default); false turns it off
     connectMessage?: string; // the connected frame's message (default: 'Connected to HAL Engine'); may carry the AI disclosure
     resume?: {enabled: boolean; latest?: boolean}; // opt-in: rejoin a conversation by ?sessionId=, or the user's latest
     history?: {enabled: boolean; preview?: boolean}; // opt-in: answer list_conversations with the user's own conversations; preview adds each one's opening question
@@ -139,11 +142,13 @@ interface HalEngineConfig {
   auth: {
     ws: WsAuthenticator; // WebSocket auth function
     http?: HttpAuthMiddleware; // Express auth middleware
+    forwardHeaders?: ForwardableHeader[]; // caller headers a tool receives as authHeaders: 'cookie' | 'authorization' | 'host'; unset forwards none
   };
   orchestrator?: {
     maxToolRounds?: number; // Max tool rounds executed (default: 5); at most maxToolRounds + 1 provider calls
     toolTimeoutMs?: number; // Abandon a tool call after this many ms, answering the model with a timeout result (default: 30000; 0 = no deadline)
     contextConfig?: Partial<ContextConfig>;
+    entries?: EntryPolicy; // What a stored conversation keeps: maxContentEntries empties older entries when a turn ends, redactEntry rewrites all but a user's (default: everything, as written)
   };
   onConnect?: (session, {resumed}) => void | Promise<void>; // Fire-and-forget; never awaited; resumed: rejoined a stored conversation
   onDisconnect?: (sessionId) => void | Promise<void>; // Fire-and-forget; never awaited

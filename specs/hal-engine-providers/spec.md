@@ -95,13 +95,26 @@ This package reads neither. `src/providers/bedrock/bedrockProvider.ts:28` constr
 - `bedrock:InvokeModel`
 - `bedrock:InvokeModelWithResponseStream`
 
-A `tool_use` block's `signature`, which only Vertex reads, is left out of the Converse request ([validated by: sends a tool_use block carrying signature sig-1 to Bedrock as a toolUse without it](../../src/providers/bedrock/bedrockProvider.test.ts#L65)).
+A `tool_use` block's `signature`, which only Vertex reads, is left out of the Converse request ([validated by: sends a tool_use block carrying signature sig-1 to Bedrock as a toolUse without it](../../src/providers/bedrock/bedrockProvider.test.ts#L66)).
+
+### Token usage
+
+Bedrock reports token counts on the `stop` chunk's `usage`, read from the stream's `metadata` event. AWS sends that event after `messageStop`, so the provider holds the `stop` chunk until the stream ends.
+
+- `extractUsageFromMetadata` is pure: it returns a metadata event's three counts, `undefined` without one, and leaves the event untouched ([validated by: reads the three counts off a metadata event, undefined without one, leaving the event as it was](../../src/providers/bedrock/bedrockUsage.test.ts#L19)).
+- A stream ending `messageStop` then `metadata` yields its text and then one `stop` chunk carrying that usage ([validated by: carries the usage of a metadata event after messageStop on the one stop chunk, after the text](../../src/providers/bedrock/bedrockUsage.test.ts#L29)).
+- The order of the two events does not matter: `metadata` before `messageStop` yields the identical chunks ([validated by: yields the identical chunks when the metadata event arrives before messageStop](../../src/providers/bedrock/bedrockUsage.test.ts#L36)).
+- A stream with no metadata event yields a `stop` chunk with no `usage` key at all ([validated by: puts no usage key at all on the stop chunk of a stream with no metadata event](../../src/providers/bedrock/bedrockUsage.test.ts#L40)).
+- A metadata event carrying no counts reports no `usage`, an honest absence rather than a confident zero in a cost column; one carrying only some counts reports `0` for the rest ([validated by: reports no usage for a metadata event with no counts, and zeroes the counts a partial one leaves out](../../src/providers/bedrock/bedrockUsage.test.ts#L46)).
+- `totalTokens` is the vendor's own figure, never recomputed from the other two, since it may include cache tokens this engine does not model ([validated by: reports the vendor's totalTokens of 1300 as given, never a recomputed 1000](../../src/providers/bedrock/bedrockUsage.test.ts#L56)).
+- **Data boundary.** Only `usage` is read off the metadata event, never `metrics` or `trace`, which can carry guardrail content derived from user input ([validated by: keeps metrics and trace out of the stop chunk, which carries exactly the three usage fields](../../src/providers/bedrock/bedrockUsage.test.ts#L62)).
+- A tool round keeps its shape: the `tool_use` chunk comes before the `stop` chunk, which carries that round's usage ([validated by: yields a tool round's tool_use chunk before its stop, the stop carrying that round's usage](../../src/providers/bedrock/bedrockUsage.test.ts#L74)).
 
 See [spike-bedrock-integration.md](../../docs/spikes/spike-bedrock-integration.md) for detailed cost analysis, token limits, and error handling patterns.
 
 ## Google Vertex AI
 
-Supports streaming through `sendMessage` and structured JSON output through `generateStructured` ([validated by: streams text chunks from Vertex AI response](../../src/providers/vertex/vertexProvider.test.ts#L69), [validated by: returns parsed JSON from Vertex response](../../src/providers/vertex/vertexProvider.test.ts#L455)).
+Supports streaming through `sendMessage` and structured JSON output through `generateStructured` ([validated by: streams text chunks from Vertex AI response](../../src/providers/vertex/vertexProvider.test.ts#L69), [validated by: returns parsed JSON from Vertex response](../../src/providers/vertex/vertexProvider.test.ts#L489)).
 
 <!-- doc-block: none -- a composed provider configuration; its fields are checked through src/config.ts by typecheck -->
 ```typescript
@@ -127,11 +140,11 @@ Measured on 2026-09-25 against project `re5-n8n-platform`, one `generateContent`
 
 `location` selects the regional endpoint, so it decides where the request is processed and which jurisdiction the data stays in - not merely which datacentre is nearest. It is passed straight to `new GoogleGenAI({vertexai: true, location})` and the engine does not validate it: a region that does not serve the model surfaces as a vendor error on the first call, not at construction. The examples here use `europe-west4`.
 
-The `eu` multi-region is a distinct host, `aiplatform.eu.rep.googleapis.com`. `@google/genai` derives it from `location: 'eu'` itself, as it does `us`, and gives any other location its regional host, so `location` alone now reaches it; under `@google-cloud/vertexai` it could not. The optional `apiEndpoint` on `VertexConfig` still overrides the host: it becomes the client's base URL, `https://<apiEndpoint>/`, and when it is absent no base URL is passed, so a deployment that sets only `location` gets the SDK's own choice of host ([validated by: forwards apiEndpoint to the client as its base URL for the eu multi-region](../../src/providers/vertex/vertexProvider.test.ts#L566), [validated by: omits apiEndpoint when unset so single-region deployments are unchanged](../../src/providers/vertex/vertexProvider.test.ts#L581)).
+The `eu` multi-region is a distinct host, `aiplatform.eu.rep.googleapis.com`. `@google/genai` derives it from `location: 'eu'` itself, as it does `us`, and gives any other location its regional host, so `location` alone now reaches it; under `@google-cloud/vertexai` it could not. The optional `apiEndpoint` on `VertexConfig` still overrides the host: it becomes the client's base URL, `https://<apiEndpoint>/`, and when it is absent no base URL is passed, so a deployment that sets only `location` gets the SDK's own choice of host ([validated by: forwards apiEndpoint to the client as its base URL for the eu multi-region](../../src/providers/vertex/vertexProvider.test.ts#L600), [validated by: omits apiEndpoint when unset so single-region deployments are unchanged](../../src/providers/vertex/vertexProvider.test.ts#L615)).
 
 Measured on 2026-10-19 with `@google/genai` 2.26.0 against project `re5-n8n-platform`: a tool-using turn on `gemini-3.1-flash-lite` with `location: 'eu'` reached `aiplatform.eu.rep.googleapis.com` both with `apiEndpoint` unset and set to that host, ran its tool, and sent the call's thought signature back accepted.
 
-- The client is always created in Vertex mode, never against the Gemini API, on Vertex's GA `v1` API, which `@google-cloud/vertexai` called and `@google/genai` would otherwise replace with `v1beta1`, carrying the configured project, location and auth options ([validated by: creates the client in Vertex mode on the v1 API with the configured project, location and auth options](../../src/providers/vertex/vertexProvider.test.ts#L554)).
+- The client is always created in Vertex mode, never against the Gemini API, on Vertex's GA `v1` API, which `@google-cloud/vertexai` called and `@google/genai` would otherwise replace with `v1beta1`, carrying the configured project, location and auth options ([validated by: creates the client in Vertex mode on the v1 API with the configured project, location and auth options](../../src/providers/vertex/vertexProvider.test.ts#L588)).
 
 **Credentials:**
 
@@ -195,10 +208,10 @@ Gemini 3 models attach an opaque `thoughtSignature` to the part that carries a f
 
 ### Structured output
 
-- `generateStructured` sets `responseMimeType` to `application/json` and passes the schema with its type names upper-cased, which is the form the Vertex SDK expects ([validated by: configures the request with responseMimeType and responseSchema](../../src/providers/vertex/vertexProvider.test.ts#L469)).
-- A response body that is not valid JSON raises `AIError` with code `PARSE_ERROR`, rather than returning something the caller would have to re-check ([validated by: throws AIError with PARSE_ERROR on invalid JSON](../../src/providers/vertex/vertexProvider.test.ts#L500)).
-- A response with no candidates raises `PARSE_ERROR` as well, since it carries no JSON ([validated by: raises PARSE_ERROR for a structured response with no candidates, which carries no JSON](../../src/providers/vertex/vertexProvider.test.ts#L510)).
-- An `enum` passes through the response schema unchanged, and an array's `items` schema is mapped like any other, its type upper-cased ([validated by: passes an enum and an array of items through the response schema, upper-casing the item type](../../src/providers/vertex/vertexProvider.test.ts#L516)).
+- `generateStructured` sets `responseMimeType` to `application/json` and passes the schema with its type names upper-cased, which is the form the Vertex SDK expects ([validated by: configures the request with responseMimeType and responseSchema](../../src/providers/vertex/vertexProvider.test.ts#L503)).
+- A response body that is not valid JSON raises `AIError` with code `PARSE_ERROR`, rather than returning something the caller would have to re-check ([validated by: throws AIError with PARSE_ERROR on invalid JSON](../../src/providers/vertex/vertexProvider.test.ts#L534)).
+- A response with no candidates raises `PARSE_ERROR` as well, since it carries no JSON ([validated by: raises PARSE_ERROR for a structured response with no candidates, which carries no JSON](../../src/providers/vertex/vertexProvider.test.ts#L544)).
+- An `enum` passes through the response schema unchanged, and an array's `items` schema is mapped like any other, its type upper-cased ([validated by: passes an enum and an array of items through the response schema, upper-casing the item type](../../src/providers/vertex/vertexProvider.test.ts#L550)).
 
 ### Error mapping
 
@@ -208,7 +221,7 @@ Gemini 3 models attach an opaque `thoughtSignature` to the part that carries a f
 - A failure whose HTTP status is `401` or `403`, or whose message names `401`, `403` or `PERMISSION_DENIED`, becomes `AUTH_ERROR`; `@google/genai`'s `ApiError` carries the status, and its message is the vendor's JSON error body ([validated by: throws AIError with AUTH_ERROR on permission denied](../../src/providers/vertex/vertexProvider.test.ts#L172), [validated by: maps a failure by its HTTP status when its message names no code: 429 to RATE_LIMITED, 403 to AUTH_ERROR](../../src/providers/vertex/vertexProvider.test.ts#L379), [validated by: still maps a failure carrying no status by its message, 403 Forbidden to AUTH_ERROR](../../src/providers/vertex/vertexProvider.test.ts#L184)).
 - Anything the mapping cannot classify becomes `PROVIDER_ERROR`, so an SDK error never reaches the caller as a raw `Error` ([validated by: falls back to PROVIDER_ERROR for a failure it cannot classify](../../src/providers/vertex/vertexProvider.test.ts#L244)).
 - A rejection that is not an `Error` at all becomes `PROVIDER_ERROR` with the message `Unknown Vertex AI error` ([validated by: maps a rejection that is no Error, the string 'boom', to PROVIDER_ERROR naming an unknown Vertex AI error](../../src/providers/vertex/vertexProvider.test.ts#L148)).
-- The mapping is shared: a failure raised during `generateStructured` is classified exactly as the same failure during `sendMessage` would be ([validated by: throws mapped AIError on Vertex API failure](../../src/providers/vertex/vertexProvider.test.ts#L541)).
+- The mapping is shared: a failure raised during `generateStructured` is classified exactly as the same failure during `sendMessage` would be ([validated by: throws mapped AIError on Vertex API failure](../../src/providers/vertex/vertexProvider.test.ts#L575)).
 
 ## OpenAI
 
@@ -270,9 +283,9 @@ const engine = createHalEngine({
 });
 ```
 
-- `sendMessage` streams `Mock response to: "<last user message>"` one word at a time ([validated by: streams word-by-word response echoing user input](../../src/providers/mock/mockProvider.test.ts#L7)).
-- The stream closes with a `stop` chunk carrying fixed usage metadata, so usage plumbing can be exercised without a real provider ([validated by: ends with stop chunk containing usage metadata](../../src/providers/mock/mockProvider.test.ts#L16)).
-- A last message whose content is not a string falls back to `Hello` rather than failing ([validated by: handles non-string content in last message](../../src/providers/mock/mockProvider.test.ts#L28)).
+- `sendMessage` streams `Mock response to: "<last user message>"` one word at a time ([validated by: streams word-by-word response echoing user input](../../src/providers/mock/mockProvider.test.ts#L8)).
+- The stream closes with a `stop` chunk carrying fixed usage metadata, so usage plumbing can be exercised without a real provider ([validated by: ends with stop chunk containing usage metadata](../../src/providers/mock/mockProvider.test.ts#L17)).
+- A last message whose content is not a string falls back to `Hello` rather than failing ([validated by: handles non-string content in last message](../../src/providers/mock/mockProvider.test.ts#L29)).
 
 `generateStructured` is the configurable half. `structuredResponses` maps a user message to the exact object to return for it; anything unmatched gets a value built from the response schema's shape.
 
@@ -284,13 +297,31 @@ const provider = createProvider({
 });
 ```
 
-- A matching key returns that object verbatim ([validated by: returns preconfigured response when user text matches](../../src/providers/mock/mockProvider.test.ts#L78)).
-- No match returns the schema's default shape: `''` for a string, `0` for a number, `false` for a boolean, `[]` for an array, and recursively for an object ([validated by: returns default values matching schema shape](../../src/providers/mock/mockProvider.test.ts#L72)).
-- A `structuredResponses` map that holds no entry for this message falls back to the same default shape, rather than failing or returning nothing ([validated by: falls back to default when no preconfigured response matches](../../src/providers/mock/mockProvider.test.ts#L114)).
-- A schema whose top level is not an object is built from the scalar table directly, so a top-level `array` schema returns `[]` ([validated by: returns empty array for array schema](../../src/providers/mock/mockProvider.test.ts#L87)).
-- Each caller gets its own array, so one caller mutating a returned `[]` cannot affect another ([validated by: gives each caller its own array, so one mutating it cannot affect another](../../src/providers/mock/mockProvider.test.ts#L98)).
+- A matching key returns that object verbatim ([validated by: returns preconfigured response when user text matches](../../src/providers/mock/mockProvider.test.ts#L79)).
+- No match returns the schema's default shape: `''` for a string, `0` for a number, `false` for a boolean, `[]` for an array, and recursively for an object ([validated by: returns default values matching schema shape](../../src/providers/mock/mockProvider.test.ts#L73)).
+- A `structuredResponses` map that holds no entry for this message falls back to the same default shape, rather than failing or returning nothing ([validated by: falls back to default when no preconfigured response matches](../../src/providers/mock/mockProvider.test.ts#L115)).
+- A schema whose top level is not an object is built from the scalar table directly, so a top-level `array` schema returns `[]` ([validated by: returns empty array for array schema](../../src/providers/mock/mockProvider.test.ts#L88)).
+- Each caller gets its own array, so one caller mutating a returned `[]` cannot affect another ([validated by: gives each caller its own array, so one mutating it cannot affect another](../../src/providers/mock/mockProvider.test.ts#L99)).
 
-There is no `responses` array and no cycling: the only knob is `structuredResponses`.
+`sendMessage` can be scripted too. `turns` is a queue of answers, one per `sendMessage` call, not per user message, since a tool round is several calls in one turn; it is named `turns`, not `responses`, which older docs promised and no code ever implemented. Each turn emits its `text`, then one `tool_use` chunk per tool call, then a `stop` chunk. Without `turns`, the mock echoes as above.
+
+<!-- doc-block: none -- a composed provider configuration; MockTurn is checked through src/providers/mock/mockProvider.ts by typecheck -->
+```typescript
+const provider = createProvider({
+  type: 'mock',
+  turns: [{toolCalls: [{id: 't1', name: 'echo', input: {q: 'hi'}}]}, {text: 'done'}],
+});
+```
+
+- Driven through the orchestrator, that script calls `sendMessage` twice, yields `tool_use`, `stop`, `text`, `stop`, and the second call carries the tool's result as its last message ([validated by: drives a tool round through createChatOrchestrator in two calls, the second carrying the echo tool's result](../../src/scriptedMock.test.ts#L9)).
+- A turn that calls a tool ends `stopReason: 'tool_use'`, and one that does not ends `'end_turn'`, the reasons Bedrock and Vertex report ([validated by: ends a turn that calls a tool with stopReason tool_use, and one that does not with end_turn](../../src/providers/mock/mockProvider.test.ts#L143)).
+- A turn emits its text, then its tool calls, then its stop, and the text joins back to exactly what was scripted ([validated by: emits a turn's text, then its tool calls, then its stop, the text joining back to exactly what was scripted](../../src/providers/mock/mockProvider.test.ts#L152)).
+- A call past the end of the script throws `mock provider script exhausted: call N of M scripted turns` instead of falling back to the echo, which is how a broken test would still go green ([validated by: throws on the third call against a two-turn script, naming call 3 of 2 scripted turns](../../src/providers/mock/mockProvider.test.ts#L165)).
+- A turn's stop chunk reports the turn's `usage`, or the echo's fixed usage when it sets none ([validated by: reports the fixed usage on a scripted turn that sets none, and exactly the usage a turn sets](../../src/providers/mock/mockProvider.test.ts#L173)).
+- `onSendMessage` runs once per call, before the first chunk, with the parameters the caller built ([validated by: runs onSendMessage once per call, before the first chunk, with the parameters the caller passed](../../src/providers/mock/mockProvider.test.ts#L183)).
+- A scripted tool name is not checked against `params.tools`, so a hallucinated tool name can be reproduced without a cloud account ([validated by: emits a tool_use for a tool no registry holds, checking nothing against params.tools](../../src/providers/mock/mockProvider.test.ts#L201)).
+- `turns` leaves `structuredResponses` as it was ([validated by: answers generateStructured from structuredResponses exactly as before when turns are also set](../../src/providers/mock/mockProvider.test.ts#L214)).
+- `turns` reaches the provider through `createProvider` as well ([validated by: takes turns through createProvider as well as createMockProvider](../../src/providers/mock/mockProvider.test.ts#L231)).
 
 Both entry points honour it: the example above goes through `createProvider`, which once called `createMockProvider()` with no arguments and dropped the map ([validated by: forwards MockConfig, so a configured structured response survives the factory](../../src/providers/providerFactory.test.ts#L17)).
 
@@ -302,11 +333,11 @@ It configures `generateStructured` only, and nothing inside `createHalEngine` ca
 
 **Bedrock** closes the request at the vendor:
 
-- `params.signal` is passed to `client.send` as its `abortSignal`, the exact object given ([validated by: passes params.signal to client.send as its abortSignal, the exact object it was given](../../src/providers/bedrock/bedrockProvider.test.ts#L52)).
-- With no signal, `client.send` receives the command alone, exactly as before the field existed ([validated by: calls client.send with the command alone when no signal is given](../../src/providers/bedrock/bedrockProvider.test.ts#L90)).
-- An abort while the request is in flight ends the stream with no chunk and no `AIError`, although the SDK rejects the call, and is logged at `info` as `request aborted` under the provider's name with no other field ([validated by: ends the stream without an AIError when its signal aborts the request in flight, logging only that it aborted](../../src/providers/bedrock/bedrockProvider.test.ts#L99)).
-- Events already received are not read after an abort, so a consumer that aborts after the first of three chunks receives one ([validated by: yields nothing further once its signal aborts mid-stream, so an abort after the first of three leaves one](../../src/providers/bedrock/bedrockProvider.test.ts#L130)).
-- A signal already aborted when `sendMessage` is called sends nothing to the vendor ([validated by: sends nothing to Bedrock when its signal is already aborted](../../src/providers/bedrock/bedrockProvider.test.ts#L138)).
+- `params.signal` is passed to `client.send` as its `abortSignal`, the exact object given ([validated by: passes params.signal to client.send as its abortSignal, the exact object it was given](../../src/providers/bedrock/bedrockProvider.test.ts#L53)).
+- With no signal, `client.send` receives the command alone, exactly as before the field existed ([validated by: calls client.send with the command alone when no signal is given](../../src/providers/bedrock/bedrockProvider.test.ts#L122)).
+- An abort while the request is in flight ends the stream with no chunk and no `AIError`, although the SDK rejects the call, and is logged at `info` as `request aborted` under the provider's name with no other field ([validated by: ends the stream without an AIError when its signal aborts the request in flight, logging only that it aborted](../../src/providers/bedrock/bedrockProvider.test.ts#L131)).
+- Events already received are not read after an abort, so a consumer that aborts after the first of three chunks receives one ([validated by: yields nothing further once its signal aborts mid-stream, so an abort after the first of three leaves one](../../src/providers/bedrock/bedrockProvider.test.ts#L162)).
+- A signal already aborted when `sendMessage` is called sends nothing to the vendor ([validated by: sends nothing to Bedrock when its signal is already aborted](../../src/providers/bedrock/bedrockProvider.test.ts#L170)).
 
 **Vertex** closes the request at the transport. `@google/genai` hands the signal to `fetch`, so an abort closes the connection and no more of the answer reaches the engine. Measured on 2026-10-19 with `@google/genai` 2.26.0 against `gemini-3.1-flash-lite` on the `eu` multi-region: an abort after the first chunk aborted the signal the SDK gave `fetch`, the next read of the response body raised `AbortError`, and 0 bytes arrived after the abort. The SDK documents that the service may still finish generating, and bill, a request the client aborted. Under `@google-cloud/vertexai` an abort only stopped the engine's reading, and the vendor's response ran to its end.
 
@@ -316,7 +347,7 @@ It configures `generateStructured` only, and nothing inside `createHalEngine` ca
 - A signal already aborted when `sendMessage` is called sends nothing to the vendor ([validated by: sends nothing to Vertex when its signal is already aborted](../../src/providers/vertex/vertexProvider.test.ts#L311)).
 - A stream that fails mid-way raises one `PROVIDER_ERROR` after the chunks already read, and leaves no unhandled rejection. `@google/genai` raises the failure from the stream itself and keeps no second copy of the response, so the rejection handler `@google-cloud/vertexai`'s drained copy needed is gone ([validated by: raises one PROVIDER_ERROR after the chunk already read when the stream fails mid-way, and no unhandled rejection](../../src/providers/vertex/vertexProvider.test.ts#L319)).
 
-**Mock** stops at once: an abort after two words leaves two chunks and no `stop` chunk ([validated by: stops yielding once its signal aborts, so an abort after two words leaves two chunks and no stop chunk](../../src/providers/mock/mockProvider.test.ts#L42)).
+**Mock** stops at once: an abort after two words leaves two chunks and no `stop` chunk ([validated by: stops yielding once its signal aborts, so an abort after two words leaves two chunks and no stop chunk](../../src/providers/mock/mockProvider.test.ts#L43)).
 
 ## Implementing a Custom Provider
 

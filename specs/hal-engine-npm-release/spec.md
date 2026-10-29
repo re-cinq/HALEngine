@@ -74,6 +74,9 @@ The `@aws-sdk/client-bedrock-runtime` reference in the emitted types is not the 
 
 `tsconfig.build.json` already excludes `**/*.test.ts` from emit while `tsconfig.json` keeps type-checking them, so compiled test files no longer reach the package. What is missing is a check: the publish workflow MUST fail when the pack list contains any `*.test.*` entry, so this cannot silently regress.
 
+- Test scaffolding stays out of the package whatever it is named: a file the package root never imports but a test does is listed in `tsconfig.build.json`'s `exclude`, so it is never emitted to `dist/` ([validated by: emits no file only tests reach: one the package root never imports but a test does is left out of the build](../../src/buildExcludes.test.ts#L9)).
+- Nothing unreachable ships either: every file the build emits is imported, at some depth, from `src/index.ts`, the only entry the `exports` map offers, so a module nothing uses is deleted or excluded rather than carried as dead weight ([validated by: emits only what the package root reaches: every file the build emits is imported, at some depth, from src/index.ts](../../src/buildExcludes.test.ts#L22)).
+
 `tsconfig.build.json` also turns `declarationMap` and `sourceMap` off, which the root config leaves on for local work. `files` is `["dist"]`, so a published map named a `../src/*.ts` that the tarball did not carry and held no `sourcesContent` — 98 dead maps, half the file list, resolving to nothing in any consumer's debugger. Turning them off rather than adding `src` to `files` keeps the published artifact to what the package runs: measured at the change, 199 files and a 55.6 kB tarball became 101 files and 33.8 kB. A consumer wanting to step through the source has the repository.
 
 The list itself, rather than a count that drifts unnoticed: `npm pack --dry-run` prints 101 entries, and every one falls in four groups.
@@ -98,6 +101,8 @@ Nothing from `src/`, `example/`, `smoke/`, `docs/`, `specs/`, `adrs/` or `script
 - The floor is set at the measured baseline, not an aspiration, and exactly at it rather than rounded down: an integer floor leaves roughly a percent of slack, which was measured to let four untested lines through without failing.
 - Measured at `3186f07` with those exclusions: 67.96% statements, 57.54% branches, 68% functions, 68.34% lines, across 206 tests in 17 suites. The earlier figure of 61.32% lines predates the exclusions and three of this branch's commits.
 - The floor is a ratchet: a change that lowers coverage fails the job and is fixed by adding the missing test, never by lowering the number; a change that raises coverage should raise the floor with it.
+- `src/transport/` gained its own floor on 2026-10-27, at what it measured that day: 97.19% statements (659/678), 93.77% branches (407/434), 96.81% functions (152/157) and 97.30% lines (578/594).
+- Naming that path took its files out of `global`, which Jest measures over the files no path floor claims, so `global` was re-measured in the same commit: 458/496 statements, 228/266 branches, 120/132 functions and 392/418 lines. Its percentages fell because well-covered files left the group, not because coverage did. Measured the same day without the change, the files still in the group covered 457 statements, 228 branches, 119 functions and 391 lines, so none of the four counts went down.
 - `coverage/` is gitignored already, so nothing is added for it.
 
 ### Build-chain audit
@@ -322,8 +327,8 @@ A log call must not be able to take down the call site it observes. `JSON.string
 
 `logger` is declared on `HalEngineConfig`, is documented in five places, and was read by nothing: every line went through the module singleton regardless. It is the fifth instance of the seam this spec records above, and the one with a migration instruction resting on it - the release notes told consumers to supply a logger to keep the old line format. Seven modules import `log` at module scope, so the swap is a module-level one and is process-wide rather than per engine; `docs/logging.md` states that limit.
 
-- A logger passed to `createHalEngine` receives the package's own log lines ([validated by: delivers the package's own log lines to a supplied logger](../../src/config.test.ts#L71)).
-- Supplying none leaves the built-in console logger in place ([validated by: leaves an already-supplied logger in place when the config names none](../../src/config.test.ts#L84)).
+- A logger passed to `createHalEngine` receives the package's own log lines ([validated by: delivers the package's own log lines to a supplied logger](../../src/config.test.ts#L73)).
+- Supplying none leaves the built-in console logger in place ([validated by: leaves an already-supplied logger in place when the config names none](../../src/config.test.ts#L86)).
 - `setLogger` sends lines to the supplied implementation instead of the console, and the console receives nothing ([validated by: sends lines to a supplied logger instead of the console](../../src/shared/logger.test.ts#L158)).
 - Calling `setLogger` with nothing restores the built-in one ([validated by: restores the built-in console logger when called with nothing](../../src/shared/logger.test.ts#L177)).
 - Handing it the package's own `log` object is the same as handing it nothing. `log` delegates to whatever is active, so making it active would have it call itself until the stack ran out, and because that overflow was caught by the same guard that protects the call site, nothing was written and nothing failed; the full configuration example did exactly this ([validated by: treats being handed its own log object as nothing, rather than recursing until no line is written](../../src/shared/logger.test.ts#L188)).
@@ -337,7 +342,7 @@ Delegating to a supplied logger initially bypassed both of the built-in emitter'
 - A logger missing one of the four methods fails the same way rather than at an arbitrary later call ([validated by: survives a partially implemented logger rather than failing at an arbitrary later call](../../src/shared/logger.test.ts#L250)).
 - A value whose `toString` throws still produces a line ([validated by: still writes a line rather than throwing out of the emitter](../../src/shared/logger.test.ts#L264)).
 - `setLogger` is exported from `src/index.ts`, so a consumer can put the built-in logger back; without it the process-global swap had no documented way out.
-- `createHalEngine` installs a logger only when the config names one, so a second engine naming none keeps the first one's logger ([validated by: leaves an already-supplied logger in place when the config names none](../../src/config.test.ts#L84)).
+- `createHalEngine` installs a logger only when the config names one, so a second engine naming none keeps the first one's logger ([validated by: leaves an already-supplied logger in place when the config names none](../../src/config.test.ts#L86)).
 - No call site changes: every `log.*` call under `src/` kept its category, message, level and data. There were 28 when this was written and 29 once T015 added the hook-failure line; later work added more, so the number is a record of the change rather than a count of the tree.
 - A new `docs/logging.md` covers the key set, the level mapping, the stream split, and which fields can identify a person.
 
@@ -369,11 +374,11 @@ The alias is removed. `user_message` is the only wire name, which is what the ex
 
 `createHalEngine` forwarded `maxToolRounds` and `contextConfig` to the orchestrator it builds and stopped there, and passed no port to the server at all. Both options are declared on `HalEngineConfig`, both are documented, and neither did anything - the third and fourth instances of the same seam after `onConnect` and the `send_message` alias.
 
-- `orchestrator.hooks` is declared and forwarded, so a hook passed through the factory fires ([validated by: forwards an orchestrator hook, so one passed through the config actually fires](../../src/config.test.ts#L25)).
-- `transport.port` reaches the server, and the resolution order is the `start(port)` argument, then `transport.port`, then `PORT`, then `8086` ([validated by: forwards transport.port, so the server listens where the config said](../../src/config.test.ts#L42)).
-- An explicit `start(port)` still wins over the configured one ([validated by: lets an explicit start(port) win over the configured one](../../src/config.test.ts#L53)).
+- `orchestrator.hooks` is declared and forwarded, so a hook passed through the factory fires ([validated by: forwards an orchestrator hook, so one passed through the config actually fires](../../src/config.test.ts#L27)).
+- `transport.port` reaches the server, and the resolution order is the `start(port)` argument, then `transport.port`, then `PORT`, then `8086` ([validated by: forwards transport.port, so the server listens where the config said](../../src/config.test.ts#L44)).
+- An explicit `start(port)` still wins over the configured one ([validated by: lets an explicit start(port) win over the configured one](../../src/config.test.ts#L55)).
 - The started line logs the bound port rather than the requested one, which is what a configured `0` makes visible.
-- A port that cannot be bound rejects the promise `start()` returned, rather than surfacing as an unhandled `error` event that ends the process ([validated by: rejects instead of taking the process down with an unhandled error event](../../src/config.test.ts#L201)).
+- A port that cannot be bound rejects the promise `start()` returned, rather than surfacing as an unhandled `error` event that ends the process ([validated by: rejects instead of taking the process down with an unhandled error event](../../src/config.test.ts#L230)).
 
 Removing that listener once `listen` succeeded left the running server with none, and an `EventEmitter` with no `error` listener throws - so a socket error on a started server ended the process. A persistent listener replaces it, and its lifetime is the part worth stating: it is removed before each bind attempt, and never on `stop()`.
 

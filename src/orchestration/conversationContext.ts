@@ -25,6 +25,8 @@ function toContentMessages(entries: SessionEntry[]): Message[] {
   let toolCallCounter = 0;
 
   for (const e of entries) {
+    // Emptied by the entry policy: sending it would hand the provider an empty turn, which some vendors refuse.
+    if (e.cleared) continue;
     if (e.role === 'tool') {
       const syntheticId = `hist-${toolCallCounter++}`;
       const toolUseContent: ToolCallContent = {
@@ -60,11 +62,16 @@ function applyMessageWindow(messages: Message[], config: ContextConfig): Message
     totalLength -= contentLength(removed);
   }
 
-  while (result.length > 0 && result[0].role !== 'user') {
+  // A tool result is a user message too, and one whose call was cut away is refused by the provider.
+  while (result.length > 0 && !opensWithUserText(result[0])) {
     result = result.slice(1);
   }
 
   return result;
+}
+
+function opensWithUserText(message: Message): boolean {
+  return message.role === 'user' && typeof message.content === 'string';
 }
 
 function contentLength(m: Message): number {

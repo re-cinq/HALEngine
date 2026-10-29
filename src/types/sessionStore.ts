@@ -45,6 +45,8 @@ export interface SessionListOptions {
 export interface SessionCreateOptions {
   authHeaders?: ChatSession['authHeaders'];
   workspaceId?: string | number;
+  /** Held on the session in memory for its connection; a store must not write it. */
+  user?: ChatSession['user'];
 }
 
 export interface SessionStore<T extends BaseSession = ChatSession> {
@@ -63,4 +65,6 @@ export interface SessionStore<T extends BaseSession = ChatSession> {
   latestFor?(userId: string | number): Awaitable<T | undefined>;
   /** Tells an expired session from a missing one; `missing` is always a permitted answer, and a store without it behaves as `get` (specs/hal-engine-session-resume/spec.md). */
   lookup?(sessionId: string): Awaitable<SessionLookup<T>>;
+  /** How many conversations this user owns; personal data scoped to one user — never the store-wide total (specs/hal-engine-conversation-list). */
+  countFor?(userId: string | number): Awaitable<number>;
 }

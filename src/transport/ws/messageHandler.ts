@@ -19,8 +19,12 @@ import {
   createThinkingEntry,
   createToolEntry,
 } from '../../orchestration/entryFactories.js';
-import {appendEntry, appendDelta, commitEntry, markTruncated} from '../../orchestration/entryMutations.js';
+import {createEntryWriter} from '../../orchestration/entryMutations.js';
+import type {EntryWriter} from '../../orchestration/entryMutations.js';
+import type {EntryPolicy} from '../../types/entryPolicy.js';
 import {sendJson, sendUpsert, sendDelta, sendCommit, sendSkip, sendError, sendStreamEnd} from './sender.js';
+import {TOO_MANY_REQUESTS_MESSAGE} from '../rateLimit.js';
+import type {RateLimiter} from '../rateLimit.js';
 import {log} from '../../shared/logger.js';
 import {CredentialExpiredError} from '../../types/credential.js';
 
@@ -30,16 +34,28 @@ interface StreamState {
   suppressOutput: boolean;
   // Every model-authored entry the client was sent, thinking or assistant: what suppression must blank.
   blankableIndices: number[];
+  entryWriter: EntryWriter;
+}
+
+// What a user message turn runs on: the orchestrator, and the writer holding the same entry policy it does.
+interface TurnRunner {
+  orchestrator: ChatOrchestrator;
+  entryWriter: EntryWriter;
 }
 
 type StateIndexKey = 'thinkingIndex' | 'assistantIndex';
 type EntryFactory = () => SessionEntry;
-/** What the handler needs besides the orchestrator: the store a conversation list reads, and whether one is served. */
-export type MessageHandlerDeps = ConversationListDeps;
+/** What the handler needs besides the orchestrator: the store a conversation list reads, whether one is served, and the user's request budget. */
+export interface MessageHandlerDeps extends ConversationListDeps {
+  rateLimiter?: RateLimiter;
+  /** The policy the orchestrator holds too, so an entry this handler writes is kept as one the orchestrator writes is. */
+  entries?: EntryPolicy;
+}
 
 export function createMessageHandler(orchestrator: ChatOrchestrator, deps?: MessageHandlerDeps) {
   // Keyed by session, not socket: a resumed session can be open on more than one (specs/hal-engine-architecture/spec.md).
   const lock = new PerSessionLock();
+  const runner: TurnRunner = {orchestrator, entryWriter: createEntryWriter(deps?.entries)};
   return function handleMessage(
     ws: WebSocket,
     session: ChatSession,
@@ -47,9 +63,14 @@ export function createMessageHandler(orchestrator: ChatOrchestrator, deps?: Mess
     signal?: AbortSignal
   ): Promise<void> {
     const validation = validateMessage(rawMessage);
-    // Queued with no await before it, so a session's user_messages, a failed one too, are answered in arrival order.
+    // Queued with no await before it, so a session's user_messages, a refused or failed one too, are answered in arrival order.
     if (isUserMessageFrame(rawMessage)) {
-      return lock.run(session.sessionId, () => answerInTurn(ws, session, orchestrator, validation, signal));
+      const refusal = refusedBy(deps?.rateLimiter, session);
+      return lock.run(session.sessionId, () =>
+        refusal === undefined
+          ? answerInTurn(ws, session, runner, validation, signal)
+          : refuseInTurn(ws, session, refusal, signal)
+      );
     }
     // An async action runs up to its first await at once, so a ping is answered now and a throw stays a rejection.
     return wsErrorHandler(ws, () => answerFrame(ws, session, validation, deps, signal));
@@ -60,18 +81,44 @@ export function createMessageHandler(orchestrator: ChatOrchestrator, deps?: Mess
 async function answerInTurn(
   ws: WebSocket,
   session: ChatSession,
-  orchestrator: ChatOrchestrator,
+  runner: TurnRunner,
   validation: ValidationResult,
   signal: AbortSignal | undefined
 ): Promise<void> {
-  // Its socket closed while it waited: nobody is left to read the answer, and a session's last close took its credentials.
-  if (signal?.aborted || ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED) {
-    log.info('message', 'queued message dropped: its socket closed', {sessionId: session.sessionId});
-    return;
-  }
+  if (droppedForClosedSocket(ws, session, signal)) return;
   const startedAt = Date.now();
   try {
-    await wsErrorHandler(ws, () => answerUserMessage(ws, session, orchestrator, validation, signal));
+    await wsErrorHandler(ws, () => answerUserMessage(ws, session, runner, validation, signal));
+  } finally {
+    endTurn(ws, session, signal, startedAt);
+  }
+}
+
+// Its socket closed while it waited: nobody is left to read the answer, and a session's last close took its credentials.
+function droppedForClosedSocket(ws: WebSocket, session: ChatSession, signal: AbortSignal | undefined): boolean {
+  if (!signal?.aborted && ws.readyState !== WebSocket.CLOSING && ws.readyState !== WebSocket.CLOSED) return false;
+  log.info('message', 'queued message dropped: its socket closed', {sessionId: session.sessionId});
+  return true;
+}
+
+// Consumed on arrival, so the sending rate is what is limited; one bucket per user, whatever the session or socket.
+function refusedBy(limiter: RateLimiter | undefined, session: ChatSession): number | undefined {
+  const verdict = limiter?.consume(`user:${String(session.userId)}`);
+  return verdict === undefined || verdict.allowed ? undefined : verdict.retryAfterMs;
+}
+
+// A refusal keeps a turn's shape, one error then stream_end, and runs no model call (specs/hal-engine-rate-limit/spec.md).
+async function refuseInTurn(
+  ws: WebSocket,
+  session: ChatSession,
+  retryAfterMs: number,
+  signal: AbortSignal | undefined
+): Promise<void> {
+  if (droppedForClosedSocket(ws, session, signal)) return;
+  const startedAt = Date.now();
+  try {
+    log.warn('rateLimit', 'user_message refused: too many requests', {sessionId: session.sessionId, retryAfterMs});
+    sendError(ws, ErrorCodes.TOO_MANY_REQUESTS, TOO_MANY_REQUESTS_MESSAGE, {retryAfterMs});
   } finally {
     endTurn(ws, session, signal, startedAt);
   }
@@ -92,12 +139,12 @@ function endTurn(ws: WebSocket, session: ChatSession, signal: AbortSignal | unde
 async function answerUserMessage(
   ws: WebSocket,
   session: ChatSession,
-  orchestrator: ChatOrchestrator,
+  runner: TurnRunner,
   validation: ValidationResult,
   signal: AbortSignal | undefined
 ): Promise<void> {
   const message = validation.valid ? validation.data : undefined;
-  if (message?.type === 'user_message') return handleUserMessage(ws, session, orchestrator, message.content, signal);
+  if (message?.type === 'user_message') return handleUserMessage(ws, session, runner, message.content, signal);
   // Only an invalid user_message frame reaches here: a valid frame of any other type never enters the lock.
   reportInvalid(ws, validation);
 }
@@ -161,14 +208,14 @@ async function wsErrorHandler(ws: WebSocket, action: () => Promise<void>): Promi
 async function handleUserMessage(
   ws: WebSocket,
   session: ChatSession,
-  orchestrator: ChatOrchestrator,
+  {orchestrator, entryWriter}: TurnRunner,
   content: string,
   signal: AbortSignal | undefined
 ): Promise<void> {
   log.info('message', 'user message received', {sessionId: session.sessionId, contentLength: content.length});
 
   const userEntry = createUserEntry(content);
-  const userIndex = appendEntry(session, userEntry);
+  const userIndex = entryWriter.appendEntry(session, userEntry);
   sendUpsert(ws, userIndex, userEntry);
 
   const parser = new ThinkingTagParser();
@@ -177,6 +224,7 @@ async function handleUserMessage(
     assistantIndex: null,
     suppressOutput: false,
     blankableIndices: [],
+    entryWriter,
   };
 
   let textChunkCount = 0;
@@ -229,7 +277,7 @@ function processChunk(
   chunk: MessageChunk
 ): void {
   if (chunk.type === 'text') return processTextChunk(ws, session, state, parser, chunk.text);
-  if (chunk.type === 'tool_use') return processToolUseChunk(ws, session, chunk.toolCall);
+  if (chunk.type === 'tool_use') return processToolUseChunk(ws, session, state, chunk.toolCall);
   if (chunk.type === 'tool_result') return processToolResultChunk(ws, chunk.clientMessages);
   if (chunk.type === 'suppress_output') return processSuppressChunk(ws, session, state);
   if (chunk.type === 'stop') return processStopChunk(ws, session, state, parser);
@@ -276,7 +324,7 @@ function streamSegment(
   const isNew = initSegment(session, state, key, createEntry);
   if (isNew && state.suppressOutput) skipSuppressed(ws, session, state[key]!);
   if (isNew && !state.suppressOutput) sendUpsert(ws, state[key]!, session.entries[state[key]!]);
-  appendDelta(session, state[key]!, content);
+  state.entryWriter.appendDelta(session, state[key]!, content);
   if (!state.suppressOutput) sendDelta(ws, state[key]!, content);
 }
 
@@ -293,7 +341,7 @@ function markSuppressed(session: ChatSession, index: number): void {
 
 function initSegment(session: ChatSession, state: StreamState, key: StateIndexKey, createEntry: EntryFactory): boolean {
   if (state[key] !== null) return false;
-  state[key] = appendEntry(session, createEntry());
+  state[key] = state.entryWriter.appendEntry(session, createEntry());
   return true;
 }
 
@@ -301,7 +349,7 @@ function commitAndClear(ws: WebSocket, session: ChatSession, state: StreamState,
   const index = state[key];
   if (index === null) return;
 
-  commitEntry(session, index);
+  state.entryWriter.commitEntry(session, index);
   state[key] = null;
 
   // Only what the client received can be retracted; a thought as much as an answer, since both are the model's words.
@@ -314,12 +362,12 @@ function commitAndClear(ws: WebSocket, session: ChatSession, state: StreamState,
 function processToolUseChunk(
   ws: WebSocket,
   session: ChatSession,
+  state: StreamState,
   toolCall: {name: string; input: Record<string, unknown>}
 ): void {
-  const toolEntry = createToolEntry(toolCall.name, toolCall.input);
-  const toolIndex = appendEntry(session, toolEntry);
-  // Exempt from suppression by design: no model response, and without it nothing would show before stream_end.
-  sendUpsert(ws, toolIndex, toolEntry);
+  const toolIndex = state.entryWriter.appendEntry(session, createToolEntry(toolCall.name, toolCall.input));
+  // Exempt from suppression by design; sent as stored, so a redacted input looks the same live as on a replay.
+  sendUpsert(ws, toolIndex, session.entries[toolIndex]);
 }
 
 function processToolResultChunk(ws: WebSocket, clientMessages: OutgoingMessage[]): void {
@@ -364,7 +412,7 @@ function flushHeldText(ws: WebSocket, session: ChatSession, state: StreamState, 
 function closeCutOff(ws: WebSocket, session: ChatSession, state: StreamState, key: StateIndexKey): void {
   const index = state[key];
   if (index === null) return;
-  markTruncated(session, index);
+  state.entryWriter.markTruncated(session, index);
   if (!state.suppressOutput) sendUpsert(ws, index, session.entries[index]);
   commitAndClear(ws, session, state, key);
 }

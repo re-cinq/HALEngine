@@ -55,11 +55,13 @@ export default {
   // because its denominator grew: vertex, mock and global rose, orchestration and its tools fell.
   // That is a finer instrument reading the same suite, which is why these two moved down.
   coverageThreshold: {
-    'src/orchestration/': {statements: 96.96, branches: 92.89, functions: 97.67, lines: 97.1},
-    'src/orchestration/tools/': {statements: 92.77, branches: 92.3, functions: 92.3, lines: 94.28},
+    'src/orchestration/': {statements: 97.02, branches: 93.42, functions: 97.72, lines: 97.14},
+    'src/orchestration/tools/': {statements: 93.02, branches: 92.59, functions: 92.59, lines: 94.36},
     'src/infrastructure/stores/': {statements: 100, branches: 100, functions: 100, lines: 100},
     'src/providers/vertex/': {statements: 94.23, branches: 84.7, functions: 100, lines: 97.72},
     'src/providers/mock/': {statements: 100, branches: 81.25, functions: 100, lines: 100},
-    global: {statements: 91.3, branches: 83.55, functions: 89.79, lines: 91.92},
+    'src/transport/': {statements: 97.19, branches: 93.77, functions: 96.81, lines: 97.3},
+    // Measured over the files no path floor above claims, which is what Jest holds `global` to.
+    global: {statements: 92.33, branches: 85.71, functions: 90.9, lines: 93.77},
   },
 };

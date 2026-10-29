@@ -32,7 +32,7 @@ const engine = createHalEngine({
 await engine.start();
 ```
 
-`ws` receives the WebSocket upgrade request, not a token, so pull whatever you authenticate with off `req.headers` yourself. A browser cannot set `Authorization` on a WebSocket, so it offers its token beside `hal.v1` in `Sec-WebSocket-Protocol`; `credentialFromSubprotocol` reads it the way the engine does, skipping the marker. An upgrade that sends both carriers must send the same credential in each; two different ones are refused with `400` before your function runs, so the credential you validate is the one the engine forwards to tools. Return an `AuthenticatedUser` — `id` is the only required field, and anything else you put on it reaches tools through `ToolContext`. Returning `null` rejects the upgrade with `401`.
+`ws` receives the WebSocket upgrade request, not a token, so pull whatever you authenticate with off `req.headers` yourself. A browser cannot set `Authorization` on a WebSocket, so it offers its token beside `hal.v1` in `Sec-WebSocket-Protocol`; `credentialFromSubprotocol` reads it the way the engine does, skipping the marker. An upgrade that sends both carriers must send the same credential in each; two different ones are refused with `400` before your function runs, so the credential you validate is the one the engine forwards to tools. Return an `AuthenticatedUser` — `id` is the only required field, and anything else you put on it reaches tools through `ToolContext`. Returning `null` rejects the upgrade with `401`. `id` must be a string or a finite number: it is the only thing separating one user's conversations from another's, so an `id` that is anything else — an object a token decoded to, `undefined`, `NaN` — is refused with `401` too, and logged as an authenticator fault naming only its kind.
 
 This starts a server with:
 
@@ -170,6 +170,8 @@ const engine = createHalEngine({
   auth: {
     ws: async () => ({id: 'user-1'}),
     http: authMiddleware,
+    // The caller headers a tool may receive as authHeaders; list only what your tools need, [] for none.
+    forwardHeaders: ['authorization'],
   },
 
   // OPTIONAL: Tool registry
@@ -185,6 +187,8 @@ const engine = createHalEngine({
     // basePath defaults to '/hal' and the heartbeat to 30s.
     basePath: '/hal',
     heartbeatIntervalMs: 30_000,
+    // One user's inbound budget across WebSocket and HTTP, the default shown; false turns it off for a deployment whose gateway already limits.
+    rateLimit: {limit: 20, windowMs: 60_000, burst: 5},
     // The connected frame's text, sent before any entry; a deployer serving EU users may carry its AI disclosure here.
     connectMessage: 'You are chatting with an AI assistant.',
     // additionalRoutes mounts under basePath and rootRoutes at /, neither gated by auth.http; errorHandler replaces Express's default HTML error page.
@@ -202,6 +206,12 @@ const engine = createHalEngine({
       // How many messages are kept, and how much of each.
       maxMessages: 50,
       maxContentLength: 4000,
+    },
+    entries: {
+      // When a turn ends, the newest 40 entries keep their content; older ones keep only their slot, role and timestamp.
+      maxContentEntries: 40,
+      // Runs on every entry but a user's once its content is final; here no tool argument reaches the store.
+      redactEntry: entry => (entry.role === 'tool' ? {...entry, toolInput: {}} : entry),
     },
     toolTimeoutMs: 30_000, // Abandon a tool call after this long, answering the model with a timeout result (default 30000; 0 = no deadline)
     hooks,

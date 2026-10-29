@@ -1,4 +1,5 @@
 import type {ChatSession} from '../../../types/session.js';
+import {assertScalarUserId} from '../../../types/session.js';
 import type {
   SessionCreateOptions,
   SessionCursor,
@@ -9,7 +10,13 @@ import type {
 import {StoreCannotList} from '../../../types/sessionStore.js';
 import type {CollectionLike, MongoClientLike} from './mongoDriverTypes.js';
 import type {MongoSessionDocument} from './mongoSessionDocument.js';
-import {persistedFields, toChatSession, toLabelledSummary, toSessionSummary} from './mongoSessionDocument.js';
+import {
+  isoCreatedAt,
+  persistedFields,
+  toChatSession,
+  toLabelledSummary,
+  toSessionSummary,
+} from './mongoSessionDocument.js';
 import {cappedLimit, cursorAt} from '../sessionListWindow.js';
 import {log} from '../../../shared/logger.js';
 
@@ -58,15 +65,18 @@ export class MongoSessionStore implements SessionStore {
   }
 
   async create(sessionId: string, userId: string | number, options?: SessionCreateOptions): Promise<ChatSession> {
+    assertScalarUserId(userId);
+    const startedAt = this.now();
     const session: ChatSession = {
       sessionId,
       userId,
       entries: [],
       authHeaders: options?.authHeaders,
+      user: options?.user,
       workspaceId: options?.workspaceId,
+      ...isoCreatedAt(startedAt),
     };
     const collection = await this.collection();
-    const startedAt = this.now();
     await collection.updateOne(
       {_id: sessionId},
       {$set: {...persistedFields(session), createdAt: startedAt, updatedAt: startedAt}},
@@ -115,6 +125,11 @@ export class MongoSessionStore implements SessionStore {
     return collection.countDocuments();
   }
 
+  async countFor(userId: string | number): Promise<number> {
+    const collection = await this.collection();
+    return collection.countDocuments({userId});
+  }
+
   // Empties the cache alone; eraseAll is the durable wipe, so neither can be reached by accident.
   clear(): void {
     this.cache.clear();
@@ -138,6 +153,7 @@ export class MongoSessionStore implements SessionStore {
 
   /** One query, filtered on the user in the database and sorted on the index `latestFor` already needs. */
   async listFor(userId: string | number, options?: SessionListOptions): Promise<SessionSummary[]> {
+    assertScalarUserId(userId);
     const limit = cappedLimit(options?.limit);
     // Never issued as a query: mongo reads `limit: 0` as no limit at all, which is the opposite of what it asks for.
     if (limit === 0) return [];
@@ -160,6 +176,7 @@ export class MongoSessionStore implements SessionStore {
 
   /** The user's most recently saved conversation, by `updatedAt`, read through `get` so a live one is the object its running turn writes to. */
   async latestFor(userId: string | number): Promise<ChatSession | undefined> {
+    assertScalarUserId(userId);
     const collection = await this.collection();
     const latest = await collection.findOne({userId}, {sort: {updatedAt: -1, _id: -1}, projection: {_id: 1}});
     return latest === null ? undefined : this.get(latest._id);
@@ -279,7 +296,7 @@ export class MongoSessionStore implements SessionStore {
 
     // Imported here rather than at the top, so a consumer who installs no driver can still load this package.
     const {MongoClient} = await import('mongodb');
-    const client = new MongoClient(options.url) as unknown as MongoClientLike;
+    const client: MongoClientLike = new MongoClient(options.url);
     this.owned = client;
     return namedCollection(client, options.dbName, name);
   }

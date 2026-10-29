@@ -1,11 +1,13 @@
 import type {ChatSession} from '../types/session.js';
 import type {ToolRegistry, ToolContext, ToolResponse} from './tools/registry.js';
+import {promptInstructionsOf} from './tools/registry.js';
 import type {
   AIProvider,
   Message,
   MessageChunk,
   SendMessageParams,
   ToolCall,
+  ToolDefinition,
   ToolResultContent,
   UsageMetadata,
 } from '../types/ai.js';
@@ -22,7 +24,9 @@ import {
   extractStopReason,
   extractUsage,
 } from './orchestratorHelpers.js';
-import {appendEntry, commitStreamingEntries} from './entryMutations.js';
+import {createEntryWriter} from './entryMutations.js';
+import type {EntryWriter} from './entryMutations.js';
+import type {EntryPolicy} from '../types/entryPolicy.js';
 import {log} from '../shared/logger.js';
 
 const DEFAULT_MAX_TOOL_ROUNDS = 5;
@@ -70,6 +74,8 @@ export interface ChatOrchestratorOptions {
   /** How long one tool call may take before it is abandoned and answered with a timeout result; default 30000, and 0 waits forever (specs/hal-engine-tool-budget/spec.md). */
   toolTimeoutMs?: number;
   contextConfig?: Partial<ContextConfig>;
+  /** What a session keeps of its entries once their content is final; unset, everything, as before (specs/hal-engine-history-controls/spec.md). */
+  entries?: EntryPolicy;
   promptBuilderOptions?: PromptBuilderOptions;
   hooks?: OrchestratorHooks;
   sessionStore?: SessionStore;
@@ -88,9 +94,8 @@ export function createChatOrchestrator(
   const maxToolRounds = normalizeToolRounds(options?.maxToolRounds);
   const toolTimeoutMs = normalizeToolTimeout(options?.toolTimeoutMs);
   const contextConfig = createContextConfig(options?.contextConfig);
-  const toolInstructions = toolRegistry?.getPromptInstructions();
-  const baseSystemPrompt = promptBuilder.build({...options?.promptBuilderOptions, toolInstructions});
-  const tools = toolRegistry?.getDefinitions();
+  const entryWriter = createEntryWriter(options?.entries);
+  const promptBuilderOptions = options?.promptBuilderOptions;
   const hooks = options?.hooks;
   const sessionStore = options?.sessionStore;
 
@@ -111,6 +116,8 @@ export function createChatOrchestrator(
 
         if (hooks?.afterUserInput) await hooks.afterUserInput(session, userMessage);
 
+        // Read every turn, never once per process, so a tool registered after construction is advertised from the next turn.
+        const {baseSystemPrompt, tools} = turnTools(promptBuilder, toolRegistry, promptBuilderOptions);
         const systemPrompt = hooks?.beforeModelResponse
           ? await hooks.beforeModelResponse(session, baseSystemPrompt)
           : baseSystemPrompt;
@@ -147,6 +154,7 @@ export function createChatOrchestrator(
             pendingToolCalls,
             messages,
             session,
+            entryWriter,
             withDeadline(toolCallRunner(toolRegistry!, session, toolRound), toolTimeoutMs, signal),
             signal
           );
@@ -180,7 +188,7 @@ export function createChatOrchestrator(
         throw error;
       } finally {
         // Before both: a provider that threw mid-stream leaves an entry open, and nothing should persist it that way.
-        commitStreamingEntries(session);
+        entryWriter.closeTurn(session);
         try {
           if (hooks?.afterSession) await hooks.afterSession(session);
         } finally {
@@ -188,6 +196,21 @@ export function createChatOrchestrator(
         }
       }
     },
+  };
+}
+
+// One read per turn: the definitions, and the prompt's instructions derived from those same definitions, not a second read.
+function turnTools(
+  promptBuilder: PromptBuilder,
+  toolRegistry: ToolRegistry | undefined,
+  promptBuilderOptions: PromptBuilderOptions | undefined
+): {baseSystemPrompt: string; tools?: ToolDefinition[]} {
+  const definitions = toolRegistry?.getDefinitions() ?? [];
+  const toolInstructions = promptInstructionsOf(definitions);
+  return {
+    baseSystemPrompt: promptBuilder.build({...promptBuilderOptions, toolInstructions}),
+    // No tools is undefined, never []: Bedrock and Vertex read an empty list differently, so the orchestrator decides.
+    tools: definitions.length > 0 ? definitions : undefined,
   };
 }
 
@@ -317,6 +340,8 @@ function contextFor(session: ChatSession, authHeaders: ChatSession['authHeaders'
     sessionId: session.sessionId,
     workspaceId: session.workspaceId,
     authHeaders: authHeaders === undefined ? undefined : {...authHeaders},
+    // Copied per call: an executor that assigns to its user must not reach the session or a sibling call's copy.
+    user: session.user === undefined ? undefined : {...session.user},
     signal,
   };
 }
@@ -346,6 +371,7 @@ function withDeadline(
     log.warn('orchestrator', 'tool call timed out', {tool: tc.name, elapsedMs: Date.now() - startedAt});
     return {
       result: `Tool '${tc.name}' did not answer within ${toolTimeoutMs} ms, so the call was abandoned and returned no result.`,
+      isError: true,
     };
   };
 }
@@ -378,7 +404,7 @@ async function consultPolicy(
       tool: tc.name,
       errorType: error instanceof Error ? error.name : typeof error,
     });
-    return {result: `The ${tc.name} call was declined and not performed.`};
+    return {result: `The ${tc.name} call was declined and not performed.`, isError: true};
   }
 }
 
@@ -386,6 +412,7 @@ async function executeToolCalls(
   pendingToolCalls: ToolCall[],
   messages: Message[],
   session: ChatSession,
+  entryWriter: EntryWriter,
   runToolCall: (tc: ToolCall) => Promise<ToolResponse>,
   signal: AbortSignal | undefined
 ): Promise<ToolExecutionResult> {
@@ -404,22 +431,29 @@ async function executeToolCalls(
     type: 'tool_result' as const,
     toolUseId: tc.id,
     content: response.result,
+    // Only a failure carries the key, so a successful result reaches the provider exactly as before.
+    ...(response.isError === true ? {isError: true} : {}),
   }));
   messages.push({role: 'user', content: toolResults});
 
   const rawClientMessages = responses.flatMap(({response}) => response.clientMessages ?? []);
 
   return {
-    clientMessages: assignEntryIndices(rawClientMessages, session),
+    clientMessages: assignEntryIndices(rawClientMessages, session, entryWriter),
     suppressOutput: responses.some(({response}) => response.suppressAssistantResponse === true),
   };
 }
 
-function assignEntryIndices(clientMessages: OutgoingMessage[], session: ChatSession): OutgoingMessage[] {
+// The client is sent what was stored, so a redacted entry looks the same live as on a resume's replay.
+function assignEntryIndices(
+  clientMessages: OutgoingMessage[],
+  session: ChatSession,
+  entryWriter: EntryWriter
+): OutgoingMessage[] {
   return clientMessages.map(msg => {
     if (msg.type !== 'entry_upsert') return msg;
-    const index = appendEntry(session, msg.entry);
-    return {...msg, index};
+    const index = entryWriter.appendEntry(session, msg.entry);
+    return {...msg, index, entry: session.entries[index]};
   });
 }
 

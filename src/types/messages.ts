@@ -73,6 +73,8 @@ export interface ErrorMessage {
   type: 'error';
   code: string;
   message: string;
+  /** Milliseconds until the refused message may be repeated; set with TOO_MANY_REQUESTS alone (specs/hal-engine-rate-limit/spec.md). */
+  retryAfterMs?: number;
 }
 
 export interface PongMessage {
