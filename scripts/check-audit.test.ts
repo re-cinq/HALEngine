@@ -1,5 +1,5 @@
 import {spawnSync} from 'node:child_process';
-import {chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
+import {chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 
@@ -252,5 +252,82 @@ describe('check-audit acceptances', () => {
     );
 
     expect(run(dir).stderr).toContain('npm:101:B');
+  });
+});
+
+// npm names a dependent in `effects` only when it is vulnerable too, so these findings ask `npm explain`.
+describe('check-audit on a transitive finding whose dependents are not vulnerable', () => {
+  const TRANSITIVE = JSON.stringify({
+    vulnerabilities: {
+      'brace-expansion': {
+        name: 'brace-expansion',
+        severity: 'high',
+        isDirect: false,
+        via: [advisory('GHSA-q2hr-2g5m-vwhr', 'high', 'Quadratic-time expansion')],
+        range: '4.0.0 - 5.0.11',
+        nodes: ['node_modules/brace-expansion'],
+        effects: [],
+      },
+    },
+    metadata: {vulnerabilities: {critical: 0, high: 1, moderate: 0, low: 0}},
+  });
+
+  // npm's own shape: the project root explains itself by location alone, and a workspace says it is one.
+  const root = {location: '/project'};
+  const edge = (name: string, from: object) => ({type: 'dev', name, spec: '*', from});
+  const node = (name: string, location: string, dependents: object[]) => ({
+    name,
+    version: '1.0.0',
+    location,
+    isWorkspace: false,
+    dependents,
+  });
+  const workspaceNode = (name: string, location: string, dependents: object[]) => ({
+    ...node(name, location, dependents),
+    isWorkspace: true,
+  });
+  const EXPLAINED = JSON.stringify([
+    node('brace-expansion', 'node_modules/brace-expansion', [
+      edge(
+        'brace-expansion',
+        node('minimatch', 'node_modules/minimatch', [
+          edge('minimatch', node('glob', 'node_modules/glob', [edge('glob', root)])),
+          edge('minimatch', node('eslint', 'node_modules/eslint', [edge('eslint', root)])),
+          edge('minimatch', workspaceNode('@acme/web', 'packages/web', [edge('@acme/web', root)])),
+        ])
+      ),
+    ]),
+  ]);
+
+  // The stub answers `npm explain` apart from `npm audit`, and records what it was asked to explain.
+  const explaining = (explainStdout: string, explainExit = 0): string => {
+    const dir = workspace(TRANSITIVE);
+    writeFileSync(
+      join(dir, 'bin', 'npm'),
+      `#!/bin/sh\nif [ "$1" = explain ]; then\necho "$@" > explained\ncat <<'EXPLAIN'\n${explainStdout}\nEXPLAIN\nexit ${explainExit}\nfi\ncat <<'REPORT'\n${TRANSITIVE}\nREPORT\nexit 1\n`
+    );
+    return dir;
+  };
+
+  it('names the dependencies the project and its workspaces declare that pull it in, as npm explain reports them', () => {
+    const dir = explaining(EXPLAINED);
+    const {stderr} = run(dir);
+
+    expect({
+      line: stderr.split('\n').find(line => line.startsWith('check-audit: high:')),
+      explained: readFileSync(join(dir, 'explained'), 'utf8').trim(),
+    }).toEqual({
+      line: 'check-audit: high: brace-expansion not resolvable on disk installed, affected 4.0.0 - 5.0.11 — GHSA-q2hr-2g5m-vwhr Quadratic-time expansion, reached through eslint, glob, minimatch',
+      explained: 'explain node_modules/brace-expansion --json',
+    });
+  });
+
+  it('keeps the path undisclosed, and still fails, when npm explain cannot say', () => {
+    const {status, stderr} = run(explaining('', 1));
+
+    expect({status, undisclosed: stderr.includes('reached through an undisclosed path')}).toEqual({
+      status: 1,
+      undisclosed: true,
+    });
   });
 });
