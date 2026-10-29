@@ -8,6 +8,18 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-27
+
+**Upgrading from 0.11.x.** Nothing breaks, and nothing changes until you set `orchestrator.entries`. Two things can still reach you. Every `SessionEntry` type gains an optional `cleared?: true`: a client that copies the entry types gains a field it can ignore, and a resumed conversation replays a cleared entry as `entry_skip`. And a turn's history no longer starts with a tool result whose call `contextConfig.maxMessages` cut away, so a provider that used to refuse that turn now answers it.
+
+### Added
+
+- **Bound and redact what a stored conversation keeps.** `orchestrator.entries` takes two optional settings. `maxContentEntries: n` empties every entry older than the newest `n` when a turn ends; a cleared entry keeps its index, role and timestamp and is marked `cleared: true`, so no index a client holds shifts. `redactEntry(entry)` rewrites every entry but a user's once its content is final: tool calls and entries tools return before they are stored, answers and thoughts when they are committed. A redaction that throws or changes the role stores the entry cleared and logs its role. Cleared entries are left out of what the provider is sent and replayed to a resumed client as `entry_skip`, and a client is sent a tool entry as it was stored. Unset, nothing changes. `docs/session-stores.md` now lists every category of data the engine holds, where, what bounds it and what erases it.
+
+### Fixed
+
+- **A turn's history no longer starts with a tool result whose call was cut away.** When `contextConfig.maxMessages` cut between a tool call and its result, the provider was sent a leading tool result with no call before it, which vendors refuse. The window now starts at the first user message of text.
+
 ## [0.11.0] - 2026-10-23
 
 **Upgrading from 0.10.x.** Nothing breaks, but one default changes what a client sees: the engine now refuses an authenticated user's sixth message in a burst, and more than twenty a minute, with `TOO_MANY_REQUESTS` and a `retryAfterMs`. Set `transport.rateLimit: false` if your gateway already limits, or raise the numbers. Everything else is additive: `onFailover`, `countFor`, and the optional `retryAfterMs` field on the error frame.
@@ -454,7 +466,8 @@ path from `0.1.0` on the registry — only from the git specifier.
 - Resolved a high-severity advisory in `ws`, a direct runtime dependency. The full dependency audit went
   from 18 advisories (1 critical, 6 high) to 3 (2 moderate, 1 low), none at high or above.
 
-[Unreleased]: https://github.com/re-cinq/HALEngine/compare/v0.11.0...main
+[Unreleased]: https://github.com/re-cinq/HALEngine/compare/v0.12.0...main
+[0.12.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.12.0
 [0.11.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.11.0
 [0.10.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.10.0
 [0.9.0]: https://github.com/re-cinq/HALEngine/releases/tag/v0.9.0

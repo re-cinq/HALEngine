@@ -3,6 +3,7 @@ import type {ForwardableHeader} from './transport/authHeaders.js';
 import {rateLimiterFrom} from './transport/rateLimit.js';
 import type {RateLimitConfig} from './transport/rateLimit.js';
 import type {SessionStore} from './types/sessionStore.js';
+import type {EntryPolicy} from './types/entryPolicy.js';
 import type {PromptBuilderConfig} from './infrastructure/builders/promptBuilder.js';
 import type {ContextConfig} from './orchestration/conversationContext.js';
 import type {ProviderConfig} from './providers/providerFactory.js';
@@ -68,6 +69,8 @@ export interface HalEngineConfig {
     /** How long one tool call may take before it is abandoned and answered with a timeout result; default 30000, and 0 waits forever. */
     toolTimeoutMs?: number;
     contextConfig?: Partial<ContextConfig>;
+    /** What a stored conversation keeps of its entries: a content bound and a redaction (specs/hal-engine-history-controls/spec.md). */
+    entries?: EntryPolicy;
     /** Lifecycle hooks: called before and after each phase of processing a user message. */
     hooks?: OrchestratorHooks;
   };
@@ -100,6 +103,7 @@ export function createHalEngine(config: HalEngineConfig): HalEngine {
     maxToolRounds: config.orchestrator?.maxToolRounds,
     toolTimeoutMs: config.orchestrator?.toolTimeoutMs,
     contextConfig: config.orchestrator?.contextConfig,
+    entries: config.orchestrator?.entries,
     hooks: config.orchestrator?.hooks,
     sessionStore,
   });
@@ -135,6 +139,7 @@ export function createHalEngine(config: HalEngineConfig): HalEngine {
     resume: config.transport?.resume,
     history: config.transport?.history,
     rateLimiter,
+    entries: config.orchestrator?.entries,
   });
 
   return {

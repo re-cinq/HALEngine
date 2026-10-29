@@ -74,6 +74,26 @@ retention period can be enforced against them.
 `InMemorySessionStore`'s `maxAgeMs` is **not** a retention policy. It is a memory bound so the
 default store does not grow without limit, and it defaults to eight hours.
 
+## What the engine holds
+
+Every category of data the engine keeps, where it keeps it, what bounds it, and what erases it. "None configured" means exactly that: nothing removes the data until you do.
+
+| Category | Where | Bound | Erased by |
+| --- | --- | --- | --- |
+| Conversation entries: the user's questions, the model's answers and thoughts, tool calls with their `toolInput`, and entries tools return | The session store: process memory for `InMemorySessionStore`, MongoDB plus a per-process cache for `MongoSessionStore` | Content: `orchestrator.entries.maxContentEntries`, none configured by default. The session: the store's own, `maxAgeMs` (eight hours) for `InMemorySessionStore`, none configured for `MongoSessionStore` until you call `eraseOlderThan` | `SessionStore.delete(sessionId)`; on `MongoSessionStore` also `eraseConversation`, `eraseOlderThan` and `eraseAll` |
+| Session metadata: `sessionId`, `userId`, `workspaceId`, `createdAt`, when it was last written, and `activePersona` | The session store, beside the entries | As for the entries' session | As for the entries |
+| `authHeaders`, the caller headers `auth.forwardHeaders` lets through | Process memory, on the session, while a socket holds it | Cleared when the session's last socket closes; never persisted by `MongoSessionStore` | The close |
+| `ChatSession.user`, what `auth.ws` returned | Process memory, per connection | The connection; never persisted | The close |
+| Conversation list previews | Derived from the opening user entry when a list is read; stored nowhere | Whatever bounds that entry: a cleared opening question has no preview | The entry |
+| Rate-limit counters: a user id, a token count and a time | Process memory | Dropped once a key's bucket has refilled, see `specs/hal-engine-rate-limit/spec.md` | The refill |
+| Usage records, if you record them through a `UsageStore` | The store you give | Yours: the engine writes none itself | Yours |
+| REST chat history, from `POST /chats/:id/messages` | A map inside the chat router, in process memory | None configured: it lives as long as the process | A restart. Neither the session store nor `orchestrator.entries` reaches it |
+| Log lines | Your log sink | Yours | Yours. The engine logs ids, counts and names, never message text, see `docs/logging.md` |
+
+With `transport.resume` on, a socket no longer bounds a conversation: a close keeps the session (`specs/hal-engine-session-lifetime/spec.md`), so the store's bound is the retention bound. `SessionStore.delete(sessionId)` is the erasure primitive a consumer holding only the interface can call, and a store you write must not persist `authHeaders` (see [What is never persisted](#what-is-never-persisted)).
+
+**GDPR.** Each row is a place personal data can rest. Where the bound reads "none configured", a deployer with a retention obligation has to configure one. `orchestrator.entries` (`specs/hal-engine-history-controls/spec.md`) bounds and redacts the entries' content without deleting the conversation.
+
 ## Truth and cache
 
 `MongoSessionStore` keeps an in-process cache because the orchestrator mutates a session in place

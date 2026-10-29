@@ -160,3 +160,16 @@ describe('createApp rootRoutes extension', () => {
     });
   });
 });
+
+describe('createApp CORS', () => {
+  it('allows http://localhost:3000 with credentials when neither corsOrigin nor CORS_ORIGIN is set', async () => {
+    delete process.env.CORS_ORIGIN;
+
+    const response = await request(app()).get('/hal/health').set('Origin', 'http://localhost:3000');
+
+    expect({
+      origin: response.headers['access-control-allow-origin'],
+      credentials: response.headers['access-control-allow-credentials'],
+    }).toEqual({origin: 'http://localhost:3000', credentials: 'true'});
+  });
+});

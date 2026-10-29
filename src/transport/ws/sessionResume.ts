@@ -101,13 +101,13 @@ export function resumeFields(
   return failure === undefined ? {resumed: false} : {resumed: false, resumeFailure: failure};
 }
 
-// A suppressed entry is replayed as a skip: the client sees the conversation it saw live, never the text a tool hid.
+// A suppressed entry is replayed as a skip, never the text a tool hid; so is a cleared one, with no text left to show.
 export function replayEntries(ws: WebSocket, session: ChatSession): void {
   session.entries.forEach((entry, index) => replayEntry(ws, index, entry));
 }
 
 function replayEntry(ws: WebSocket, index: number, entry: SessionEntry): void {
-  if ('suppressed' in entry && entry.suppressed) {
+  if (isHidden(entry)) {
     sendSkip(ws, index);
     return;
   }
@@ -117,4 +117,8 @@ function replayEntry(ws: WebSocket, index: number, entry: SessionEntry): void {
     return;
   }
   sendUpsert(ws, index, entry);
+}
+
+function isHidden(entry: SessionEntry): boolean {
+  return entry.cleared === true || ('suppressed' in entry && entry.suppressed === true);
 }

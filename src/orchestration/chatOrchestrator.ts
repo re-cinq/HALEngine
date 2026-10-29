@@ -24,7 +24,9 @@ import {
   extractStopReason,
   extractUsage,
 } from './orchestratorHelpers.js';
-import {appendEntry, commitStreamingEntries} from './entryMutations.js';
+import {createEntryWriter} from './entryMutations.js';
+import type {EntryWriter} from './entryMutations.js';
+import type {EntryPolicy} from '../types/entryPolicy.js';
 import {log} from '../shared/logger.js';
 
 const DEFAULT_MAX_TOOL_ROUNDS = 5;
@@ -70,6 +72,8 @@ export interface ChatOrchestratorOptions {
   /** How long one tool call may take before it is abandoned and answered with a timeout result; default 30000, and 0 waits forever (specs/hal-engine-tool-budget/spec.md). */
   toolTimeoutMs?: number;
   contextConfig?: Partial<ContextConfig>;
+  /** What a session keeps of its entries once their content is final; unset, everything, as before (specs/hal-engine-history-controls/spec.md). */
+  entries?: EntryPolicy;
   promptBuilderOptions?: PromptBuilderOptions;
   hooks?: OrchestratorHooks;
   sessionStore?: SessionStore;
@@ -88,6 +92,7 @@ export function createChatOrchestrator(
   const maxToolRounds = normalizeToolRounds(options?.maxToolRounds);
   const toolTimeoutMs = normalizeToolTimeout(options?.toolTimeoutMs);
   const contextConfig = createContextConfig(options?.contextConfig);
+  const entryWriter = createEntryWriter(options?.entries);
   const promptBuilderOptions = options?.promptBuilderOptions;
   const hooks = options?.hooks;
   const sessionStore = options?.sessionStore;
@@ -143,6 +148,7 @@ export function createChatOrchestrator(
             pendingToolCalls,
             messages,
             session,
+            entryWriter,
             withDeadline(toolCallRunner(toolRegistry!, session, hooks?.beforeToolCall), toolTimeoutMs, signal),
             signal
           );
@@ -176,7 +182,7 @@ export function createChatOrchestrator(
         throw error;
       } finally {
         // Before both: a provider that threw mid-stream leaves an entry open, and nothing should persist it that way.
-        commitStreamingEntries(session);
+        entryWriter.closeTurn(session);
         try {
           if (hooks?.afterSession) await hooks.afterSession(session);
         } finally {
@@ -397,6 +403,7 @@ async function executeToolCalls(
   pendingToolCalls: ToolCall[],
   messages: Message[],
   session: ChatSession,
+  entryWriter: EntryWriter,
   runToolCall: (tc: ToolCall) => Promise<ToolResponse>,
   signal: AbortSignal | undefined
 ): Promise<ToolExecutionResult> {
@@ -423,16 +430,21 @@ async function executeToolCalls(
   const rawClientMessages = responses.flatMap(({response}) => response.clientMessages ?? []);
 
   return {
-    clientMessages: assignEntryIndices(rawClientMessages, session),
+    clientMessages: assignEntryIndices(rawClientMessages, session, entryWriter),
     suppressOutput: responses.some(({response}) => response.suppressAssistantResponse === true),
   };
 }
 
-function assignEntryIndices(clientMessages: OutgoingMessage[], session: ChatSession): OutgoingMessage[] {
+// The client is sent what was stored, so a redacted entry looks the same live as on a resume's replay.
+function assignEntryIndices(
+  clientMessages: OutgoingMessage[],
+  session: ChatSession,
+  entryWriter: EntryWriter
+): OutgoingMessage[] {
   return clientMessages.map(msg => {
     if (msg.type !== 'entry_upsert') return msg;
-    const index = appendEntry(session, msg.entry);
-    return {...msg, index};
+    const index = entryWriter.appendEntry(session, msg.entry);
+    return {...msg, index, entry: session.entries[index]};
   });
 }
 

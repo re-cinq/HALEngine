@@ -101,6 +101,8 @@ Nothing from `src/`, `example/`, `smoke/`, `docs/`, `specs/`, `adrs/` or `script
 - The floor is set at the measured baseline, not an aspiration, and exactly at it rather than rounded down: an integer floor leaves roughly a percent of slack, which was measured to let four untested lines through without failing.
 - Measured at `3186f07` with those exclusions: 67.96% statements, 57.54% branches, 68% functions, 68.34% lines, across 206 tests in 17 suites. The earlier figure of 61.32% lines predates the exclusions and three of this branch's commits.
 - The floor is a ratchet: a change that lowers coverage fails the job and is fixed by adding the missing test, never by lowering the number; a change that raises coverage should raise the floor with it.
+- `src/transport/` gained its own floor on 2026-10-27, at what it measured that day: 97.19% statements (659/678), 93.77% branches (407/434), 96.81% functions (152/157) and 97.30% lines (578/594).
+- Naming that path took its files out of `global`, which Jest measures over the files no path floor claims, so `global` was re-measured in the same commit: 458/496 statements, 228/266 branches, 120/132 functions and 392/418 lines. Its percentages fell because well-covered files left the group, not because coverage did. Measured the same day without the change, the files still in the group covered 457 statements, 228 branches, 119 functions and 391 lines, so none of the four counts went down.
 - `coverage/` is gitignored already, so nothing is added for it.
 
 ### Build-chain audit

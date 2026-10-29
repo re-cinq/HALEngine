@@ -68,4 +68,36 @@ describe('the websocket frame validator', () => {
 
     expect(results.map(result => result.valid)).toEqual([false, false, false]);
   });
+
+  it('accepts content of exactly 10,000 characters and refuses 10,001, naming the limit', () => {
+    const longest = validateMessage({type: 'user_message', content: 'x'.repeat(10_000)});
+    const over = validateMessage({type: 'user_message', content: 'x'.repeat(10_001)});
+
+    expect({longest: longest.valid, over}).toEqual({
+      longest: true,
+      over: {valid: false, error: 'Message content too long (max 10000 chars)'},
+    });
+  });
+
+  it('refuses content of three spaces as empty', () => {
+    const result = validateMessage({type: 'user_message', content: '   '});
+
+    expect(result).toEqual({valid: false, error: 'Message content cannot be empty'});
+  });
+
+  it('refuses a frame of type nope, naming the type', () => {
+    expect(validateMessage({type: 'nope'})).toEqual({valid: false, error: 'Unknown message type: nope'});
+  });
+
+  it('refuses a ping with no timestamp or a text one, and passes a numeric timestamp through unchanged', () => {
+    expect({
+      missing: validateMessage({type: 'ping'}),
+      text: validateMessage({type: 'ping', timestamp: '1705312200000'}),
+      numeric: validateMessage({type: 'ping', timestamp: 1705312200000}),
+    }).toEqual({
+      missing: {valid: false, error: 'ping must have timestamp number'},
+      text: {valid: false, error: 'ping must have timestamp number'},
+      numeric: {valid: true, data: {type: 'ping', timestamp: 1705312200000}},
+    });
+  });
 });
