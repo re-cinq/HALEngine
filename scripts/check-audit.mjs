@@ -89,13 +89,15 @@ function collectFindings(audit) {
   for (const [name, vulnerability] of Object.entries(vulnerabilities)) {
     if (!FAIL_AT.includes(vulnerability.severity)) continue;
 
+    // Once per package, not per advisory: finding the path can take an `npm explain`.
+    const through = reachedThrough(name, vulnerability);
     for (const advisory of withFallback(name, advisoriesFor(name, vulnerabilities))) {
       findings.push({
         name,
         severity: vulnerability.severity,
         range: vulnerability.range ?? 'unknown range',
         installed: installedVersions(vulnerability),
-        through: reachedThrough(name, vulnerability),
+        through,
         advisory: advisory.id,
         title: advisory.title,
       });
@@ -157,10 +159,48 @@ function installedVersions(vulnerability) {
   return versions.size > 0 ? [...versions].join(', ') : 'not resolvable on disk';
 }
 
+// npm lists a dependent in `effects` only when that dependent is vulnerable too, so a package whose
+// dependents are not would name nothing a maintainer can bump or override.
 function reachedThrough(name, vulnerability) {
   if (vulnerability.isDirect) return 'a direct dependency';
   const effects = (vulnerability.effects ?? []).join(', ');
-  return effects ? `reached through ${effects}` : 'reached through an undisclosed path';
+  if (effects) return `reached through ${effects}`;
+  const declared = declaredDependents(vulnerability.nodes?.length ? vulnerability.nodes : [name]);
+  return declared.length ? `reached through ${declared.join(', ')}` : 'reached through an undisclosed path';
+}
+
+// `npm explain` walks an install back to the project. Its root explains itself by location alone, with
+// no name, and a workspace declares dependencies of its own: either way the edge into it is one the
+// project wrote down. An explain that fails leaves the path undisclosed rather than failing the gate, and
+// its own `npm error` lines stay out of the gate's output.
+function declaredDependents(targets) {
+  let explained;
+  try {
+    explained = JSON.parse(
+      execFileSync('npm', ['explain', ...targets, '--json'], {
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      })
+    );
+  } catch {
+    return [];
+  }
+
+  const declared = new Set();
+  const visited = new Set();
+  const walk = node => {
+    for (const edge of node?.dependents ?? []) {
+      const from = edge.from ?? {};
+      if (!('name' in from) || from.isWorkspace) declared.add(edge.name);
+      else if (!visited.has(from.location)) {
+        visited.add(from.location);
+        walk(from);
+      }
+    }
+  };
+  for (const node of Array.isArray(explained) ? explained : []) walk(node);
+  return [...declared].sort();
 }
 
 function describeFinding(finding) {
