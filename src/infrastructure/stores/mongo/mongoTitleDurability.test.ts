@@ -2,7 +2,7 @@ import {MongoSessionStore} from './mongoSessionStore.js';
 import {mongoCollection} from './mongoTestSupport.js';
 import type {ChatSession} from '../../../types/session.js';
 
-// specs/hal-engine-conversation-list/spec.md#title
+// specs/hal-engine-conversation-list/spec.md#a-stored-title
 
 const SENT_AT = '2026-01-01T00:00:00.000Z';
 
@@ -26,6 +26,22 @@ describe('MongoSessionStore title durability', () => {
     await store.setTitle('s1', 'Doomed Title');
     await store.eraseConversation('s1');
     expect(await reader.get('s1')).toBeUndefined();
+  });
+
+  it('is erased together with its conversation by eraseOlderThan', async () => {
+    const store = new MongoSessionStore({collection: collectionFor()});
+    await store.create('s1', 'u1');
+    await store.setTitle('s1', 'Aged Title');
+    const removed = await store.eraseOlderThan(new Date('2999-01-01T00:00:00.000Z'));
+    expect({removed, held: await collectionFor().countDocuments()}).toEqual({removed: 1, held: 0});
+  });
+
+  it('is erased together with its conversation by eraseAll', async () => {
+    const store = new MongoSessionStore({collection: collectionFor()});
+    await store.create('s1', 'u1');
+    await store.setTitle('s1', 'Wiped Title');
+    const removed = await store.eraseAll();
+    expect({removed, held: await collectionFor().countDocuments()}).toEqual({removed: 1, held: 0});
   });
 
   it('reaches the database even when no cached session is held', async () => {

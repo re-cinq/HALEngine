@@ -1,7 +1,7 @@
 import {jest} from '@jest/globals';
 import {InMemorySessionStore} from './inMemorySessionStore.js';
 
-// specs/hal-engine-conversation-list/spec.md#title
+// specs/hal-engine-conversation-list/spec.md#a-stored-title
 
 describe('InMemorySessionStore setTitle', () => {
   it('stores a title on the session and surfaces it in listFor', () => {

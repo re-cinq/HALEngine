@@ -440,6 +440,7 @@ first. Sent only when asked for, never pushed.
       "createdAt": "2026-10-06T08:12:04.001Z",
       "updatedAt": "2026-10-06T09:30:22.517Z",
       "entryCount": 12,
+      "title": "Cancel subscription",
       "preview": "How do I cancel my subscription?"
     }
   ]
@@ -454,16 +455,17 @@ first. Sent only when asked for, never pushed.
 | `conversations[].createdAt`  | string | ISO 8601 timestamp                                                                                                     |
 | `conversations[].updatedAt`  | string | ISO 8601 timestamp of the conversation's most recent activity                                                          |
 | `conversations[].entryCount` | number | How many entries the conversation holds                                                                                |
+| `conversations[].title`      | string | Optional. A label the consumer stored with `setTitle`, present when the store holds one, whether or not previews are enabled |
 | `conversations[].preview`    | string | Optional. The conversation's opening question, at most 120 code points, present only where the server enables previews |
 
-Apart from `preview`, a summary carries no message content, and the two times are ISO strings rather than `Date`s, which
+Apart from `preview` and `title`, a summary carries no message content, and the two times are ISO strings rather than `Date`s, which
 is what survives the wire ([validated by: answers the user's conversations newest first, with both times as ISO strings](../../src/transport/conversationList.test.ts#L100)). A row's `sessionId` is what a client reconnects with to rejoin that
 conversation, through the resume path in 2.1 ([validated by: hands a client an id it can rejoin the conversation with](../../src/transport/conversationList.test.ts#L572)). The frame is answered without waiting on a turn, so one asked for
 while an answer streams arrives before that answer ends ([validated by: answers a list in the middle of a streaming turn, before that turn ends](../../src/transport/conversationList.test.ts#L524)). The `preview` field is the one
 that carries conversation content, and it is the server's decision rather than the client's: a client
 cannot ask for one, and where the deployment has not enabled previews no row carries the key, even
 against a store that would supply it ([validated by: strips a preview the store volunteered when this deployment did not turn previews on](../../src/transport/conversationList.test.ts#L137)). Where it has, each row carries its conversation's
-opening question ([validated by: labels each conversation with its opening question where the deployer turned previews on](../../src/transport/conversationList.test.ts#L179)).
+opening question ([validated by: labels each conversation with its opening question where the deployer turned previews on](../../src/transport/conversationList.test.ts#L179)). A `title` is the consumer's own label and travels whether or not previews are on ([validated by: carries a title on the wire when the store holds one, both with and without previews switched on](../../src/transport/conversationList.test.ts#L265)).
 
 ## 6. SessionEntry Objects
 
