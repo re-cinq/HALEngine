@@ -46,4 +46,15 @@ describe('the SessionStore listFor member', () => {
 
     expect(Object.keys(summary).sort()).toEqual(['createdAt', 'entryCount', 'preview', 'sessionId', 'updatedAt']);
   });
+
+  it('leaves a store with only the five original members satisfying the interface without setTitle', () => {
+    const memory: SessionStore = new InMemorySessionStore();
+    const mongo: SessionStore = new MongoSessionStore({url: 'mongodb://localhost:27017', dbName: 'unused'});
+
+    expect({
+      fiveMembers: fiveMemberStore.setTitle,
+      memory: typeof memory.setTitle,
+      mongo: typeof mongo.setTitle,
+    }).toEqual({fiveMembers: undefined, memory: 'function', mongo: 'function'});
+  });
 });
