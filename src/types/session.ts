@@ -56,6 +56,7 @@ export const ErrorCodes = {
   UPSTREAM_ERROR: 'UPSTREAM_ERROR',
   SERVER_ERROR: 'SERVER_ERROR',
   UNSUPPORTED: 'UNSUPPORTED',
+  CREDENTIAL_EXPIRED: 'CREDENTIAL_EXPIRED',
 } as const;
 
 export interface ChatSession {

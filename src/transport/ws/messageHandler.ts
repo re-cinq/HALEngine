@@ -26,6 +26,7 @@ import {sendJson, sendUpsert, sendDelta, sendCommit, sendSkip, sendError, sendSt
 import {TOO_MANY_REQUESTS_MESSAGE} from '../rateLimit.js';
 import type {RateLimiter} from '../rateLimit.js';
 import {log} from '../../shared/logger.js';
+import {CredentialExpiredError} from '../../types/credential.js';
 
 interface StreamState {
   thinkingIndex: number | null;
@@ -185,6 +186,12 @@ async function wsErrorHandler(ws: WebSocket, action: () => Promise<void>): Promi
   try {
     await action();
   } catch (error) {
+    // A credential the consumer could not renew is no engine fault: the client hears the consumer's own words, unchanged.
+    if (error instanceof CredentialExpiredError) {
+      log.warn('message', 'a tool credential could not be renewed, so the turn ended');
+      sendError(ws, ErrorCodes.CREDENTIAL_EXPIRED, error.message);
+      return;
+    }
     const message = error instanceof Error ? error.message : 'Unknown error';
     const code = error instanceof AIError ? error.code : 'UNKNOWN';
     log.error('message', 'handling error', {error: message, code});
