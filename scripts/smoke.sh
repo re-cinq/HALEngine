@@ -95,15 +95,16 @@ run_variant() {
     peers=(
       "@google/genai@$(node -p "require('$repo/package.json').peerDependencies['@google/genai']")"
       "@aws-sdk/client-bedrock-runtime@$(node -p "require('$repo/package.json').peerDependencies['@aws-sdk/client-bedrock-runtime']")"
+      "mongodb@$(node -p "require('$repo/package.json').peerDependencies['mongodb']")"
     )
   fi
 
   echo "smoke [$name]: installing tarball + typescript${peers:+ + optional peers} into $work"
   # ${arr[@]+...} because bash 3.2 - which is /bin/bash on macOS - calls an empty array unbound
   # under `set -u`, and AGENTS.md tells a maintainer to run this locally before a release.
-  npm install --silent --save "./$tarball" "typescript@$typescript_version" ${peers[@]+"${peers[@]}"} >/dev/null
+  npm install --save "./$tarball" "typescript@$typescript_version" ${peers[@]+"${peers[@]}"}
 
-  for peer in @google/genai @aws-sdk/client-bedrock-runtime; do
+  for peer in @google/genai @aws-sdk/client-bedrock-runtime mongodb; do
     if [ -d "node_modules/$peer" ] && [ "$name" = "bare" ]; then
       echo "smoke [$name]: FAILED - optional peer $peer was installed; it must not be" >&2
       exit 1
