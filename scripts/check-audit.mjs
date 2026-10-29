@@ -169,10 +169,8 @@ function reachedThrough(name, vulnerability) {
   return declared.length ? `reached through ${declared.join(', ')}` : 'reached through an undisclosed path';
 }
 
-// `npm explain` walks an install back to the project. Its root explains itself by location alone, with
-// no name, and a workspace declares dependencies of its own: either way the edge into it is one the
-// project wrote down. An explain that fails leaves the path undisclosed rather than failing the gate, and
-// its own `npm error` lines stay out of the gate's output.
+// The edge into npm explain's root (a location with no name) or into a workspace is a dependency someone
+// declared. An explain that fails leaves the path undisclosed, and its `npm error` lines stay off the gate.
 function declaredDependents(targets) {
   let explained;
   try {
