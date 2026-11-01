@@ -1,8 +1,8 @@
 name: Lore Test Ingest
 
+# No pull_request: its checkout is a detached merge commit, which Lore reads as main, so a run there writes into main's graph.
 on:
   push:
-  pull_request:
 
 permissions:
   contents: read
