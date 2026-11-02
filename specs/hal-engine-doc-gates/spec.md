@@ -61,6 +61,13 @@ Spike documents are covered differently. A spike records what was believed when 
 
 Two steps of that job are deliberately outside the script: the spec anchor check and the changelog check both diff against `origin/main`, and neither behaves the same on a checkout as it does against a pull request's base.
 
+## The pull request description check leaves Dependabot alone
+
+`pr-description-check.yml` asks for three headings that Dependabot's body never has, so every Dependabot pull request showed a red check nothing could turn green.
+
+- The check skips a pull request Dependabot opened, decided by its author rather than by whoever edits it ([validated by: skips a pull request Dependabot opened, by its author rather than whoever edits it](../../scripts/pr-description-check.test.ts#L26)).
+- It still fails any other body that lacks a heading, naming each one ([validated by: still passes a body with all three headings and fails a Dependabot-style one, naming each it lacks](../../scripts/pr-description-check.test.ts#L33)).
+
 ## Paths in prose resolve
 
 `npm run docs:check-paths` resolves every backticked repository path written in a document - `src/`, `scripts/`, `example/`, `smoke/`, `docs/`, `specs/`, `adrs/`, `dist/`, `.github/` and `.specify/`. A path that legitimately does not resolve is named in the script's own allowlist with the reason, because an exception has to be written down to be one; narrowing the pattern instead would hide every other path behind the same prefix. A path in prose is a citation, and a citation nobody resolves rots in silence: the file moves, the sentence naming it stays, and the next reader follows it to nothing.

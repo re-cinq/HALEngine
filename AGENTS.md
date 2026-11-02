@@ -271,6 +271,8 @@ test(tools): add registry conflict detection
 
 ### PR Description Template
 
+CI's `check-pr-description` job requires `## Why`, `## What Changed` and `## Testing`. It skips a pull request Dependabot opened, since Dependabot writes its own body.
+
 ```markdown
 ## Why
 
