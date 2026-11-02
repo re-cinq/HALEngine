@@ -10,6 +10,8 @@ permissions:
 
 jobs:
   check-pr-description:
+    # Dependabot writes its own body with none of these headings, so its PRs could never pass; the author decides, not the actor.
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Check required sections
