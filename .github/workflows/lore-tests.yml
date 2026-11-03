@@ -1,16 +1,23 @@
 name: Lore Test Ingest
 
 # No pull_request: its checkout is a detached merge commit, which Lore reads as main, so a run there writes into main's graph.
-# A manual run passes --full: the whole report plus every tracked path, which is what clears the graph's rows for tests and files that have gone.
+# A manual run from main passes --full: the whole report plus every tracked path, which is what clears the graph's rows for tests and files that have gone.
+# From anywhere else a manual run is skipped: a tag's checkout is detached too, so --full would prune main's graph against the tag's files.
 on:
   push:
   workflow_dispatch:
+
+# One run per ref. A manual full run overlapping a push on main would lose the state check, re-post its older tree, and prune the push's new test files.
+concurrency:
+  group: lore-tests-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
 
 jobs:
   lore-tests-jest:
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -46,4 +53,5 @@ jobs:
           LORE_API_URL: ${{ secrets.LORE_INGEST_URL || vars.LORE_INGEST_URL || vars.LORE_API_URL }}
           LORE_INGEST_TOKEN: ${{ secrets.LORE_INGEST_TOKEN }}
           FULL: ${{ github.event_name == 'workflow_dispatch' && '--full' || '' }}
-        run: ./lore-code-trace --post ${FULL} || echo "::warning::Lore test ingest failed"
+        # Soft-fail on a push; a manual run fails, so whoever started it can see the graph wasn't cleaned.
+        run: ./lore-code-trace --post ${FULL} || { echo "::warning::Lore test ingest failed"; [ -z "${FULL}" ]; }
