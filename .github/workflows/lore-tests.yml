@@ -1,8 +1,10 @@
 name: Lore Test Ingest
 
 # No pull_request: its checkout is a detached merge commit, which Lore reads as main, so a run there writes into main's graph.
+# A manual run passes --full: the whole report plus every tracked path, which is what clears the graph's rows for tests and files that have gone.
 on:
   push:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -43,4 +45,5 @@ jobs:
         env:
           LORE_API_URL: ${{ secrets.LORE_INGEST_URL || vars.LORE_INGEST_URL || vars.LORE_API_URL }}
           LORE_INGEST_TOKEN: ${{ secrets.LORE_INGEST_TOKEN }}
-        run: ./lore-code-trace --post || echo "::warning::Lore test ingest failed"
+          FULL: ${{ github.event_name == 'workflow_dispatch' && '--full' || '' }}
+        run: ./lore-code-trace --post ${FULL} || echo "::warning::Lore test ingest failed"
