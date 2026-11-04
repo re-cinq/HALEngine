@@ -1,10 +1,11 @@
 name: Lore Test Ingest
 
-# No pull_request: its checkout is a detached merge commit, which Lore reads as main, so a run there writes into main's graph.
+# No pull_request and no tag pushes: both check out detached, which Lore reads as main, so a run there writes into main's graph. A tag behind main would also prune its newer test files and move its recorded commit back.
 # A manual run from main passes --full: the whole report plus every tracked path, which is what clears the graph's rows for tests and files that have gone.
-# From anywhere else a manual run is skipped: a tag's checkout is detached too, so --full would prune main's graph against the tag's files.
+# From anywhere else a manual run is skipped: --full from a tag would prune main's graph against the tag's files.
 on:
   push:
+    branches: ['**']
   workflow_dispatch:
 
 # One run per ref. A manual full run overlapping a push on main would lose the state check, re-post its older tree, and prune the push's new test files.
@@ -19,6 +20,8 @@ jobs:
   lore-tests-jest:
     if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    # Runs on main queue behind each other, so a hung one mustn't hold the queue for GitHub's six-hour default.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -40,6 +43,8 @@ jobs:
           for artifact in linux-amd64 checksums.txt; do
             if ! curl -fsL "${LORE_INGEST_URL}/dist/lore-code-trace/${artifact}" -o "${artifact}"; then
               echo "::warning::lore-code-trace (${artifact}) could not be fetched - skipping Lore test ingest"
+              # A manual run fails, so whoever started it can see the graph wasn't cleaned.
+              [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ] && exit 1
               exit 0
             fi
           done
