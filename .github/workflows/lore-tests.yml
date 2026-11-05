@@ -40,8 +40,9 @@ jobs:
           LORE_INGEST_URL: ${{ secrets.LORE_INGEST_URL || vars.LORE_INGEST_URL || vars.LORE_API_URL }}
         run: |
           if [ -n "${LORE_INGEST_URL}" ]; then echo "::add-mask::${LORE_INGEST_URL}"; fi
+          # 7 attempts 30 seconds apart, retrying any error, so one dropped connection does not skip the ingest.
           for artifact in linux-amd64 checksums.txt; do
-            if ! curl -fsL "${LORE_INGEST_URL}/dist/lore-code-trace/${artifact}" -o "${artifact}"; then
+            if ! curl -fsL --connect-timeout 20 --retry 6 --retry-delay 30 --retry-all-errors "${LORE_INGEST_URL}/dist/lore-code-trace/${artifact}" -o "${artifact}"; then
               echo "::warning::lore-code-trace (${artifact}) could not be fetched - skipping Lore test ingest"
               # A manual run fails, so whoever started it can see the graph wasn't cleaned.
               [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ] && exit 1
