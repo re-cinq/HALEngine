@@ -66,7 +66,7 @@ The two carriers must agree when an upgrade uses both:
 - An upgrade presenting both must present the same credential, compared byte for byte, so another scheme such as `Basic` and a lowercase `bearer` are each a different credential ([validated by: refuses Basic t-1 beside a subprotocol t-1, another scheme being another credential @942fda7c](../../src/transport/ws/credential.test.ts#L28), [validated by: refuses a lowercase bearer t-1 beside a subprotocol t-1, the comparison being exact @df6028f2](../../src/transport/ws/credential.test.ts#L34)).
 - A subprotocol offered without the marker carries no credential, so beside it the header stands alone ([validated by: reads the subprotocol credential only beside hal.v1, so a markerless t-2 leaves the header Bearer t-1 standing alone @e178bd37](../../src/transport/ws/credential.test.ts#L40)).
 - Two different credentials are refused with `400 Bad Request` before the `WsAuthenticator` runs, not `401`, since the authenticator was never consulted, and the refusal is logged once at `warn` naming neither value ([validated by: refuses Bearer attacker-token beside a victim-token subprotocol with 400 before wsAuth runs, and neither value reaches the response or a log line @7fa09a69](../../src/transport/handshake.test.ts#L182)).
-- The same credential in both carriers connects and is forwarded once ([validated by: connects a client presenting the same token in the header and the subprotocol, and forwards it once as a bearer @522b1201](../../src/transport/handshake.test.ts#L218)).
+- The same credential in both carriers connects and is forwarded once ([validated by: connects a client presenting the same token in the header and the subprotocol, and forwards it once as a bearer @522b1201](../../src/transport/handshake.test.ts#L193)).
 - An upgrade presenting neither still reaches the `WsAuthenticator`, since a consumer may authenticate by cookie ([validated by: still hands an upgrade with no credential to wsAuth, since a consumer may authenticate by cookie @28dc7a17](../../src/transport/handshake.test.ts#L203)).
 - `presentedCredential`, which applies this rule, is internal and not exported from the package root ([validated by: keeps presentedCredential and the module it lives in out of the package root @9cd08892](../../src/index.test.ts#L17)).
 
@@ -88,7 +88,7 @@ No upgrade request can end the server process: the `upgrade` event has nothing a
 - An upgrade whose `Host` header is missing or empty (RFC 6455 §4.1 requires one), or whose request-target is not a URL, such as `//`, is answered with HTTP 400 ([validated by: answers an empty Host, a missing Host and a // target with 400 instead of throwing out of the upgrade listener @1f857274](../../src/transport/malformedUpgrade.test.ts#L68)).
 - The path check reads the target alone and never throws: a path beginning with `{basePath}/ws` passes, as §2.1 says; any other path, an empty target or `//` fails ([validated by: accepts any path beginning with /hal/ws and refuses another path, an empty target and //, without throwing @1b0ec5c8](../../src/transport/ws/wsPath.test.ts#L4)).
 - A `WsAuthenticator` that throws synchronously, rather than returning a rejected promise, is answered with HTTP 500, as a rejection is ([validated by: answers 500 when the authenticator throws synchronously instead of rejecting @63efec85](../../src/transport/malformedUpgrade.test.ts#L82)).
-- A `WsAuthenticator` that throws or rejects is logged at `error` as `authenticator failed` with its error's type alone, never its message, which can carry the credential it was checking ([validated by: logs a throwing or rejecting authenticator by its error type alone, never its message @a05d01c3](../../src/transport/malformedUpgrade.test.ts#L92)).
+- A `WsAuthenticator` that throws or rejects is logged at `error` as `authenticator failed` with its error's type alone, never its message, which can carry the credential it was checking ([validated by: logs a throwing or rejecting authenticator by its error type alone, never its message @a05d01c3](../../src/transport/malformedUpgrade.test.ts#L100)).
 - A `WsAuthenticator` that returns a user directly, not in a promise, is treated like one that resolves to it, rather than failing inside the listener ([validated by: upgrades a request whose authenticator returns a user without a promise @e8e2e811](../../src/transport/malformedUpgrade.test.ts#L118)).
 - A well-formed upgrade is unaffected ([validated by: still upgrades a well-formed request @8458aee6](../../src/transport/malformedUpgrade.test.ts#L126)).
 
@@ -177,7 +177,7 @@ Application-level heartbeat. The server MUST respond with a `pong` message echoi
 | `type`      | string | Yes      | `"ping"`                         |
 | `timestamp` | number | Yes      | Client timestamp in milliseconds |
 
-A `ping` whose `timestamp` is missing or is not a number is refused, its error naming the field, and a numeric `timestamp` is passed on unchanged for the `pong` to echo ([validated by: refuses a ping with no timestamp or a text one, and passes a numeric timestamp through unchanged @8853e6ca](../../src/transport/ws/validation.test.ts#L92)).
+A `ping` whose `timestamp` is missing or is not a number is refused, its error naming the field, and a numeric `timestamp` is passed on unchanged for the `pong` to echo ([validated by: refuses a ping with no timestamp or a text one, and passes a numeric timestamp through unchanged @8853e6ca](../../src/transport/ws/validation.test.ts#L100)).
 
 ### 4.3 list_conversations
 
@@ -350,12 +350,13 @@ Reports an error condition. The connection remains open unless the error is fata
 | `message`      | string | Human-readable detail                                                                                          |
 | `retryAfterMs` | number | Only with `TOO_MANY_REQUESTS`: milliseconds to wait before sending again (specs/hal-engine-rate-limit/spec.md) |
 
-`ErrorCodes` defines nine error codes ([validated by: defines nine ErrorCodes: TOO_MANY_REQUESTS and the three provider conditions added beside the five the protocol first had @83f0b9ed](../../src/transport/errorMapping.test.ts#L54)).
+`ErrorCodes` defines ten error codes ([validated by: defines nine ErrorCodes: TOO_MANY_REQUESTS and the three provider conditions added beside the five the protocol first had @83f0b9ed](../../src/transport/errorMapping.test.ts#L54)).
 
 Defined error codes:
 
 | Code                  | Kind               | Description                                                                                | HTTP |
 | --------------------- | ------------------ | ------------------------------------------------------------------------------------------ | ---- |
+| `CREDENTIAL_EXPIRED`  | client             | The credential expired and could not be renewed, ending the turn with stream_end           | —    |
 | `INVALID_MESSAGE`     | client             | Message failed validation (missing fields, empty content, length)                          | —    |
 | `INVALID_FORMAT`      | client             | Message body is not valid JSON                                                             | —    |
 | `TOO_MANY_REQUESTS`   | client             | The user sent more than `transport.rateLimit` allows; `retryAfterMs` says how long to wait | 429  |
@@ -515,7 +516,7 @@ The `persona` field is how a consumer attributes each answer to the persona that
 - An assistant entry is created carrying the session's `activePersona` as its `persona`, and with no `persona` key at all when the session has none ([validated by: creates an assistant entry carrying persona 'support', and one with no persona key when none is given @c53eb558](../../src/transport/ws/assistantPersona.test.ts#L69)).
 - The entry's first `entry_upsert` carries it, the frame that sends the entry whole, so a client sees the persona from the first token ([validated by: sends the assistant entry_upsert with persona 'support' when the session's activePersona is support @ae90b7c4](../../src/transport/ws/assistantPersona.test.ts#L84)).
 - A session with no `activePersona` produces exactly the fields an assistant entry had before the field existed ([validated by: sends an assistant entry with no persona key when activePersona is unset, the fields the release before carried @cae7ed73](../../src/transport/ws/assistantPersona.test.ts#L90)).
-- Attribution is per answer: each message's entry carries the persona active for that message ([validated by: stamps each answer with the persona active for its own message, 'p-one' then 'p-two' in one session @0e87e6c9](../../src/transport/ws/assistantPersona.test.ts#L111)).
+- Attribution is per answer: each message's entry carries the persona active for that message ([validated by: stamps each answer with the persona active for its own message, 'p-one' then 'p-two' in one session @0e87e6c9](../../src/transport/ws/assistantPersona.test.ts#L119)).
 - Only assistant entries the engine creates are stamped. A thinking or tool entry carries no `persona`, and an assistant entry a tool supplies through `ToolResponse` is appended as the tool built it ([validated by: leaves the persona off thinking and tool entries, and appends an assistant entry a tool supplied as the tool built it @f9922af8](../../src/transport/ws/assistantPersona.test.ts#L124)).
 - The blanking `entry_upsert` a suppression sends keeps the entry's `persona`, with `content` set to `""` ([validated by: keeps the persona on the blanking entry_upsert when a tool suppresses an answer already sent @1cb8cb38](../../src/transport/ws/assistantPersona.test.ts#L144)).
 - The value is an opaque identifier the engine never resolves or validates, and a stored or replayed session can carry one the consumer's registry no longer knows, so a renderer needs a fallback for an unrecognised one.
@@ -601,7 +602,7 @@ entry_upsert
    |  No delta or commit follows.
 ```
 
-The entry is fully formed in the `entry_upsert` message, so a tool call yields one `entry_upsert` and nothing further. The client MUST NOT expect `entry_delta` or `entry_commit` for these entries ([validated by: sends a tool entry for a tool call @bb0a1c53](../../src/transport/ws/messageHandler.test.ts#L162)).
+The entry is fully formed in the `entry_upsert` message, so a tool call yields one `entry_upsert` and nothing further. The client MUST NOT expect `entry_delta` or `entry_commit` for these entries ([validated by: sends a tool entry for a tool call @bb0a1c53](../../src/transport/ws/messageHandler.test.ts#L165)).
 
 ## 8. Conversation Sequence
 
@@ -616,7 +617,7 @@ Index 3: AssistantEntry    (AI response, streamed)
 
 In multi-tool scenarios, multiple ToolEntry objects may appear between the ThinkingEntry and AssistantEntry. The tool execution loop (Section 9) may produce additional entries.
 
-- A reply with no tool calls and no thinking produces, in order, the user entry, the assistant entry opened empty, one `entry_delta` per text chunk, its `entry_commit`, and `stream_end` ([validated by: sends the user entry, then the assistant entry, its delta, its commit and stream_end @7b3ddd85](../../src/transport/ws/messageHandler.test.ts#L92)).
+- A reply with no tool calls and no thinking produces, in order, the user entry, the assistant entry opened empty, one `entry_delta` per text chunk, its `entry_commit`, and `stream_end` ([validated by: sends the user entry, then the assistant entry, its delta, its commit and stream_end @7b3ddd85](../../src/transport/ws/messageHandler.test.ts#L100)).
 - A thinking block is committed before the assistant entry that follows it is opened, so the two never interleave ([validated by: commits the thinking entry before the assistant entry opens @48d1f30d](../../src/transport/ws/messageHandler.test.ts#L118)).
 
 ### 8.1 Example: Full Conversation Exchange
@@ -737,6 +738,13 @@ Round N:  Model streams final text with stopReason "end_turn"
 The client observes this as a sequence of `entry_upsert`, `entry_delta`, and `entry_commit` messages, terminated by a `stream_end`. The tool loop is transparent to the client -- it does not need to track rounds.
 
 Messages a tool addresses to the client are forwarded verbatim, in the position the stream produced them, rather than being rewritten into entries of the server's own ([validated by: forwards a tool result to the client untouched @24ae279f](../../src/transport/ws/messageHandler.test.ts#L170)).
+
+- A two-round tool conversation whose hook returns different headers per round reaches the tool with the round-0 value in round 0 and the round-1 value in round 1 ([validated by: A two-round tool conversation whose hook returns different headers per round reaches the tool with the round-0 value in round 0 and the round-1 value in round 1](../../src/transport/ws/resolveAuthHeaders.acceptance.test.ts#L100)).
+- A round with two tool calls invokes the hook exactly once; a turn with no tool call invokes it zero times ([validated by: A round with two tool calls invokes the hook exactly once; a turn with no tool call invokes it zero times](../../src/transport/ws/resolveAuthHeaders.acceptance.test.ts#L119)).
+- After a run whose hook returned a different value, `session.authHeaders` still equals the value captured at upgrade — only the context is affected ([validated by: After a run whose hook returned a different value, session.authHeaders still equals the value captured at upgrade — only the context is affected](../../src/transport/ws/resolveAuthHeaders.acceptance.test.ts#L134)).
+- A hook throwing `CredentialExpiredError('<message>')` produces, in order: `{type: 'error', code: 'CREDENTIAL_EXPIRED', message: '<that message>'}` then `{type: 'stream_end'}`, over a real connection ([validated by: A hook throwing CredentialExpiredError('<message>') produces, in order: {type: 'error', code: 'CREDENTIAL_EXPIRED', message: '<that message>'} then {type: 'stream_end'}, over a real connection](../../src/transport/ws/resolveAuthHeaders.acceptance.test.ts#L147)).
+- `onError` fires exactly once, with the same error instance, before the error frame is sent ([validated by: onError fires exactly once, with the same error instance, before the error frame is sent](../../src/transport/ws/resolveAuthHeaders.acceptance.test.ts#L165)).
+- Any other `Error` thrown from the hook keeps today's generic `SERVER_ERROR` path unchanged ([validated by: Any other Error thrown from the hook keeps today's generic SERVER_ERROR path unchanged](../../src/transport/ws/resolveAuthHeaders.acceptance.test.ts#L193)).
 
 ## 10. Heartbeat
 
