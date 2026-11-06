@@ -24,6 +24,8 @@ const ANY_HREF = /\[validated by(?:: [^\]]*)?\]\((?<path>[^)#\s]+)#L\d+\)/g;
 const DECLARATION = /^\s*(?:f?it|f?describe|test)\(\s*(['"`])((?:\\.|(?!\1).)*)\1/;
 const SKIPPED = /^\s*(?:x(?:it|describe|test)|(?:it|describe|test)\.skip)\(\s*(['"`])((?:\\.|(?!\1).)*)\1/;
 const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
+// re-lint 1.12 appends the cited line's content hash to the label; it is not part of the test name.
+const CONTENT_HASH = /^(?<name>.*?)(?<hash> @[0-9a-f]{8})?$/s;
 
 const cache = new Map();
 const args = process.argv.slice(2);
@@ -56,7 +58,7 @@ for (const spec of named.length > 0 ? named : specs()) {
       return whole;
     }
 
-    const named = groups.label ? groups.label.slice(2) : null;
+    const {name: named, hash = ''} = groups.label ? CONTENT_HASH.exec(groups.label.slice(2)).groups : {name: null};
     const atLine = declarations.find(declaration => declaration.line === Number(groups.line));
 
     const skipped = declarations.find(d => d.skipped && (d.name === named || d.line === Number(groups.line)));
@@ -110,7 +112,7 @@ for (const spec of named.length > 0 ? named : specs()) {
       }
       repaired += 1;
       changed = true;
-      return citation(name, path, line);
+      return citation(`${name}${hash}`, path, line);
     }
   });
 

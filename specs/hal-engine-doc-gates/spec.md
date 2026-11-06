@@ -117,23 +117,25 @@ A line number is the wrong thing to cite. Inserting one import above a suite mov
 The `#Lnn` stays. The lint rule and the coverage job both index by line, and a citation carrying no line marks the whole file covered rather than one test - the weakest possible reading of a citation.
 
 - A citation whose name matches the declaration it points at is accepted ([validated by: accepts a citation whose name matches the declaration it points at](../../scripts/check-spec-anchor-names.test.ts#L27)).
-- A citation whose line has moved away from the test it names is reported ([validated by: reports a citation whose line has moved away from the test it names](../../scripts/check-spec-anchor-names.test.ts#L31)).
-- The report names the line the test actually sits on ([validated by: names the line the cited test actually sits on, so the repair is obvious](../../scripts/check-spec-anchor-names.test.ts#L35)).
-- A citation carrying no name at all is reported ([validated by: reports a citation carrying no test name at all](../../scripts/check-spec-anchor-names.test.ts#L39)).
-- A name no declaration in the cited file has is reported ([validated by: reports a name no declaration in the cited file has](../../scripts/check-spec-anchor-names.test.ts#L43)).
-- `--fix` repoints a drifted citation from the name it carries ([validated by: repoints a drifted citation from the name it carries](../../scripts/check-spec-anchor-names.test.ts#L47)).
-- `--fix` fills in a missing name from the declaration its line points at ([validated by: fills in a missing name from the declaration the line points at](../../scripts/check-spec-anchor-names.test.ts#L53)).
-- `--fix` leaves a citation that already agrees untouched ([validated by: leaves a citation that already agrees with its declaration untouched](../../scripts/check-spec-anchor-names.test.ts#L59)).
+- A citation whose line has moved away from the test it names is reported ([validated by: reports a citation whose line has moved away from the test it names](../../scripts/check-spec-anchor-names.test.ts#L41)).
+- The report names the line the test actually sits on ([validated by: names the line the cited test actually sits on, so the repair is obvious](../../scripts/check-spec-anchor-names.test.ts#L45)).
+- A citation carrying no name at all is reported ([validated by: reports a citation carrying no test name at all](../../scripts/check-spec-anchor-names.test.ts#L49)).
+- A name no declaration in the cited file has is reported ([validated by: reports a name no declaration in the cited file has](../../scripts/check-spec-anchor-names.test.ts#L53)).
+- `--fix` repoints a drifted citation from the name it carries ([validated by: repoints a drifted citation from the name it carries](../../scripts/check-spec-anchor-names.test.ts#L57)).
+- `--fix` fills in a missing name from the declaration its line points at ([validated by: fills in a missing name from the declaration the line points at](../../scripts/check-spec-anchor-names.test.ts#L63)).
+- `--fix` leaves a citation that already agrees untouched ([validated by: leaves a citation that already agrees with its declaration untouched](../../scripts/check-spec-anchor-names.test.ts#L69)).
 
 A name declared more than once in one file is reported and never guessed at, whether or not the line currently agrees. Resolving it by proximity was tried and removed: the nearest declaration is the one the author meant only while the shift is smaller than half the gap between the duplicates, and past that the tool rewrites the spec to cite the wrong test, after which every gate reports clean. That was not hypothetical - `src/transport/routes/chats.test.ts` declared one name twice, both were cited, and `--fix` collapsed them onto one line. The two tests were renamed apart; the mechanism that allowed it is gone.
 
-- A name matching two declarations is reported rather than repointed ([validated by: reports a name that two declarations share, rather than choosing between them](../../scripts/check-spec-anchor-names.test.ts#L66)).
-- `--fix` leaves an ambiguous citation exactly as it found it ([validated by: refuses to rewrite an ambiguous citation](../../scripts/check-spec-anchor-names.test.ts#L70)).
-- A name carrying a bracket is refused rather than written into a label it would break ([validated by: refuses to write a name that would break the markdown label](../../scripts/check-spec-anchor-names.test.ts#L77)).
+- A name matching two declarations is reported rather than repointed ([validated by: reports a name that two declarations share, rather than choosing between them](../../scripts/check-spec-anchor-names.test.ts#L76)).
+- `--fix` leaves an ambiguous citation exactly as it found it ([validated by: refuses to rewrite an ambiguous citation](../../scripts/check-spec-anchor-names.test.ts#L80)).
+- A name carrying a bracket is refused rather than written into a label it would break ([validated by: refuses to write a name that would break the markdown label](../../scripts/check-spec-anchor-names.test.ts#L87)).
+- A content hash after the name (` @1e7912b3`, which re-lint 1.12 appends) is not part of the name, so a hashed citation is accepted ([validated by: accepts a citation whose name carries a content hash after it](../../scripts/check-spec-anchor-names.test.ts#L31)).
+- `--fix` keeps that hash when it repoints a citation ([validated by: keeps the content hash when it repoints a drifted citation](../../scripts/check-spec-anchor-names.test.ts#L35)).
 
 Two shapes satisfied the coverage job while this gate never saw them. A test declared `xit` or `.skip` is a declaration with a name, so a citation onto it read as covered while validating nothing; and an href written `./../x` or `/x` resolves to the same file in the coverage job's parser but matched neither this gate's pattern nor the drift check's, so a citation to a line that does not exist counted as coverage and was held to nothing.
 
-- A citation of a test declared `xit` is reported ([validated by: reports a citation of a test declared with xit, which never runs](../../scripts/check-spec-anchor-names.test.ts#L84)).
-- One declared `.skip` is reported the same way ([validated by: reports a citation of a test declared with .skip the same way](../../scripts/check-spec-anchor-names.test.ts#L88)).
-- A root-relative href is reported ([validated by: reports a root-relative href, which the drift check would never read](../../scripts/check-spec-anchor-names.test.ts#L92)).
-- An href starting `./` is reported ([validated by: reports an href starting ./, which this gate would otherwise have skipped](../../scripts/check-spec-anchor-names.test.ts#L96)).
+- A citation of a test declared `xit` is reported ([validated by: reports a citation of a test declared with xit, which never runs](../../scripts/check-spec-anchor-names.test.ts#L94)).
+- One declared `.skip` is reported the same way ([validated by: reports a citation of a test declared with .skip the same way](../../scripts/check-spec-anchor-names.test.ts#L98)).
+- A root-relative href is reported ([validated by: reports a root-relative href, which the drift check would never read](../../scripts/check-spec-anchor-names.test.ts#L102)).
+- An href starting `./` is reported ([validated by: reports an href starting ./, which this gate would otherwise have skipped](../../scripts/check-spec-anchor-names.test.ts#L106)).

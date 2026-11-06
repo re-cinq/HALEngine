@@ -28,6 +28,16 @@ describe('check-spec-anchor-names', () => {
     expect(run(spec('named'))).toMatchObject({status: 0});
   });
 
+  it('accepts a citation whose name carries a content hash after it', () => {
+    expect(run(spec('hashed'))).toMatchObject({status: 0});
+  });
+
+  it('keeps the content hash when it repoints a drifted citation', () => {
+    const after = onACopy('hashed-drifted', path => run(path, '--fix'));
+
+    expect(after).toContain('[validated by: does the second thing @1e7912b3](../../src/sample.test.ts#L6)');
+  });
+
   it('reports a citation whose line has moved away from the test it names', () => {
     expect(run(spec('drifted'))).toMatchObject({status: 1});
   });
