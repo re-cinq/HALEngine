@@ -2,8 +2,8 @@ name: Spec link upkeep
 
 # After each merge to main, re-anchors every spec link (giving each a content hash) in a pull
 # request of its own and queues it to merge once the required checks pass. The diff touches only
-# link anchors. The push uses SPEC_UPKEEP_TOKEN, not GITHUB_TOKEN, because a GITHUB_TOKEN push
-# starts no workflow, so the required checks would never report. Without the secret the job skips.
+# link anchors. The push uses a lore-agent app token, not GITHUB_TOKEN, because a GITHUB_TOKEN
+# push starts no workflow, so the required checks would never report. Without the key the job skips.
 
 on:
   push:
@@ -21,55 +21,56 @@ permissions:
 env:
   BRANCH: lore/spec-link-upkeep
   BASE_REF: refs/spec-link-upkeep/base
+  LORE_AGENT_APP_ID: '3216440'
 
 jobs:
   upkeep:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      UPKEEP_TOKEN: ${{ secrets.SPEC_UPKEEP_TOKEN }}
     steps:
-      - name: Require the upkeep token
-        id: token
+      - name: Require the lore-agent key
+        id: key
+        env:
+          APP_KEY: ${{ secrets.LORE_AGENT_PRIVATE_KEY }}
         run: |
-          if [ -z "${UPKEEP_TOKEN}" ]; then
-            echo "SPEC_UPKEEP_TOKEN is not set: skipping spec link upkeep"
+          if [ -z "${APP_KEY}" ]; then
+            echo "LORE_AGENT_PRIVATE_KEY is not set: skipping spec link upkeep"
             echo "present=false" >> "$GITHUB_OUTPUT"
           else
             echo "present=true" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: steps.token.outputs.present == 'true'
+        if: steps.key.outputs.present == 'true'
         with:
           ref: main
           fetch-depth: 0
           persist-credentials: false
 
-      # The token rides in a one-off header, never in .git/config, so npm and the tool never see it.
+      # Read-only, with the job's own token in a one-off header, never in .git/config.
       - name: Fetch the processed base
-        if: steps.token.outputs.present == 'true'
+        if: steps.key.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          AUTH="$(printf 'x-access-token:%s' "${UPKEEP_TOKEN}" | base64 -w0)"
+          AUTH="$(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 -w0)"
           git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${AUTH}" \
             fetch --quiet origin "+${BASE_REF}:${BASE_REF}" \
             || echo "no processed base on origin yet"
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        if: steps.token.outputs.present == 'true'
+        if: steps.key.outputs.present == 'true'
         with:
           node-version: 22
           cache: npm
 
       - name: Install
-        if: steps.token.outputs.present == 'true'
+        if: steps.key.outputs.present == 'true'
         run: npm ci --ignore-scripts
 
       - name: Repoint the links
         id: repoint
-        if: steps.token.outputs.present == 'true'
-        env:
-          UPKEEP_TOKEN: ''
+        if: steps.key.outputs.present == 'true'
         run: |
           set -euo pipefail
           HEAD_SHA="$(git rev-parse HEAD)"
@@ -88,20 +89,30 @@ jobs:
             git diff --stat | tail -1
           fi
 
-      # The write token enters only here, after every npm install and tool run.
+      # The write token is minted only here, after every npm install and tool run, scoped to this repo.
+      - name: Mint a lore-agent token
+        id: app
+        if: steps.repoint.outputs.head != ''
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ env.LORE_AGENT_APP_ID }}
+          private-key: ${{ secrets.LORE_AGENT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
       - name: Open or update the pull request and queue its merge
         if: steps.repoint.outputs.changed == 'true'
         env:
-          GH_TOKEN: ${{ secrets.SPEC_UPKEEP_TOKEN }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
           HEAD_SHA: ${{ steps.repoint.outputs.head }}
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "lore-agent[bot]"
+          git config user.email "3216440+lore-agent[bot]@users.noreply.github.com"
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
           git switch --quiet -C "${BRANCH}"
           git commit --quiet -am "Repoint spec links to their content hashes after ${HEAD_SHA:0:9}"
-          git push --quiet --force origin "${BRANCH}"
+          git push --quiet origin "+${BRANCH}"
           PR="$(gh pr list --head "${BRANCH}" --state open --json number --jq '.[0].number // empty')"
           if [ -z "${PR}" ]; then
             PR="$(gh pr create --head "${BRANCH}" --base main \
@@ -114,9 +125,9 @@ jobs:
       - name: Move the processed base
         if: steps.repoint.outputs.head != ''
         env:
-          GH_TOKEN: ${{ secrets.SPEC_UPKEEP_TOKEN }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
           HEAD_SHA: ${{ steps.repoint.outputs.head }}
         run: |
           set -euo pipefail
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
-          git push --quiet --force origin "${HEAD_SHA}:${BASE_REF}"
+          git push --quiet origin "+${HEAD_SHA}:${BASE_REF}"
