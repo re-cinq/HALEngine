@@ -13,38 +13,38 @@ Message size was capped (`validation.ts` refuses a `content` over 10,000 charact
 
 ## The budget
 
-- Five immediate calls pass at the defaults, `{limit: 20, windowMs: 60000, burst: 5}`; the sixth is refused with `retryAfterMs` equal to the refill interval, and one more passes once that interval has elapsed ([validated by: allows five immediate calls at {limit: 20, windowMs: 60000, burst: 5}, refuses the sixth with retryAfterMs 3000, and allows one more 3000 ms later](../../src/transport/rateLimit.test.ts#L24)).
-- A key idle long enough to refill in full answers as a new one: it is dropped from memory, and a full bucket and a missing one answer alike ([validated by: answers a key idle for a whole window as a new one: five allowed again after 60000 ms of silence](../../src/transport/rateLimit.test.ts#L44)).
-- A key is kept while it is still refilling, so a burst above the limit is not handed back early ([validated by: keeps a key through a whole idle window when burst exceeds limit: {limit: 2, windowMs: 60000, burst: 10} allows two, not ten, after 60000 ms](../../src/transport/rateLimit.test.ts#L52)).
-- A limit, window or burst that is not a positive finite number, or a burst below 1, is refused at construction rather than read as "no limit" ([validated by: refuses a limit, window or burst that is not a positive finite number, and a burst below 1](../../src/transport/rateLimit.test.ts#L60)).
-- Unset, `transport.rateLimit` means the defaults; `false` means no limiter at all ([validated by: builds the default limiter, five at once, when transport.rateLimit is unset, and none when it is false](../../src/transport/rateLimit.test.ts#L75)).
-- A partial setting is merged with the defaults field by field ([validated by: merges a partial setting with the defaults: {burst: 2} refuses the third immediate call](../../src/transport/rateLimit.test.ts#L84)).
+- Five immediate calls pass at the defaults, `{limit: 20, windowMs: 60000, burst: 5}`; the sixth is refused with `retryAfterMs` equal to the refill interval, and one more passes once that interval has elapsed ([validated by: allows five immediate calls at {limit: 20, windowMs: 60000, burst: 5}, refuses the sixth with retryAfterMs 3000, and allows one more 3000 ms later @725ca357](../../src/transport/rateLimit.test.ts#L24)).
+- A key idle long enough to refill in full answers as a new one: it is dropped from memory, and a full bucket and a missing one answer alike ([validated by: answers a key idle for a whole window as a new one: five allowed again after 60000 ms of silence @80c4cc31](../../src/transport/rateLimit.test.ts#L44)).
+- A key is kept while it is still refilling, so a burst above the limit is not handed back early ([validated by: keeps a key through a whole idle window when burst exceeds limit: {limit: 2, windowMs: 60000, burst: 10} allows two, not ten, after 60000 ms @7cc6be5e](../../src/transport/rateLimit.test.ts#L52)).
+- A limit, window or burst that is not a positive finite number, or a burst below 1, is refused at construction rather than read as "no limit" ([validated by: refuses a limit, window or burst that is not a positive finite number, and a burst below 1 @fd84b49c](../../src/transport/rateLimit.test.ts#L60)).
+- Unset, `transport.rateLimit` means the defaults; `false` means no limiter at all ([validated by: builds the default limiter, five at once, when transport.rateLimit is unset, and none when it is false @674cbc6a](../../src/transport/rateLimit.test.ts#L75)).
+- A partial setting is merged with the defaults field by field ([validated by: merges a partial setting with the defaults: {burst: 2} refuses the third immediate call @4ee8b65d](../../src/transport/rateLimit.test.ts#L84)).
 
 ## Whose budget
 
-- One user's exhaustion leaves another's bucket untouched ([validated by: keeps one key out of another: u2 is allowed right after u1 was refused](../../src/transport/rateLimit.test.ts#L37)).
-- Two sessions of one user draw on one bucket, keyed `user:<id>` ([validated by: draws two sessions of user u1 on one bucket: three messages on s1 and two on s2 are allowed, s2's third is refused](../../src/transport/ws/rateLimitWs.test.ts#L83)).
-- The HTTP middleware keys on `req.user.id` when a middleware before it set a usable one, else on the remote address; an empty or non-scalar id counts as none ([validated by: keys on req.user.id when a middleware before it set a usable one, and on the remote address when none did or the id is empty](../../src/transport/rateLimitHttp.test.ts#L105)).
+- One user's exhaustion leaves another's bucket untouched ([validated by: keeps one key out of another: u2 is allowed right after u1 was refused @552bfc20](../../src/transport/rateLimit.test.ts#L37)).
+- Two sessions of one user draw on one bucket, keyed `user:<id>` ([validated by: draws two sessions of user u1 on one bucket: three messages on s1 and two on s2 are allowed, s2's third is refused @97a0d0f3](../../src/transport/ws/rateLimitWs.test.ts#L83)).
+- The HTTP middleware keys on `req.user.id` when a middleware before it set a usable one, else on the remote address; an empty or non-scalar id counts as none ([validated by: keys on req.user.id when a middleware before it set a usable one, and on the remote address when none did or the id is empty @00d73885](../../src/transport/rateLimitHttp.test.ts#L105)).
 
 ## HTTP
 
-- The sixth immediate request to a consumer's route answers 429 with `Retry-After` in whole seconds and a JSON body carrying `code: 'TOO_MANY_REQUESTS'` and `retryAfterMs` ([validated by: answers the sixth immediate request to an additional route 429 with Retry-After 3 and code TOO_MANY_REQUESTS, after five 200s](../../src/transport/rateLimitHttp.test.ts#L61)).
-- The same budget covers a consumer's root routes ([validated by: covers a root route too: a caller refused on /hal/ping is refused on /](../../src/transport/rateLimitHttp.test.ts#L75)).
-- The engine's chat routes authenticate first and limit second, so a REST chat request is keyed on its user ([validated by: keys the chat routes on the authenticated user: two users behind one address each get five POST /hal/chats before a 429](../../src/transport/rateLimitHttp.test.ts#L82)).
-- `${basePath}/health` is never refused ([validated by: never refuses /hal/health, which answers liveness probes, however often it is called](../../src/transport/rateLimitHttp.test.ts#L91)).
-- With no limiter, nothing is mounted and nothing is refused ([validated by: mounts none: thirty immediate requests to /hal/ping all answer 200](../../src/transport/rateLimitHttp.test.ts#L99)).
+- The sixth immediate request to a consumer's route answers 429 with `Retry-After` in whole seconds and a JSON body carrying `code: 'TOO_MANY_REQUESTS'` and `retryAfterMs` ([validated by: answers the sixth immediate request to an additional route 429 with Retry-After 3 and code TOO_MANY_REQUESTS, after five 200s @a231285f](../../src/transport/rateLimitHttp.test.ts#L61)).
+- The same budget covers a consumer's root routes ([validated by: covers a root route too: a caller refused on /hal/ping is refused on / @ce9b8bf7](../../src/transport/rateLimitHttp.test.ts#L75)).
+- The engine's chat routes authenticate first and limit second, so a REST chat request is keyed on its user ([validated by: keys the chat routes on the authenticated user: two users behind one address each get five POST /hal/chats before a 429 @74e3eeda](../../src/transport/rateLimitHttp.test.ts#L82)).
+- `${basePath}/health` is never refused ([validated by: never refuses /hal/health, which answers liveness probes, however often it is called @62563f26](../../src/transport/rateLimitHttp.test.ts#L91)).
+- With no limiter, nothing is mounted and nothing is refused ([validated by: mounts none: thirty immediate requests to /hal/ping all answer 200 @03e13c8a](../../src/transport/rateLimitHttp.test.ts#L99)).
 
 ## WebSocket
 
-- The sixth `user_message` in a row is refused with one `error` frame, code `TOO_MANY_REQUESTS` with `retryAfterMs`, then `stream_end`, and the orchestrator runs no sixth turn ([validated by: refuses the sixth user_message of user u1 in a row with one error TOO_MANY_REQUESTS carrying retryAfterMs 3000 and a stream_end, running no sixth turn](../../src/transport/ws/rateLimitWs.test.ts#L57)).
-- A refusal queues behind the session's in-flight turn, so its frames follow that answer's `stream_end` ([validated by: queues a refusal behind the session's earlier turn, so its error and stream_end follow that answer's stream_end](../../src/transport/ws/rateLimitWs.test.ts#L107)).
-- A `ping` is answered and never counted ([validated by: counts no ping: ten pings between a user_message and the next still leave that next one allowed at burst 11](../../src/transport/ws/rateLimitWs.test.ts#L69)).
-- With no limiter, no `user_message` is refused ([validated by: refuses nothing without a limiter: thirty user_messages in a row all run](../../src/transport/ws/rateLimitWs.test.ts#L96)).
+- The sixth `user_message` in a row is refused with one `error` frame, code `TOO_MANY_REQUESTS` with `retryAfterMs`, then `stream_end`, and the orchestrator runs no sixth turn ([validated by: refuses the sixth user_message of user u1 in a row with one error TOO_MANY_REQUESTS carrying retryAfterMs 3000 and a stream_end, running no sixth turn @b814e541](../../src/transport/ws/rateLimitWs.test.ts#L57)).
+- A refusal queues behind the session's in-flight turn, so its frames follow that answer's `stream_end` ([validated by: queues a refusal behind the session's earlier turn, so its error and stream_end follow that answer's stream_end @69a3d150](../../src/transport/ws/rateLimitWs.test.ts#L107)).
+- A `ping` is answered and never counted ([validated by: counts no ping: ten pings between a user_message and the next still leave that next one allowed at burst 11 @b82a2734](../../src/transport/ws/rateLimitWs.test.ts#L69)).
+- With no limiter, no `user_message` is refused ([validated by: refuses nothing without a limiter: thirty user_messages in a row all run @0ba4c0ce](../../src/transport/ws/rateLimitWs.test.ts#L96)).
 
 ## Privacy
 
-- The limiter holds user identifiers in memory with a token count and a timestamp, persists nothing, and drops a key once it has refilled in full ([validated by: answers a key idle for a whole window as a new one: five allowed again after 60000 ms of silence](../../src/transport/rateLimit.test.ts#L44)).
-- A refusal's log line carries `sessionId` and `retryAfterMs` and nothing of the message or of `session.authHeaders` ([validated by: logs a refusal with sessionId and retryAfterMs alone: neither the message content nor the authorization header reaches any log line](../../src/transport/ws/rateLimitWs.test.ts#L124)).
+- The limiter holds user identifiers in memory with a token count and a timestamp, persists nothing, and drops a key once it has refilled in full ([validated by: answers a key idle for a whole window as a new one: five allowed again after 60000 ms of silence @80c4cc31](../../src/transport/rateLimit.test.ts#L44)).
+- A refusal's log line carries `sessionId` and `retryAfterMs` and nothing of the message or of `session.authHeaders` ([validated by: logs a refusal with sessionId and retryAfterMs alone: neither the message content nor the authorization header reaches any log line @eada9e3b](../../src/transport/ws/rateLimitWs.test.ts#L124)).
 
 ## Rationale
 

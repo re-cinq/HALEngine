@@ -13,51 +13,51 @@ They are separate scripts rather than one because they fail for different reason
 
 `npm run docs:check` compares every fenced TypeScript block in a covered document against the source its marker names, and `docs:fix` rewrites it from there.
 
-- A recognised block carrying no marker at all is reported ([validated by: reports a recognised block that carries no marker at all](../../scripts/check-doc-blocks.test.ts#L151)).
-- An opt-out states a reason, and one that does not is reported ([validated by: reports an opt-out that states no reason](../../scripts/check-doc-blocks.test.ts#L157)).
-- An opt-out that states one is accepted ([validated by: accepts an opt-out that states one](../../scripts/check-doc-blocks.test.ts#L163)).
-- A fence that is never closed is reported rather than compared against the rest of the file ([validated by: reports a block whose fence is never closed rather than comparing to end of file](../../scripts/check-doc-blocks.test.ts#L169)).
-- A marker naming a declaration its source does not export is reported ([validated by: reports a marker naming a declaration the source does not export](../../scripts/check-doc-blocks.test.ts#L194)).
+- A recognised block carrying no marker at all is reported ([validated by: reports a recognised block that carries no marker at all @5084caf7](../../scripts/check-doc-blocks.test.ts#L151)).
+- An opt-out states a reason, and one that does not is reported ([validated by: reports an opt-out that states no reason @dd7de9a7](../../scripts/check-doc-blocks.test.ts#L157)).
+- An opt-out that states one is accepted ([validated by: accepts an opt-out that states one @9756664c](../../scripts/check-doc-blocks.test.ts#L163)).
+- A fence that is never closed is reported rather than compared against the rest of the file ([validated by: reports a block whose fence is never closed rather than comparing to end of file @c6c465cd](../../scripts/check-doc-blocks.test.ts#L169)).
+- A marker naming a declaration its source does not export is reported ([validated by: reports a marker naming a declaration the source does not export @01b1ab56](../../scripts/check-doc-blocks.test.ts#L194)).
 
 The fence tag is the gate's own blind spot, because a block it does not recognise keeps its marker and quietly stops being compared. Matching one spelling was not enough: `ts` renders identically to `typescript`, is already used elsewhere in this repository, and an editor or an author sidestepping a `--fix` conflict can produce it without meaning anything by it. Widening the recognised set narrowed the blind spot without closing it, because the next unrecognised tag reopens it. The marker drives the check as well as the fence: a marker is a claim that the block below it is generated, so anything other than a recognised fence under one is reported - a relabelled block, or no block at all.
 
-- A drifted block fenced `typescript` is reported ([validated by: compares a block fenced as typescript](../../scripts/check-doc-blocks.test.ts#L77)).
-- One fenced `ts` is reported ([validated by: compares a block fenced as ts, which renders identically](../../scripts/check-doc-blocks.test.ts#L81)).
-- One fenced `tsx` is reported ([validated by: compares a block fenced as tsx](../../scripts/check-doc-blocks.test.ts#L85)).
-- One whose fence tag is capitalised is reported ([validated by: compares a block whose fence tag is capitalised](../../scripts/check-doc-blocks.test.ts#L89)).
-- One whose fence carries an info string is reported ([validated by: compares a block whose fence carries an info string](../../scripts/check-doc-blocks.test.ts#L93)).
-- A block that matches its source is accepted rather than reported for being recognised ([validated by: accepts a matching block rather than reporting every fence it recognises](../../scripts/check-doc-blocks.test.ts#L97)).
-- A closing fence carrying trailing whitespace still closes its block ([validated by: closes on a fence carrying trailing whitespace](../../scripts/check-doc-blocks.test.ts#L101)).
-- A marker above a fence tagged with something the gate does not recognise is reported ([validated by: reports a marker whose fence carries a tag it does not recognise](../../scripts/check-doc-blocks.test.ts#L176)).
-- That report fails the run rather than passing silently ([validated by: fails rather than passing silently on a relabelled fence](../../scripts/check-doc-blocks.test.ts#L182)).
-- A marker that no fence follows at all is reported ([validated by: reports a marker that no fence follows at all](../../scripts/check-doc-blocks.test.ts#L188)).
-- `--fix` rewrites a drifted block from its source ([validated by: rewrites a drifted block from its source](../../scripts/check-doc-blocks.test.ts#L230)).
-- `--fix` leaves the document's own fence tag alone, so the gate does not impose a house style ([validated by: leaves a fence tag it did not write alone, so --fix does not rewrite the document's style](../../scripts/check-doc-blocks.test.ts#L238)).
-- `--fix` on a tree that already matches produces no diff ([validated by: produces no diff on a tree that already matches](../../scripts/check-doc-blocks.test.ts#L246)).
+- A drifted block fenced `typescript` is reported ([validated by: compares a block fenced as typescript @10c5669a](../../scripts/check-doc-blocks.test.ts#L77)).
+- One fenced `ts` is reported ([validated by: compares a block fenced as ts, which renders identically @7db3221e](../../scripts/check-doc-blocks.test.ts#L81)).
+- One fenced `tsx` is reported ([validated by: compares a block fenced as tsx @2f0efde5](../../scripts/check-doc-blocks.test.ts#L85)).
+- One whose fence tag is capitalised is reported ([validated by: compares a block whose fence tag is capitalised @76ab2511](../../scripts/check-doc-blocks.test.ts#L89)).
+- One whose fence carries an info string is reported ([validated by: compares a block whose fence carries an info string @d7f0c633](../../scripts/check-doc-blocks.test.ts#L93)).
+- A block that matches its source is accepted rather than reported for being recognised ([validated by: accepts a matching block rather than reporting every fence it recognises @2f337e29](../../scripts/check-doc-blocks.test.ts#L97)).
+- A closing fence carrying trailing whitespace still closes its block ([validated by: closes on a fence carrying trailing whitespace @a35d4fc2](../../scripts/check-doc-blocks.test.ts#L101)).
+- A marker above a fence tagged with something the gate does not recognise is reported ([validated by: reports a marker whose fence carries a tag it does not recognise @ffa1df5f](../../scripts/check-doc-blocks.test.ts#L176)).
+- That report fails the run rather than passing silently ([validated by: fails rather than passing silently on a relabelled fence @4f1599c8](../../scripts/check-doc-blocks.test.ts#L182)).
+- A marker that no fence follows at all is reported ([validated by: reports a marker that no fence follows at all @0646e358](../../scripts/check-doc-blocks.test.ts#L188)).
+- `--fix` rewrites a drifted block from its source ([validated by: rewrites a drifted block from its source @cdee6eea](../../scripts/check-doc-blocks.test.ts#L230)).
+- `--fix` leaves the document's own fence tag alone, so the gate does not impose a house style ([validated by: leaves a fence tag it did not write alone, so --fix does not rewrite the document's style @7f7aab4a](../../scripts/check-doc-blocks.test.ts#L238)).
+- `--fix` on a tree that already matches produces no diff ([validated by: produces no diff on a tree that already matches @b91ac0cf](../../scripts/check-doc-blocks.test.ts#L246)).
 
 The tag was one blind spot; the fence itself was another. The gate read only three unindented backticks, while CommonMark - and so npm and GitHub - also renders a fence of four backticks, of tildes, or indented up to three spaces inside a list, and a hand-written block under any of those passed with no marker at all. Fences are now read as CommonMark defines them, closing only on the same character at least as long.
 
-- A block under a four-backtick fence is compared ([validated by: compares a block under a four-backtick fence, which renders as code](../../scripts/check-doc-blocks.test.ts#L113)).
-- A block under a tilde fence is compared ([validated by: compares a block under a tilde fence](../../scripts/check-doc-blocks.test.ts#L117)).
-- A fence indented inside a list is read, and its content is compared with that indent stripped, as a renderer strips it ([validated by: compares a block whose fence is indented inside a list, and reads its content dedented](../../scripts/check-doc-blocks.test.ts#L121)).
-- `--fix` writes an indented block back with its indent, so the list it sits in still renders ([validated by: keeps the indent when --fix rewrites an indented block](../../scripts/check-doc-blocks.test.ts#L127)).
-- Three backticks do not close a four-backtick fence ([validated by: does not close a four-backtick fence on three backticks](../../scripts/check-doc-blocks.test.ts#L134)).
+- A block under a four-backtick fence is compared ([validated by: compares a block under a four-backtick fence, which renders as code @d8cf61ac](../../scripts/check-doc-blocks.test.ts#L113)).
+- A block under a tilde fence is compared ([validated by: compares a block under a tilde fence @29b587ff](../../scripts/check-doc-blocks.test.ts#L117)).
+- A fence indented inside a list is read, and its content is compared with that indent stripped, as a renderer strips it ([validated by: compares a block whose fence is indented inside a list, and reads its content dedented @61187857](../../scripts/check-doc-blocks.test.ts#L121)).
+- `--fix` writes an indented block back with its indent, so the list it sits in still renders ([validated by: keeps the indent when --fix rewrites an indented block @b0e6c7de](../../scripts/check-doc-blocks.test.ts#L127)).
+- Three backticks do not close a four-backtick fence ([validated by: does not close a four-backtick fence on three backticks @fd77ca40](../../scripts/check-doc-blocks.test.ts#L134)).
 
-The covered list is hand-maintained, which is its own blind spot: a new guide with a typescript block was gated only if somebody added it. Every tracked markdown file that holds a recognised fence must now be in one of the two lists, and one that is in neither is reported ([validated by: reports a tracked document that holds a typescript block but is in neither list](../../scripts/check-doc-blocks.test.ts#L140)). Fixture documents under `scripts/fixtures/` are the other gates' inputs and are exempt.
+The covered list is hand-maintained, which is its own blind spot: a new guide with a typescript block was gated only if somebody added it. Every tracked markdown file that holds a recognised fence must now be in one of the two lists, and one that is in neither is reported ([validated by: reports a tracked document that holds a typescript block but is in neither list @a111f1c1](../../scripts/check-doc-blocks.test.ts#L140)). Fixture documents under `scripts/fixtures/` are the other gates' inputs and are exempt.
 
 Spike documents are covered differently. A spike records what was believed when it was written, and its status block - which `check-spike-status.mjs` requires - already says every snippet in the file is superseded. Repeating that reason once per block would be 34 copies of one sentence, each free to drift from the status block it restates, so the opt-out is declared once per file in the gate. What the gate checks in a spike is the opposite risk: a block wired to live source would regenerate spike code from the implementation that replaced it, erasing the record the spike exists to keep.
 
-- An unmarked block in a spike is accepted, which is the expected state ([validated by: accepts an unmarked block, which is the expected state for a spike](../../scripts/check-doc-blocks.test.ts#L203)).
-- Those blocks are counted and reported rather than passed over in silence ([validated by: counts the blocks it left alone rather than reporting nothing about them](../../scripts/check-doc-blocks.test.ts#L209)).
-- A spike block that names a source is reported ([validated by: refuses a spike block that names a source](../../scripts/check-doc-blocks.test.ts#L216)).
-- An explicit opt-out marker is still accepted, saying per block what the file says once ([validated by: accepts an explicit opt-out marker, which says the same thing the file already says](../../scripts/check-doc-blocks.test.ts#L222)).
+- An unmarked block in a spike is accepted, which is the expected state ([validated by: accepts an unmarked block, which is the expected state for a spike @c8a51936](../../scripts/check-doc-blocks.test.ts#L203)).
+- Those blocks are counted and reported rather than passed over in silence ([validated by: counts the blocks it left alone rather than reporting nothing about them @6c2dafc6](../../scripts/check-doc-blocks.test.ts#L209)).
+- A spike block that names a source is reported ([validated by: refuses a spike block that names a source @42d24720](../../scripts/check-doc-blocks.test.ts#L216)).
+- An explicit opt-out marker is still accepted, saying per block what the file says once ([validated by: accepts an explicit opt-out marker, which says the same thing the file already says @674edb05](../../scripts/check-doc-blocks.test.ts#L222)).
 
 ## The documented pre-commit set is the one CI runs
 
 `AGENTS.md` and `CONTRIBUTING.md` both told a contributor to run seven commands and called that "the blocking set CI runs, in the same order". CI's `verify` job blocks on sixteen steps. Four of them appeared in neither document and two were described as optional, so following the contributing guide exactly could still leave a pull request red on a gate nobody had mentioned. Both documents now name one script, and the script is compared against the workflow.
 
-- `npm run verify` runs every `npm run` step of the `verify` job, in the workflow's order ([validated by: runs every npm script the CI verify job runs, in the same order](../../scripts/verify-script.test.ts#L36)).
-- Every script it names exists, so a rename fails in the suite rather than under a contributor ([validated by: names scripts that exist, so a rename fails here rather than at the contributor](../../scripts/verify-script.test.ts#L40)).
+- `npm run verify` runs every `npm run` step of the `verify` job, in the workflow's order ([validated by: runs every npm script the CI verify job runs, in the same order @12432b53](../../scripts/verify-script.test.ts#L36)).
+- Every script it names exists, so a rename fails in the suite rather than under a contributor ([validated by: names scripts that exist, so a rename fails here rather than at the contributor @a70af8d3](../../scripts/verify-script.test.ts#L40)).
 
 Two steps of that job are deliberately outside the script: the spec anchor check and the changelog check both diff against `origin/main`, and neither behaves the same on a checkout as it does against a pull request's base.
 
@@ -65,27 +65,27 @@ Two steps of that job are deliberately outside the script: the spec anchor check
 
 `pr-description-check.yml` asks for three headings that Dependabot's body never has, so every Dependabot pull request showed a red check nothing could turn green.
 
-- The check skips a pull request Dependabot opened, decided by its author rather than by whoever edits it ([validated by: skips a pull request Dependabot opened, by its author rather than whoever edits it](../../scripts/pr-description-check.test.ts#L26)).
-- It still fails any other body that lacks a heading, naming each one ([validated by: still passes a body with all three headings and fails a Dependabot-style one, naming each it lacks](../../scripts/pr-description-check.test.ts#L33)).
+- The check skips a pull request Dependabot opened, decided by its author rather than by whoever edits it ([validated by: skips a pull request Dependabot opened, by its author rather than whoever edits it @a67490f3](../../scripts/pr-description-check.test.ts#L26)).
+- It still fails any other body that lacks a heading, naming each one ([validated by: still passes a body with all three headings and fails a Dependabot-style one, naming each it lacks @1995636b](../../scripts/pr-description-check.test.ts#L33)).
 
 ## Paths in prose resolve
 
 `npm run docs:check-paths` resolves every backticked repository path written in a document - `src/`, `scripts/`, `example/`, `smoke/`, `docs/`, `specs/`, `adrs/`, `dist/`, `.github/` and `.specify/`. A path that legitimately does not resolve is named in the script's own allowlist with the reason, because an exception has to be written down to be one; narrowing the pattern instead would hide every other path behind the same prefix. A path in prose is a citation, and a citation nobody resolves rots in silence: the file moves, the sentence naming it stays, and the next reader follows it to nothing.
 
-- A document whose cited paths all resolve passes, including one written with a line suffix - which line a citation lands on is `repoint-spec-anchors.mjs`'s question, not this one ([validated by: passes a document whose cited paths all resolve, including one carrying a line suffix](../../scripts/check-doc-gates.test.ts#L12)).
-- A placeholder and a glob name no single file and are not checked ([validated by: ignores a placeholder and a glob, which name no single file](../../scripts/check-doc-gates.test.ts#L16)).
-- A cited path that does not exist fails the run ([validated by: fails a document citing a path that does not exist](../../scripts/check-doc-gates.test.ts#L20)).
-- The report names the document, the line and the missing path ([validated by: names the document, the line and the missing path](../../scripts/check-doc-gates.test.ts#L24)).
+- A document whose cited paths all resolve passes, including one written with a line suffix - which line a citation lands on is `repoint-spec-anchors.mjs`'s question, not this one ([validated by: passes a document whose cited paths all resolve, including one carrying a line suffix @611c3138](../../scripts/check-doc-gates.test.ts#L12)).
+- A placeholder and a glob name no single file and are not checked ([validated by: ignores a placeholder and a glob, which name no single file @3ca8643c](../../scripts/check-doc-gates.test.ts#L16)).
+- A cited path that does not exist fails the run ([validated by: fails a document citing a path that does not exist @dff6a17d](../../scripts/check-doc-gates.test.ts#L20)).
+- The report names the document, the line and the missing path ([validated by: names the document, the line and the missing path @16b6902a](../../scripts/check-doc-gates.test.ts#L24)).
 
 ## A spike says that it is one
 
 `npm run docs:check-spikes` requires every document under `docs/spikes/` to open with a status block. A spike records what somebody believed on the day they wrote it; served as documentation without that said out loud - and Lore does serve these - it reads as current design, which is how a superseded proposal becomes the thing a reader implements.
 
-- A spike opening with a status block passes ([validated by: passes a spike opening with a status block](../../scripts/check-doc-gates.test.ts#L32)).
-- A spike carrying none fails ([validated by: fails a spike carrying no status block](../../scripts/check-doc-gates.test.ts#L36)).
-- A block buried below the head of the file fails, because a reader meets the body first ([validated by: fails a status block buried below the head of the file, where a reader will not meet it](../../scripts/check-doc-gates.test.ts#L40)).
-- The report names the file it refused ([validated by: names the file it refused](../../scripts/check-doc-gates.test.ts#L44)).
-- A status block that says nothing after the label fails, because the text is the point ([validated by: fails a status block that says nothing after the label](../../scripts/check-doc-gates.test.ts#L48)).
+- A spike opening with a status block passes ([validated by: passes a spike opening with a status block @1b902948](../../scripts/check-doc-gates.test.ts#L32)).
+- A spike carrying none fails ([validated by: fails a spike carrying no status block @5d10ed5a](../../scripts/check-doc-gates.test.ts#L36)).
+- A block buried below the head of the file fails, because a reader meets the body first ([validated by: fails a status block buried below the head of the file, where a reader will not meet it @9ed2cde0](../../scripts/check-doc-gates.test.ts#L40)).
+- The report names the file it refused ([validated by: names the file it refused @b486f66b](../../scripts/check-doc-gates.test.ts#L44)).
+- A status block that says nothing after the label fails, because the text is the point ([validated by: fails a status block that says nothing after the label @0e50f02c](../../scripts/check-doc-gates.test.ts#L48)).
 
 ## Example regions are EU regions
 
@@ -93,18 +93,18 @@ Two steps of that job are deliberately outside the script: the spec anchor check
 
 The check reads fenced blocks and source files, not prose. Fences are read as CommonMark writes them: three backticks or three tildes, up to three spaces of indent, closing only on the same character - because the ordinary way a guide shows a step is an indented fence inside a numbered list, and reading only the unindented backtick spelling made exactly that invisible. A spec sentence recording that an example *used to* name a US region is a record of a correction, not a snippet, and rewriting it would erase the account of the defect.
 
-- An EU region in an example passes ([validated by: passes an EU region in an example](../../scripts/check-doc-gates.test.ts#L54)).
-- A non-EU region in an example fails ([validated by: fails a non-EU region in an example](../../scripts/check-doc-gates.test.ts#L58)).
-- A non-EU region set through an environment variable fails ([validated by: fails a non-EU region set through an environment variable](../../scripts/check-doc-gates.test.ts#L62)).
-- A region named in prose is not a snippet and is not checked ([validated by: ignores a region named in prose, which records a change rather than instructing](../../scripts/check-doc-gates.test.ts#L66)).
-- Every line of a source example is checked, having no fence to sit inside ([validated by: checks every line of a source example, which has no fence to sit inside](../../scripts/check-doc-gates.test.ts#L70)).
-- An indented fence inside a numbered list is read, and so is a tilde fence ([validated by: reads an indented fence and a tilde fence, which a guide writes as a step](../../scripts/check-doc-gates.test.ts#L78)).
-- The report names the region it refused ([validated by: names the region it refused](../../scripts/check-doc-gates.test.ts#L74)).
+- An EU region in an example passes ([validated by: passes an EU region in an example @4f8a0483](../../scripts/check-doc-gates.test.ts#L54)).
+- A non-EU region in an example fails ([validated by: fails a non-EU region in an example @3f791b7d](../../scripts/check-doc-gates.test.ts#L58)).
+- A non-EU region set through an environment variable fails ([validated by: fails a non-EU region set through an environment variable @de45f376](../../scripts/check-doc-gates.test.ts#L62)).
+- A region named in prose is not a snippet and is not checked ([validated by: ignores a region named in prose, which records a change rather than instructing @8bdb2338](../../scripts/check-doc-gates.test.ts#L66)).
+- Every line of a source example is checked, having no fence to sit inside ([validated by: checks every line of a source example, which has no fence to sit inside @495ce336](../../scripts/check-doc-gates.test.ts#L70)).
+- An indented fence inside a numbered list is read, and so is a tilde fence ([validated by: reads an indented fence and a tilde fence, which a guide writes as a step @e816d249](../../scripts/check-doc-gates.test.ts#L78)).
+- The report names the region it refused ([validated by: names the region it refused @ed4eacea](../../scripts/check-doc-gates.test.ts#L74)).
 
 The gate first read one spelling - a lowercase literal in single quotes after a colon, or one of three environment variables - and a reader copies every other spelling just as readily. A region literal is now anything shaped `letters-alphanumerics` after `location:` or `region:`, in any quote or none, in any case, including one behind a `process.env.X ??` fallback; any environment variable ending `_REGION`, `_LOCATION` or `_ZONE`; and an indented code block, which has no fence but renders as code. The shape is what keeps `region: string` in an interface and a bare `process.env.AWS_REGION` out of it.
 
-- Every one of those spellings is caught, counted in one fixture so a missed one changes the count ([validated by: catches every spelling a reader copies: any quote or none, any case, an env fallback, any region variable, an indented block](../../scripts/check-doc-gates.test.ts#L82)).
-- A type annotation and a bare environment reference name no region and are not counted ([validated by: does not read a type annotation or a bare env reference as a region](../../scripts/check-doc-gates.test.ts#L86)).
+- Every one of those spellings is caught, counted in one fixture so a missed one changes the count ([validated by: catches every spelling a reader copies: any quote or none, any case, an env fallback, any region variable, an indented block @285cc445](../../scripts/check-doc-gates.test.ts#L82)).
+- A type annotation and a bare environment reference name no region and are not counted ([validated by: does not read a type annotation or a bare env reference as a region @d6496c9f](../../scripts/check-doc-gates.test.ts#L86)).
 
 The prefix rule is a vendor naming convention rather than a legal test. `eu-west-2` is London, which passes this check while sitting outside the EU; where data may actually come to rest is a transfer-basis question this gate does not answer and should not be read as answering.
 
@@ -116,26 +116,26 @@ A line number is the wrong thing to cite. Inserting one import above a suite mov
 
 The `#Lnn` stays. The lint rule and the coverage job both index by line, and a citation carrying no line marks the whole file covered rather than one test - the weakest possible reading of a citation.
 
-- A citation whose name matches the declaration it points at is accepted ([validated by: accepts a citation whose name matches the declaration it points at](../../scripts/check-spec-anchor-names.test.ts#L27)).
-- A citation whose line has moved away from the test it names is reported ([validated by: reports a citation whose line has moved away from the test it names](../../scripts/check-spec-anchor-names.test.ts#L41)).
-- The report names the line the test actually sits on ([validated by: names the line the cited test actually sits on, so the repair is obvious](../../scripts/check-spec-anchor-names.test.ts#L45)).
-- A citation carrying no name at all is reported ([validated by: reports a citation carrying no test name at all](../../scripts/check-spec-anchor-names.test.ts#L49)).
-- A name no declaration in the cited file has is reported ([validated by: reports a name no declaration in the cited file has](../../scripts/check-spec-anchor-names.test.ts#L53)).
-- `--fix` repoints a drifted citation from the name it carries ([validated by: repoints a drifted citation from the name it carries](../../scripts/check-spec-anchor-names.test.ts#L57)).
-- `--fix` fills in a missing name from the declaration its line points at ([validated by: fills in a missing name from the declaration the line points at](../../scripts/check-spec-anchor-names.test.ts#L63)).
-- `--fix` leaves a citation that already agrees untouched ([validated by: leaves a citation that already agrees with its declaration untouched](../../scripts/check-spec-anchor-names.test.ts#L69)).
+- A citation whose name matches the declaration it points at is accepted ([validated by: accepts a citation whose name matches the declaration it points at @c44c79e4](../../scripts/check-spec-anchor-names.test.ts#L27)).
+- A citation whose line has moved away from the test it names is reported ([validated by: reports a citation whose line has moved away from the test it names @363897b6](../../scripts/check-spec-anchor-names.test.ts#L41)).
+- The report names the line the test actually sits on ([validated by: names the line the cited test actually sits on, so the repair is obvious @131c1f0d](../../scripts/check-spec-anchor-names.test.ts#L45)).
+- A citation carrying no name at all is reported ([validated by: reports a citation carrying no test name at all @c9f874ea](../../scripts/check-spec-anchor-names.test.ts#L49)).
+- A name no declaration in the cited file has is reported ([validated by: reports a name no declaration in the cited file has @b81e6cec](../../scripts/check-spec-anchor-names.test.ts#L53)).
+- `--fix` repoints a drifted citation from the name it carries ([validated by: repoints a drifted citation from the name it carries @4af67f26](../../scripts/check-spec-anchor-names.test.ts#L57)).
+- `--fix` fills in a missing name from the declaration its line points at ([validated by: fills in a missing name from the declaration the line points at @c6846725](../../scripts/check-spec-anchor-names.test.ts#L63)).
+- `--fix` leaves a citation that already agrees untouched ([validated by: leaves a citation that already agrees with its declaration untouched @fcc17d2b](../../scripts/check-spec-anchor-names.test.ts#L69)).
 
 A name declared more than once in one file is reported and never guessed at, whether or not the line currently agrees. Resolving it by proximity was tried and removed: the nearest declaration is the one the author meant only while the shift is smaller than half the gap between the duplicates, and past that the tool rewrites the spec to cite the wrong test, after which every gate reports clean. That was not hypothetical - `src/transport/routes/chats.test.ts` declared one name twice, both were cited, and `--fix` collapsed them onto one line. The two tests were renamed apart; the mechanism that allowed it is gone.
 
-- A name matching two declarations is reported rather than repointed ([validated by: reports a name that two declarations share, rather than choosing between them](../../scripts/check-spec-anchor-names.test.ts#L76)).
-- `--fix` leaves an ambiguous citation exactly as it found it ([validated by: refuses to rewrite an ambiguous citation](../../scripts/check-spec-anchor-names.test.ts#L80)).
-- A name carrying a bracket is refused rather than written into a label it would break ([validated by: refuses to write a name that would break the markdown label](../../scripts/check-spec-anchor-names.test.ts#L87)).
-- A content hash after the name (` @1e7912b3`, which re-lint 1.12 appends) is not part of the name, so a hashed citation is accepted ([validated by: accepts a citation whose name carries a content hash after it](../../scripts/check-spec-anchor-names.test.ts#L31)).
-- `--fix` keeps that hash when it repoints a citation ([validated by: keeps the content hash when it repoints a drifted citation](../../scripts/check-spec-anchor-names.test.ts#L35)).
+- A name matching two declarations is reported rather than repointed ([validated by: reports a name that two declarations share, rather than choosing between them @c0726fe9](../../scripts/check-spec-anchor-names.test.ts#L76)).
+- `--fix` leaves an ambiguous citation exactly as it found it ([validated by: refuses to rewrite an ambiguous citation @f88eeffa](../../scripts/check-spec-anchor-names.test.ts#L80)).
+- A name carrying a bracket is refused rather than written into a label it would break ([validated by: refuses to write a name that would break the markdown label @fe2e02aa](../../scripts/check-spec-anchor-names.test.ts#L87)).
+- A content hash after the name (` @1e7912b3`, which re-lint 1.12 appends) is not part of the name, so a hashed citation is accepted ([validated by: accepts a citation whose name carries a content hash after it @62b68c0f](../../scripts/check-spec-anchor-names.test.ts#L31)).
+- `--fix` keeps that hash when it repoints a citation ([validated by: keeps the content hash when it repoints a drifted citation @c112642a](../../scripts/check-spec-anchor-names.test.ts#L35)).
 
 Two shapes satisfied the coverage job while this gate never saw them. A test declared `xit` or `.skip` is a declaration with a name, so a citation onto it read as covered while validating nothing; and an href written `./../x` or `/x` resolves to the same file in the coverage job's parser but matched neither this gate's pattern nor the drift check's, so a citation to a line that does not exist counted as coverage and was held to nothing.
 
-- A citation of a test declared `xit` is reported ([validated by: reports a citation of a test declared with xit, which never runs](../../scripts/check-spec-anchor-names.test.ts#L94)).
-- One declared `.skip` is reported the same way ([validated by: reports a citation of a test declared with .skip the same way](../../scripts/check-spec-anchor-names.test.ts#L98)).
-- A root-relative href is reported ([validated by: reports a root-relative href, which the drift check would never read](../../scripts/check-spec-anchor-names.test.ts#L102)).
-- An href starting `./` is reported ([validated by: reports an href starting ./, which this gate would otherwise have skipped](../../scripts/check-spec-anchor-names.test.ts#L106)).
+- A citation of a test declared `xit` is reported ([validated by: reports a citation of a test declared with xit, which never runs @48ed1399](../../scripts/check-spec-anchor-names.test.ts#L94)).
+- One declared `.skip` is reported the same way ([validated by: reports a citation of a test declared with .skip the same way @f3cfe1c0](../../scripts/check-spec-anchor-names.test.ts#L98)).
+- A root-relative href is reported ([validated by: reports a root-relative href, which the drift check would never read @7025f109](../../scripts/check-spec-anchor-names.test.ts#L102)).
+- An href starting `./` is reported ([validated by: reports an href starting ./, which this gate would otherwise have skipped @56ea06ab](../../scripts/check-spec-anchor-names.test.ts#L106)).
