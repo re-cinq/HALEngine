@@ -617,3 +617,16 @@ describe('telling an expired session apart', () => {
     });
   });
 });
+
+describe('a conversation title across a resume', () => {
+  it('leaves a conversation title unchanged when its owner resumes it', async () => {
+    const store = new InMemorySessionStore();
+    const {base} = await startEngine(store, RESUME_ON);
+    const first = await firstTurn(base);
+    store.setTitle(first, 'Cancel subscription');
+
+    await connectAndSettle(`${base}?sessionId=${first}`);
+
+    expect((await store.get(first))?.title).toBe('Cancel subscription');
+  });
+});

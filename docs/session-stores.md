@@ -84,6 +84,7 @@ Every category of data the engine keeps, where it keeps it, what bounds it, and 
 | Session metadata: `sessionId`, `userId`, `workspaceId`, `createdAt`, when it was last written, and `activePersona` | The session store, beside the entries | As for the entries' session | As for the entries |
 | `authHeaders`, the caller headers `auth.forwardHeaders` lets through | Process memory, on the session, while a socket holds it | Cleared when the session's last socket closes; never persisted by `MongoSessionStore` | The close |
 | `ChatSession.user`, what `auth.ws` returned | Process memory, per connection | The connection; never persisted | The close |
+| Conversation title, if you call `setTitle` | The session document, beside the entries | None: the consumer writes it and decides how long it stays | The same methods as the conversation: `eraseConversation`, `eraseOlderThan`, `eraseAll`, and `delete` and `evict`, which go through `eraseConversation` |
 | Conversation list previews | Derived from the opening user entry when a list is read; stored nowhere | Whatever bounds that entry: a cleared opening question has no preview | The entry |
 | Rate-limit counters: a user id, a token count and a time | Process memory | Dropped once a key's bucket has refilled, see `specs/hal-engine-rate-limit/spec.md` | The refill |
 | Usage records, if you record them through a `UsageStore` | The store you give | Yours: the engine writes none itself | Yours |
@@ -186,8 +187,8 @@ text is that entry's as stored, so if a `beforeUserInput` hook of yours rewrites
 the hook's return value is written back to the entry — a label shows the rewritten text rather than
 what was typed. Treat that as a caveat rather than a feature: do not reach for the hook to title a
 conversation, because it overwrites what the user actually typed in the history the model reads and a
-resume replays. The engine stores no title of its own yet; re-cinq/HALEngine#155 is where a field for
-one you write yourself is being tracked.
+resume replays. A title you write yourself is kept by `setTitle(sessionId, title)` and
+returned in every summary that holds one, with no option to ask for it. The engine never writes a title.
 
 A preview is conversation content, which a summary otherwise never carries, so treat it as personal
 data: an opening question can hold a booking reference, an order number or somebody's name. That is

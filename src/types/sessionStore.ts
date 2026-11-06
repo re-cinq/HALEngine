@@ -25,6 +25,8 @@ export interface SessionSummary {
   entryCount: number;
   /** The conversation's opening question as a label, only when asked for, and absent when it opens with no user entry (specs/hal-engine-conversation-list/spec.md). */
   preview?: string;
+  /** A label the consumer wrote about this conversation; present whenever the store holds one (specs/hal-engine-conversation-list/spec.md). */
+  title?: string;
 }
 
 /** Where a page of conversations resumes from: the last row the caller saw, which a `SessionSummary` satisfies. */
@@ -67,4 +69,6 @@ export interface SessionStore<T extends BaseSession = ChatSession> {
   lookup?(sessionId: string): Awaitable<SessionLookup<T>>;
   /** How many conversations this user owns; personal data scoped to one user — never the store-wide total (specs/hal-engine-conversation-list). */
   countFor?(userId: string | number): Awaitable<number>;
+  /** Stores a consumer-written title for the conversation; a missing session is silently ignored, and no document is created (specs/hal-engine-conversation-list/spec.md). */
+  setTitle?(sessionId: string, title: string): Awaitable<void>;
 }

@@ -22,7 +22,7 @@ import {log} from '../../../shared/logger.js';
 
 const DEFAULT_COLLECTION_NAME = 'hal_sessions';
 // Entries are left out so a page of summaries never carries a conversation out of the database.
-const SUMMARY_FIELDS = {_id: 1, createdAt: 1, updatedAt: 1, entryCount: 1} as const;
+const SUMMARY_FIELDS = {_id: 1, createdAt: 1, updatedAt: 1, entryCount: 1, title: 1} as const;
 // The first element and no more, so a labelled page still leaves every entry after the opening question behind.
 const LABELLED_FIELDS = {...SUMMARY_FIELDS, entries: {$slice: 1}} as const;
 // Eight hours, matching InMemorySessionStore: a bound on the cache in front of the collection, not a retention period.
@@ -133,6 +133,14 @@ export class MongoSessionStore implements SessionStore {
   // Empties the cache alone; eraseAll is the durable wipe, so neither can be reached by accident.
   clear(): void {
     this.cache.clear();
+  }
+
+  /** Writes a title to the stored document; silently does nothing when the session does not exist, and never upserts. */
+  async setTitle(sessionId: string, title: string): Promise<void> {
+    const collection = await this.collection();
+    await collection.updateOne({_id: sessionId}, {$set: {title}}, {upsert: false});
+    const cached = this.cache.get(sessionId);
+    if (cached !== undefined) cached.session.title = title;
   }
 
   // After an erasure the REST router's own Map still answers GET requests; its next message writes nothing here.

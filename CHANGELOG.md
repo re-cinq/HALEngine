@@ -8,6 +8,10 @@ package, not for somebody reading this repository's commit log.
 
 ## [Unreleased]
 
+### Added
+
+- **Store a title for a conversation.** `SessionStore` gains an optional `setTitle(sessionId, title)`, implemented by `InMemorySessionStore` and `MongoSessionStore`; a store implementing only the original members still satisfies the interface. Call `setTitle` to write a consumer-authored label; `listFor` answers it in every row that holds one, with no option to ask. On MongoDB the title is read from the same projection `listFor` already fetches — no second query. A title lives in the same document as the conversation and is erased with it by every existing erasure method.
+
 ## [0.12.0] - 2026-10-27
 
 **Upgrading from 0.11.x.** Nothing breaks, and nothing changes until you set `orchestrator.entries`. Two things can still reach you. Every `SessionEntry` type gains an optional `cleared?: true`: a client that copies the entry types gains a field it can ignore, and a resumed conversation replays a cleared entry as `entry_skip`. And a turn's history no longer starts with a tool result whose call `contextConfig.maxMessages` cut away, so a provider that used to refuse that turn now answers it.
