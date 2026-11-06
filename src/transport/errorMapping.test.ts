@@ -51,7 +51,7 @@ describe('the one AIError table', () => {
     expect([...rows]).toEqual([{code: 'UPSTREAM_ERROR', status: 502, message: UNAVAILABLE}]);
   });
 
-  it('defines nine ErrorCodes: TOO_MANY_REQUESTS and the three provider conditions added beside the five the protocol first had', () => {
+  it('defines ten ErrorCodes: TOO_MANY_REQUESTS, CREDENTIAL_EXPIRED and the three provider conditions added beside the five the protocol first had', () => {
     expect(Object.keys(ErrorCodes)).toEqual([
       'INVALID_MESSAGE',
       'INVALID_FORMAT',
@@ -62,6 +62,7 @@ describe('the one AIError table', () => {
       'UPSTREAM_ERROR',
       'SERVER_ERROR',
       'UNSUPPORTED',
+      'CREDENTIAL_EXPIRED',
     ]);
   });
 

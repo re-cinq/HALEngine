@@ -137,6 +137,8 @@ interface OrchestratorHooks {
   beforeToolCall?: (session: ChatSession, call: ToolCall) => Promise<ToolResponse | undefined>;
   /** Fires when the model asks for a tool round the budget refuses, after the last provider call and before afterModelResponse; a returned string reaches the user as the turn's closing text, and the engine writes none of its own (see specs/hal-engine-tool-budget/spec.md). */
   onToolBudgetExhausted?: (session: ChatSession, budget: ToolBudgetInfo) => Promise<string | undefined>;
+  /** Called once per tool round, before its contexts are built, for the headers that round's tools receive instead of the session's (see specs/hal-engine-credential-resolver/spec.md). */
+  resolveAuthHeaders?: (session: ChatSession) => Promise<ChatSession['authHeaders']>;
 }
 ```
 

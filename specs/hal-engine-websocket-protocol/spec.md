@@ -350,7 +350,7 @@ Reports an error condition. The connection remains open unless the error is fata
 | `message`      | string | Human-readable detail                                                                                          |
 | `retryAfterMs` | number | Only with `TOO_MANY_REQUESTS`: milliseconds to wait before sending again (specs/hal-engine-rate-limit/spec.md) |
 
-`ErrorCodes` defines nine error codes ([validated by: defines nine ErrorCodes: TOO_MANY_REQUESTS and the three provider conditions added beside the five the protocol first had](../../src/transport/errorMapping.test.ts#L54)).
+`ErrorCodes` defines ten error codes ([validated by: defines ten ErrorCodes: TOO_MANY_REQUESTS, CREDENTIAL_EXPIRED and the three provider conditions added beside the five the protocol first had](../../src/transport/errorMapping.test.ts#L54)).
 
 Defined error codes:
 
@@ -365,6 +365,9 @@ Defined error codes:
 | `UPSTREAM_ERROR`      | provider condition | Any other AI provider failure                                                              | 502  |
 | `SERVER_ERROR`        | engine defect      | An unexpected error that is no AI provider error                                           | 500  |
 | `UNSUPPORTED`         | feature            | The server does not serve this frame: the feature is off, or its store cannot              | —    |
+| `CREDENTIAL_EXPIRED`  | credential         | A tool credential `resolveAuthHeaders` could not renew; `stream_end` follows               | —    |
+
+A `CREDENTIAL_EXPIRED` error carries, verbatim, the message of the `CredentialExpiredError` the consumer's `resolveAuthHeaders` threw, and a `stream_end` follows it, as [the credential resolver spec](../hal-engine-credential-resolver/spec.md) describes ([validated by: sends error CREDENTIAL_EXPIRED with the hook's own message, then stream_end, over a real connection](../../src/transport/credentialExpired.test.ts#L61)).
 
 A client MUST treat a `code` it does not recognise as `SERVER_ERROR`.
 
@@ -372,7 +375,7 @@ A client MUST treat a `code` it does not recognise as `SERVER_ERROR`.
 
 Semantics:
 
-- Every `AIError` maps through one table, `src/transport/errorMapping.ts`, which both transports read, so the WebSocket `code` and the HTTP status always agree; no other transport file maps a provider code ([validated by: answers RATE_LIMITED, SERVICE_UNAVAILABLE and TIMEOUT with their own code, status and fixed sentence](../../src/transport/errorMapping.test.ts#L24), [validated by: answers nine other AIError codes and one named constructor from the one fallback row, UPSTREAM_ERROR and 502](../../src/transport/errorMapping.test.ts#L36), [validated by: is the only non-test file under src/transport that maps a provider error code](../../src/transport/errorMapping.test.ts#L68)).
+- Every `AIError` maps through one table, `src/transport/errorMapping.ts`, which both transports read, so the WebSocket `code` and the HTTP status always agree; no other transport file maps a provider code ([validated by: answers RATE_LIMITED, SERVICE_UNAVAILABLE and TIMEOUT with their own code, status and fixed sentence](../../src/transport/errorMapping.test.ts#L24), [validated by: answers nine other AIError codes and one named constructor from the one fallback row, UPSTREAM_ERROR and 502](../../src/transport/errorMapping.test.ts#L36), [validated by: is the only non-test file under src/transport that maps a provider error code](../../src/transport/errorMapping.test.ts#L69)).
 - `SERVICE_UNAVAILABLE` and `TIMEOUT` frames carry fixed sentences, `AI service temporarily unavailable` and `AI service timed out` ([validated by: sends SERVICE_UNAVAILABLE and TIMEOUT error frames with their fixed sentences](../../src/transport/ws/messageHandler.test.ts#L932)).
 - A `TOO_MANY_REQUESTS` frame carries `retryAfterMs`, is the only frame that does, and ends its turn with `stream_end` like any other, since a refused `user_message` is still a turn under the single-terminal-frame contract ([validated by: refuses the sixth user_message of user u1 in a row with one error TOO_MANY_REQUESTS carrying retryAfterMs 3000 and a stream_end, running no sixth turn](../../src/transport/ws/rateLimitWs.test.ts#L57)).
 - `RATE_LIMITED` is unchanged, and `SERVER_ERROR` is sent only for a throw that is no `AIError` ([validated by: still sends RATE_LIMITED byte-identically, and SERVER_ERROR only for a throw that is no AIError](../../src/transport/ws/messageHandler.test.ts#L944)).

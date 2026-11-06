@@ -49,6 +49,8 @@ export interface OrchestratorHooks {
   beforeToolCall?: (session: ChatSession, call: ToolCall) => Promise<ToolResponse | undefined>;
   /** Fires when the model asks for a tool round the budget refuses, after the last provider call and before afterModelResponse; a returned string reaches the user as the turn's closing text, and the engine writes none of its own (see specs/hal-engine-tool-budget/spec.md). */
   onToolBudgetExhausted?: (session: ChatSession, budget: ToolBudgetInfo) => Promise<string | undefined>;
+  /** Called once per tool round, before its contexts are built, for the headers that round's tools receive instead of the session's (see specs/hal-engine-credential-resolver/spec.md). */
+  resolveAuthHeaders?: (session: ChatSession) => Promise<ChatSession['authHeaders']>;
 }
 
 export interface ToolBudgetInfo {
@@ -144,12 +146,16 @@ export function createChatOrchestrator(
           }
 
           log.info('orchestrator', 'executing tools', {tools: pendingToolCalls.map(tc => tc.name)});
+          // Once per round, never written back: a renewed credential is this round's alone, not the session's.
+          const authHeaders = hooks?.resolveAuthHeaders ? await hooks.resolveAuthHeaders(session) : session.authHeaders;
+          if (signal?.aborted) return;
+          const toolRound: ToolRound = {authHeaders, beforeToolCall: hooks?.beforeToolCall};
           const {clientMessages, suppressOutput} = await executeToolCalls(
             pendingToolCalls,
             messages,
             session,
             entryWriter,
-            withDeadline(toolCallRunner(toolRegistry!, session, hooks?.beforeToolCall), toolTimeoutMs, signal),
+            withDeadline(toolCallRunner(toolRegistry!, session, toolRound), toolTimeoutMs, signal),
             signal
           );
           // Abandoned while its tools ran: no provider call follows, so nothing they returned is read.
@@ -302,19 +308,22 @@ function updateLastUserContent(session: ChatSession, content: string): void {
 
 type ToolCallRun = (tc: ToolCall, signal: AbortSignal) => Promise<ToolResponse>;
 
+// What every call of one round shares: the headers resolved for it and the policy that may decline a call.
+interface ToolRound {
+  authHeaders: ChatSession['authHeaders'];
+  beforeToolCall?: BeforeToolCall;
+}
+
 // One runner per round: the policy sees each known call before its executor, and an unknown name keeps the registry's own path.
-function toolCallRunner(
-  toolRegistry: ToolRegistry,
-  session: ChatSession,
-  beforeToolCall?: BeforeToolCall
-): ToolCallRun {
+function toolCallRunner(toolRegistry: ToolRegistry, session: ChatSession, round: ToolRound): ToolCallRun {
+  const {beforeToolCall} = round;
   return async (tc, signal) => {
     const declined =
       beforeToolCall && toolRegistry.has(tc.name) ? await consultPolicy(beforeToolCall, session, tc) : undefined;
     if (declined) return declined;
     // A policy can answer after the deadline, when the model has already been told this call returned nothing.
     if (signal.aborted) return skipAbandoned(tc);
-    return toolRegistry.execute(tc.name, tc.input, contextFor(session, signal));
+    return toolRegistry.execute(tc.name, tc.input, contextFor(session, round.authHeaders, signal));
   };
 }
 
@@ -324,13 +333,13 @@ function skipAbandoned(tc: ToolCall): ToolResponse {
   return {result: `The ${tc.name} call was abandoned before it started and was not performed.`};
 }
 
-// One per call, so each carries its own signal and its own copy of the caller's headers, which no sibling's edit can reach.
-function contextFor(session: ChatSession, signal: AbortSignal): ToolContext {
+// One per call, so each carries its own signal and its own copy of the round's headers, which no sibling's edit can reach.
+function contextFor(session: ChatSession, authHeaders: ChatSession['authHeaders'], signal: AbortSignal): ToolContext {
   return {
     userId: session.userId,
     sessionId: session.sessionId,
     workspaceId: session.workspaceId,
-    authHeaders: session.authHeaders === undefined ? undefined : {...session.authHeaders},
+    authHeaders: authHeaders === undefined ? undefined : {...authHeaders},
     // Copied per call: an executor that assigns to its user must not reach the session or a sibling call's copy.
     user: session.user === undefined ? undefined : {...session.user},
     signal,
