@@ -108,7 +108,7 @@ export type {
   ChatSession,
   AuthenticatedUser,
 } from './types/session.js';
-export {ErrorCodes, assertScalarUserId, isScalarUserId} from './types/session.js';
+export {ErrorCodes, assertScalarUserId, isScalarUserId, CredentialExpiredError} from './types/session.js';
 
 export type {
   IncomingMessage,
