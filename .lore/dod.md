@@ -25,10 +25,10 @@
 
 ## Facets
 
-- [ ] Add `resolveAuthHeaders` to `OrchestratorHooks`
-- [ ] Pass the resolved headers down to the tool context, ensuring it does not overwrite the session's headers
-- [ ] Implement `CredentialExpiredError` and add `CREDENTIAL_EXPIRED` to error codes
-- [ ] Handle `CredentialExpiredError` in the websocket message handler
+- [x] Add `resolveAuthHeaders` to `OrchestratorHooks`
+- [x] Pass the resolved headers down to the tool context, ensuring it does not overwrite the session's headers
+- [x] Implement `CredentialExpiredError` and add `CREDENTIAL_EXPIRED` to error codes
+- [x] Handle `CredentialExpiredError` in the websocket message handler
 
 ## Out of scope
 
