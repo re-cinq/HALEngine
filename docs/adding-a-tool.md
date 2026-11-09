@@ -129,7 +129,7 @@ A `ToolExecutor` is an async function that takes the tool input and returns eith
 
 <!-- doc-block: src/orchestration/tools/registry.ts#ToolExecutor -->
 ```typescript
-type ToolExecutor = (input: Record<string, unknown>, context: ToolContext) => Promise<string | ToolResponse>;
+type ToolExecutor = (input: Record<string, unknown>, context?: ToolContext) => Promise<string | ToolResponse>;
 ```
 
 The optional `context` provides `userId`, `sessionId`, `workspaceId`, `authHeaders` and `user` for tools that need to make authenticated API calls, and `signal`, which the orchestrator aborts when it abandons the call: at its `toolTimeoutMs` deadline, with a `TimeoutError` as the reason, or when the turn is abandoned because its socket closed. Pass it to `fetch`, or to whatever client your tool uses, so the call's own request stops too:
@@ -149,7 +149,7 @@ const getOrder: ToolExecutor = async (input, context) => {
 
 `context.authHeaders` holds only the caller headers you list in `auth.forwardHeaders`, from `'cookie'`, `'authorization'` and `'host'`, and is `undefined` when that leaves none. Every tool sees the same selection, so list only what your tools need, and leave out anything a tool that calls a third party should not carry: a tool from any source receives what you list. Unset, the list forwards none, so a tool that reads `context.authHeaders.authorization` needs `'authorization'` listed. For one tool that must not see them, wrap its executor and pass it a context without `authHeaders`. Under GDPR the capture is a processing step: the listed headers live on `ChatSession` for the connection's life, are never logged, and are never written by `MongoSessionStore`; unset or `[]`, none is held.
 
-`context.authHeaders` is a per-round copy an executor must not mutate, and `resolveAuthHeaders` is what changes its value.
+`context.authHeaders` is a copy made for each call, and an executor must not mutate it: a change reaches nothing outside its own call, neither `session.authHeaders` nor another tool in the same round. To refresh or exchange a credential between rounds of a long-lived connection, configure `orchestrator.hooks.resolveAuthHeaders(session)`: the orchestrator calls it once per tool round (and zero times on a turn with no tool call) and builds each call's `context.authHeaders` from the value it returns while leaving `session.authHeaders` untouched. When a credential has expired and cannot be renewed, throw `CredentialExpiredError('<message>')` from `resolveAuthHeaders`: `onError` fires with that error, and the WebSocket handler sends `{type: 'error', code: 'CREDENTIAL_EXPIRED', message}` followed by `stream_end`. Under GDPR, per-round resolution is a distinct processing step: a credential presented to a tool at round N may differ from the one captured at connect, is held only for the duration of that round, appears in no log line at any level and in no wire frame, and is never written to the session or any store. Under NIS-2, `CredentialExpiredError` provides the resilience property that an unrenewable mid-session credential terminates the turn cleanly with a distinct, named error code (`CREDENTIAL_EXPIRED`) and a terminal frame (`stream_end`) rather than producing a silent 401 loop inside the tool round or hanging the client's socket.
 
 A tool that ignores the signal is still bounded, since the orchestrator stops waiting at the deadline either way, but its request keeps running, and keeps sending whatever it carries, after the round has moved on.
 

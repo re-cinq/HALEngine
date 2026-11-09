@@ -1,8 +1,10 @@
 import {jest} from '@jest/globals';
 import {createMessageHandler} from './messageHandler.js';
 import {recordingSocket} from './recordingSocketTestSupport.js';
+import {connectClient, startEngineWith, stopEngines} from '../wsTestSupport.js';
+import {InMemorySessionStore} from '../../infrastructure/stores/inMemorySessionStore.js';
 import {createChatOrchestrator} from '../../orchestration/chatOrchestrator.js';
-import type {OrchestratorHooks} from '../../orchestration/chatOrchestrator.js';
+import type {ChatOrchestrator, OrchestratorHooks} from '../../orchestration/chatOrchestrator.js';
 import {ToolRegistry} from '../../orchestration/tools/registry.js';
 import {PromptBuilder} from '../../infrastructure/builders/promptBuilder.js';
 import type {AIProvider, Message, MessageChunk} from '../../types/ai.js';
@@ -11,6 +13,7 @@ import type {ChatSession} from '../../types/session.js';
 import type {OutgoingMessage} from '../../types/messages.js';
 import {setLogger} from '../../shared/logger.js';
 import type {Logger} from '../../shared/logger.js';
+import {keepEveryLine} from '../../shared/logCaptureTestSupport.js';
 
 const WANTS_TOOLS: MessageChunk = {type: 'stop', stopReason: 'tool_use'};
 const ANSWER: MessageChunk[] = [
@@ -40,15 +43,15 @@ function setupEngine(
   const registry = new ToolRegistry();
   registry.register(
     {name: 'lookup', description: 'Looks a booking up.', inputSchema: {type: 'object'}},
-    async (input, context) => {
-      executedAuthHeaders.push(context.authHeaders);
+    async (_input, context) => {
+      executedAuthHeaders.push(context?.authHeaders);
       return 'looked up';
     }
   );
   registry.register(
     {name: 'mutating_tool', description: 'Mutates headers.', inputSchema: {type: 'object'}},
-    async (input, context) => {
-      if (context.authHeaders) {
+    async (_input, context) => {
+      if (context?.authHeaders) {
         context.authHeaders.authorization = 'mutated';
       }
       return 'mutated';
@@ -82,6 +85,30 @@ function setupEngine(
   };
 }
 
+async function realTurn(orchestrator: ChatOrchestrator): Promise<OutgoingMessage[]> {
+  const {url, hal} = await startEngineWith({
+    sessionStore: new InMemorySessionStore(),
+    orchestrator,
+    forwardHeaders: ['authorization'],
+  });
+  const serverClosed = new Promise<void>(resolve => {
+    hal.wss.once('connection', socket => socket.once('close', () => setImmediate(resolve)));
+  });
+  const client = connectClient(url, 'upgrade-token-7a1b');
+  const frames: OutgoingMessage[] = [];
+  await new Promise<void>(resolve => {
+    client.on('message', raw => {
+      const frame = JSON.parse(String(raw)) as OutgoingMessage;
+      frames.push(frame);
+      if (frame.type === 'connected') client.send(JSON.stringify({type: 'user_message', content: 'Please notify Ada'}));
+      if (frame.type === 'stream_end') resolve();
+    });
+  });
+  client.close();
+  await serverClosed;
+  return frames;
+}
+
 const kinds = (frames: OutgoingMessage[]): string[] =>
   frames.map(frame => (frame.type === 'error' ? `error ${frame.code}` : frame.type));
 
@@ -90,7 +117,10 @@ describe('resolveAuthHeaders hook acceptance', () => {
     setLogger({debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn()} as unknown as Logger);
   });
 
-  afterEach(() => setLogger());
+  afterEach(async () => {
+    await stopEngines();
+    setLogger();
+  });
 
   it('A two-round tool conversation whose hook returns different headers per round reaches the tool with the round-0 value in round 0 and the round-1 value in round 1', async () => {
     let roundCount = 0;
@@ -140,20 +170,37 @@ describe('resolveAuthHeaders hook acceptance', () => {
   });
 
   it("A hook throwing CredentialExpiredError('<message>') produces, in order: {type: 'error', code: 'CREDENTIAL_EXPIRED', message: '<that message>'} then {type: 'stream_end'}, over a real connection", async () => {
+    const secret = 'secret-round-0-9f4a';
+    const lines = keepEveryLine();
+    let round = 0;
     const resolveAuthHeaders = jest.fn(async () => {
+      round++;
+      if (round === 1) return {authorization: `Bearer ${secret}`};
       throw new CredentialExpiredError('Your token has expired. Please login again.');
     });
-    const e = setupEngine([[makeCall('l1', 'lookup'), WANTS_TOOLS]], {resolveAuthHeaders});
+    const e = setupEngine(
+      [
+        [makeCall('l1', 'lookup'), WANTS_TOOLS],
+        [makeCall('l2', 'lookup'), WANTS_TOOLS],
+      ],
+      {resolveAuthHeaders}
+    );
 
-    await e.ask();
+    const frames = await realTurn(e.orchestrator);
 
-    const frameTypes = kinds(e.frames);
-    const lastTwo = frameTypes.slice(-2);
-    const errorFrame = e.frames[e.frames.length - 2];
-    const msg = errorFrame.type === 'error' ? errorFrame.message : '';
-    expect({lastTwo, msg}).toEqual({
-      lastTwo: ['error CREDENTIAL_EXPIRED', 'stream_end'],
-      msg: 'Your token has expired. Please login again.',
+    expect({
+      lastTwo: frames.slice(-2),
+      linesLogged: lines.length > 0,
+      secretInLogs: JSON.stringify(lines).includes(secret),
+      secretInFrames: JSON.stringify(frames).includes(secret),
+    }).toEqual({
+      lastTwo: [
+        {type: 'error', code: 'CREDENTIAL_EXPIRED', message: 'Your token has expired. Please login again.'},
+        {type: 'stream_end'},
+      ],
+      linesLogged: true,
+      secretInLogs: false,
+      secretInFrames: false,
     });
   });
 
@@ -222,6 +269,28 @@ describe('resolveAuthHeaders hook acceptance', () => {
     }).toEqual({
       sess: {authorization: 'captured-at-upgrade'},
       exec: [{authorization: 'captured-at-upgrade'}],
+    });
+  });
+
+  it('writes the resolved header values to no log line at any level and to no wire frame across a real connection', async () => {
+    const secret = 'secret-round-token-8c2d';
+    const lines = keepEveryLine();
+    const e = setupEngine([[makeCall('l1', 'lookup'), WANTS_TOOLS]], {
+      resolveAuthHeaders: async () => ({authorization: `Bearer ${secret}`}),
+    });
+
+    const frames = await realTurn(e.orchestrator);
+
+    expect({
+      received: e.executedAuthHeaders,
+      linesLogged: lines.length > 0,
+      secretInLogs: JSON.stringify(lines).includes(secret),
+      secretInFrames: JSON.stringify(frames).includes(secret),
+    }).toEqual({
+      received: [{authorization: `Bearer ${secret}`}],
+      linesLogged: true,
+      secretInLogs: false,
+      secretInFrames: false,
     });
   });
 });
