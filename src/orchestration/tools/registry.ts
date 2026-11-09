@@ -31,7 +31,7 @@ export interface ToolContext {
   signal?: AbortSignal;
 }
 
-export type ToolExecutor = (input: Record<string, unknown>, context?: ToolContext) => Promise<string | ToolResponse>;
+export type ToolExecutor = (input: Record<string, unknown>, context: ToolContext) => Promise<string | ToolResponse>;
 
 export function normalizeToolResponse(response: string | ToolResponse): ToolResponse {
   return typeof response === 'string' ? {result: response} : response;
@@ -125,7 +125,7 @@ export class ToolRegistry {
 
     log.info('tool', 'executing', {name, inputKeys: Object.keys(input)});
     try {
-      const rawResult = await tool.execute(input, context);
+      const rawResult = await tool.execute(input, context!);
       const response = normalizeToolResponse(rawResult);
       log.info('tool', 'execution complete', {
         name,
