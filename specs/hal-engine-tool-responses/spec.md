@@ -27,18 +27,18 @@ interface ToolResponse {
 }
 ```
 
-| Field | Purpose |
-|-------|---------|
-| `result` | The string the AI model sees -- identical to what a plain-string executor returns |
-| `clientMessages` | Optional array of `OutgoingMessage` values sent directly to the client via WebSocket |
-| `suppressAssistantResponse` | When `true`, the AI's next text response still accumulates in `session.entries` for context continuity, but is not sent to the client |
-| `isError` | When `true`, `result` describes a failure, and the provider is told so on its own wire; see [Marking a failure](#marking-a-failure-iserror) |
+| Field                       | Purpose                                                                                                                                     |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `result`                    | The string the AI model sees -- identical to what a plain-string executor returns                                                           |
+| `clientMessages`            | Optional array of `OutgoingMessage` values sent directly to the client via WebSocket                                                        |
+| `suppressAssistantResponse` | When `true`, the AI's next text response still accumulates in `session.entries` for context continuity, but is not sent to the client       |
+| `isError`                   | When `true`, `result` describes a failure, and the provider is told so on its own wire; see [Marking a failure](#marking-a-failure-iserror) |
 
 A `ToolExecutor` can return either a plain `string` or a `ToolResponse`:
 
 <!-- doc-block: src/orchestration/tools/registry.ts#ToolExecutor -->
 ```typescript
-type ToolExecutor = (input: Record<string, unknown>, context?: ToolContext) => Promise<string | ToolResponse>;
+type ToolExecutor = (input: Record<string, unknown>, context: ToolContext) => Promise<string | ToolResponse>;
 ```
 
 `context` carries the session the call belongs to -- `userId`, `sessionId`, `workspaceId`, and the `authHeaders` forwarded from the WebSocket upgrade, so a tool can proxy the caller's credentials upstream. It also carries a `signal` of its own, aborted when the orchestrator abandons the call at its `toolTimeoutMs` deadline.
@@ -107,7 +107,7 @@ The `convert_units` tool demonstrates all three features: client messages, suppr
 ```typescript
 // src/orchestration/tools/unitConverterTool.ts (simplified)
 
-export const executeUnitConverter: ToolExecutor = async (input) => {
+export const executeUnitConverter: ToolExecutor = async input => {
   const value = input.value as number;
   const fromUnit = (input.from_unit as string) || '';
   const toUnit = (input.to_unit as string) || '';
@@ -147,18 +147,22 @@ If the tool wants to send a custom message to the client, use `clientMessages`. 
 
 <!-- doc-block: none -- a worked executor showing one return shape, not code this package exports -->
 ```typescript
-export const executeMyTool: ToolExecutor = async (input) => {
+export const executeMyTool: ToolExecutor = async input => {
   const data = await fetchSomething(input);
 
   return {
     result: JSON.stringify(data),
     clientMessages: [
-      {type: 'entry_upsert', index: 0, entry: {
-        role: 'assistant' as const,
-        content: formatData(data),
-        timestamp: new Date().toISOString(),
-        isStreaming: false,
-      }},
+      {
+        type: 'entry_upsert',
+        index: 0,
+        entry: {
+          role: 'assistant' as const,
+          content: formatData(data),
+          timestamp: new Date().toISOString(),
+          isStreaming: false,
+        },
+      },
     ],
   };
 };
@@ -230,7 +234,7 @@ Suppression is recorded on the stored entry, so a conversation resumed from a st
 
 The server sends a `stream_end` message after every stream, including one that failed after an `error` frame (see [websocket-protocol.md](../hal-engine-websocket-protocol/spec.md)). This is the client's signal to clear loading indicators, so a failed stream clears the spinner the same way a completed one does.
 
-Without `stream_end`, suppression would cause the tool spinner to hang forever. When the assistant response is suppressed, no `entry_upsert` arrives after the tool entry, so the tool stays as the last entry in the array. The client tracks an `isProcessing` state: `true` when the user sends a message, `false` when `stream_end` arrives. The spinner only shows when the tool is both last in the list *and* the stream is still processing.
+Without `stream_end`, suppression would cause the tool spinner to hang forever. When the assistant response is suppressed, no `entry_upsert` arrives after the tool entry, so the tool stays as the last entry in the array. The client tracks an `isProcessing` state: `true` when the user sends a message, `false` when `stream_end` arrives. The spinner only shows when the tool is both last in the list _and_ the stream is still processing.
 
 ### MessageChunk union
 
@@ -246,9 +250,9 @@ These two variants are internal plumbing -- they never leave the server. The cli
 
 ## File Reference
 
-| File | What changed |
-|------|-------------|
-| `src/orchestration/tools/registry.ts` | `ToolResponse` interface, widened `ToolExecutor`, `normalizeToolResponse()` |
-| `src/types/ai.ts` | `tool_result` and `suppress_output` variants on `MessageChunk` |
-| `src/orchestration/chatOrchestrator.ts` | `executeToolCalls` returns `ToolExecutionResult`, yields new chunks |
-| `src/transport/ws/messageHandler.ts` | `suppressOutput` on stream state, `processToolResultChunk`, guarded sends, `entry_skip`, blanking |
+| File                                    | What changed                                                                                      |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `src/orchestration/tools/registry.ts`   | `ToolResponse` interface, widened `ToolExecutor`, `normalizeToolResponse()`                       |
+| `src/types/ai.ts`                       | `tool_result` and `suppress_output` variants on `MessageChunk`                                    |
+| `src/orchestration/chatOrchestrator.ts` | `executeToolCalls` returns `ToolExecutionResult`, yields new chunks                               |
+| `src/transport/ws/messageHandler.ts`    | `suppressOutput` on stream state, `processToolResultChunk`, guarded sends, `entry_skip`, blanking |

@@ -78,7 +78,6 @@ hal-engine is designed around pluggable interfaces that let consumers customize 
 Controls where session data is stored: the default `InMemorySessionStore` keeps sessions in a `Map` ([validated by: creates and retrieves a session @ab28b499](../../src/infrastructure/stores/inMemorySessionStore.test.ts#L13)). Implement this interface to persist sessions in Redis, a database, or any other backing store. The store is generic -- pass your own session type extending `BaseSession`.
 
 <!-- doc-block: src/types/sessionStore.ts#SessionStore -->
-
 ```typescript
 interface SessionStore<T extends BaseSession = ChatSession> {
   create(sessionId: string, userId: string | number, options?: SessionCreateOptions): Awaitable<T>;
@@ -122,13 +121,11 @@ interface SessionStore<T extends BaseSession = ChatSession> {
 Authenticates WebSocket connections during the handshake. It receives the whole Node `IncomingMessage`, not a pre-extracted token, so it can read credentials from wherever the client put them. Return the authenticated user to accept the connection, or `null` to reject it with HTTP 401 -- a rejection is a returned `null`, not a thrown error.
 
 <!-- doc-block: src/types/auth.ts#WsAuthenticator -->
-
 ```typescript
 type WsAuthenticator = (req: IncomingMessage) => Promise<AuthenticatedUser | null>;
 ```
 
 <!-- doc-block: src/types/session.ts#AuthenticatedUser -->
-
 ```typescript
 interface AuthenticatedUser {
   id: string | number;
@@ -154,7 +151,6 @@ The connection handler takes `id` as the session's `userId` and picks up `worksp
 The core abstraction for AI model communication. Each provider (Bedrock, Vertex, OpenAI, Anthropic) implements this interface. The orchestrator depends only on this interface, never on provider-specific code.
 
 <!-- doc-block: src/types/ai.ts#AIProvider -->
-
 ```typescript
 interface AIProvider {
   sendMessage(params: SendMessageParams): AsyncGenerator<MessageChunk>;
@@ -170,7 +166,6 @@ interface AIProvider {
 Loads prompt templates by name with variable substitution ([validated by: returns prompt template when found @b8ba64e0](../../src/infrastructure/stores/inMemoryPromptStore.test.ts#L11), [resolve@0c20310b](../../src/infrastructure/stores/inMemoryPromptStore.test.ts#L28)). Use this for database-driven prompts instead of static `PromptBuilder` configuration.
 
 <!-- doc-block: src/types/promptStore.ts#PromptStore -->
-
 ```typescript
 interface PromptStore {
   findByName(name: string): Promise<PromptTemplate | undefined>;
@@ -190,7 +185,6 @@ interface PromptStore {
 Tracks AI call metadata such as token counts and model version, for cost monitoring ([validated by: records and retrieves usage by session @efbd914b](../../src/infrastructure/stores/inMemoryUsageStore.test.ts#L24)).
 
 <!-- doc-block: src/types/usageStore.ts#UsageStore -->
-
 ```typescript
 interface UsageStore {
   record(entry: UsageRecord): Promise<void>;
@@ -206,7 +200,6 @@ interface UsageStore {
 Configures static system prompt assembly. Provide your AI identity, domain context, response guidelines, and custom instructions. The `PromptBuilder` combines these with tool instructions from the registry into the final system prompt.
 
 <!-- doc-block: src/infrastructure/builders/promptBuilder.ts#PromptBuilderConfig -->
-
 ```typescript
 interface PromptBuilderConfig {
   identity: string;
@@ -223,7 +216,6 @@ interface PromptBuilderConfig {
 Async lifecycle hooks for customizing the orchestration flow. Every hook is optional and receives the current session, and an orchestrator built with none behaves exactly as one built with an empty set ([validated by: works without any hooks configured @3a14ba31](../../src/orchestration/chatOrchestrator.test.ts#L447)). Install hooks through `HalEngineConfig.orchestrator.hooks`; `createHalEngine` forwards the set to the orchestrator ([validated by: forwards an orchestrator hook, so one passed through the config actually fires @66b72054](../../src/config.test.ts#L27)).
 
 <!-- doc-block: src/orchestration/chatOrchestrator.ts#OrchestratorHooks -->
-
 ```typescript
 interface OrchestratorHooks {
   beforeSession?: (session: ChatSession) => Promise<void>;
@@ -237,6 +229,8 @@ interface OrchestratorHooks {
   beforeToolCall?: (session: ChatSession, call: ToolCall) => Promise<ToolResponse | undefined>;
   /** Fires when the model asks for a tool round the budget refuses, after the last provider call and before afterModelResponse; a returned string reaches the user as the turn's closing text, and the engine writes none of its own (see specs/hal-engine-tool-budget/spec.md). */
   onToolBudgetExhausted?: (session: ChatSession, budget: ToolBudgetInfo) => Promise<string | undefined>;
+  /** Called once per tool round, before the ToolContext for that round is built; throws CredentialExpiredError to end the turn with CREDENTIAL_EXPIRED. */
+  resolveAuthHeaders?: (session: ChatSession) => Promise<ChatSession['authHeaders']>;
 }
 ```
 

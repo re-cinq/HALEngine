@@ -14,7 +14,6 @@ Create a new file in `src/orchestration/tools/`. Each tool exports two things:
 Here is a complete example:
 
 <!-- doc-block: example/weather-tool.ts#weather-tool -->
-
 ```typescript
 import type {ToolDefinition, ToolExecutor} from '@re-cinq/hal-engine';
 
@@ -82,7 +81,6 @@ The more precise the description, the better the model's judgment about when to 
 The optional `promptInstructions` field provides guidance that gets included in the AI's system prompt. Unlike `description` (which is part of the tool schema sent to the AI provider), `promptInstructions` appears in the system prompt text itself, giving higher-level behavioral rules about when and how to use the tool.
 
 <!-- doc-block: none -- one field of a ToolDefinition, quoted to discuss how to word it -->
-
 ```typescript
 promptInstructions:
   'Use this when users ask about weather at a specific location. ' +
@@ -104,7 +102,6 @@ Don't duplicate what's already in `description` -- keep `promptInstructions` foc
 The optional `examplePrompts` field provides example queries that are shown to users in the chat interface as clickable suggestions. These are sent to the client in the WebSocket `connected` message and persist throughout the conversation.
 
 <!-- doc-block: none -- one field of a ToolDefinition, quoted to discuss how to word it -->
-
 ```typescript
 examplePrompts: ['What is the weather in Berlin?', 'Is it raining in Tokyo?'],
 ```
@@ -131,15 +128,13 @@ The `inputSchema` follows [JSON Schema](https://json-schema.org/) format. The mo
 A `ToolExecutor` is an async function that takes the tool input and returns either a string or a `ToolResponse`:
 
 <!-- doc-block: src/orchestration/tools/registry.ts#ToolExecutor -->
-
 ```typescript
-type ToolExecutor = (input: Record<string, unknown>, context?: ToolContext) => Promise<string | ToolResponse>;
+type ToolExecutor = (input: Record<string, unknown>, context: ToolContext) => Promise<string | ToolResponse>;
 ```
 
 The optional `context` provides `userId`, `sessionId`, `workspaceId`, `authHeaders` and `user` for tools that need to make authenticated API calls, and `signal`, which the orchestrator aborts when it abandons the call: at its `toolTimeoutMs` deadline, with a `TimeoutError` as the reason, or when the turn is abandoned because its socket closed. Pass it to `fetch`, or to whatever client your tool uses, so the call's own request stops too:
 
 <!-- doc-block: none -- an executor a reader writes against their own API, which this package does not ship -->
-
 ```typescript
 const getOrder: ToolExecutor = async (input, context) => {
   const response = await fetch(`https://api.example.com/orders/${String(input.order_id)}`, {
@@ -174,7 +169,6 @@ For tools that need to send messages directly to the client or suppress the AI's
 Open `src/orchestration/tools/index.ts` and add two lines:
 
 <!-- doc-block: example/register-tool.ts#register -->
-
 ```typescript
 import {weatherTool, executeWeather} from './weather-tool.js';
 
