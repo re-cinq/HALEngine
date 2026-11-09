@@ -201,4 +201,32 @@ describe('resolveAuthHeaders hook acceptance', () => {
     const lastTwo = kinds(e.frames).slice(-2);
     expect(lastTwo).toEqual(['error SERVER_ERROR', 'stream_end']);
   });
+
+  it('With no resolveAuthHeaders configured, a tool still receives the headers captured at upgrade — tested, not assumed', async () => {
+    const initialHeaders = {authorization: 'captured-at-upgrade'};
+    const e = setupEngine([[makeCall('l1', 'lookup'), WANTS_TOOLS]], undefined, initialHeaders);
+
+    await e.ask();
+
+    expect(e.executedAuthHeaders).toEqual([{authorization: 'captured-at-upgrade'}]);
+  });
+
+  it('A tool executor that mutates context.authHeaders.authorization changes neither session.authHeaders nor the context handed to the next tool in the same round — the aliasing fix', async () => {
+    const initialHeaders = {authorization: 'captured-at-upgrade'};
+    const e = setupEngine(
+      [[makeCall('m1', 'mutating_tool'), makeCall('l2', 'lookup'), WANTS_TOOLS]],
+      undefined,
+      initialHeaders
+    );
+
+    await e.ask();
+
+    expect({
+      sess: e.session.authHeaders,
+      exec: e.executedAuthHeaders,
+    }).toEqual({
+      sess: {authorization: 'captured-at-upgrade'},
+      exec: [{authorization: 'captured-at-upgrade'}],
+    });
+  });
 });
