@@ -49,6 +49,8 @@ export interface OrchestratorHooks {
   beforeToolCall?: (session: ChatSession, call: ToolCall) => Promise<ToolResponse | undefined>;
   /** Fires when the model asks for a tool round the budget refuses, after the last provider call and before afterModelResponse; a returned string reaches the user as the turn's closing text, and the engine writes none of its own (see specs/hal-engine-tool-budget/spec.md). */
   onToolBudgetExhausted?: (session: ChatSession, budget: ToolBudgetInfo) => Promise<string | undefined>;
+  /** Called once per tool round, before the ToolContext for that round is built; throws CredentialExpiredError to end the turn with CREDENTIAL_EXPIRED. */
+  resolveAuthHeaders?: (session: ChatSession) => Promise<ChatSession['authHeaders']>;
 }
 
 export interface ToolBudgetInfo {
@@ -144,12 +146,19 @@ export function createChatOrchestrator(
           }
 
           log.info('orchestrator', 'executing tools', {tools: pendingToolCalls.map(tc => tc.name)});
+          const roundAuthHeaders = hooks?.resolveAuthHeaders
+            ? await hooks.resolveAuthHeaders(session)
+            : session.authHeaders;
           const {clientMessages, suppressOutput} = await executeToolCalls(
             pendingToolCalls,
             messages,
             session,
             entryWriter,
-            withDeadline(toolCallRunner(toolRegistry!, session, hooks?.beforeToolCall), toolTimeoutMs, signal),
+            withDeadline(
+              toolCallRunner(toolRegistry!, session, roundAuthHeaders, hooks?.beforeToolCall),
+              toolTimeoutMs,
+              signal
+            ),
             signal
           );
           // Abandoned while its tools ran: no provider call follows, so nothing they returned is read.
@@ -306,6 +315,7 @@ type ToolCallRun = (tc: ToolCall, signal: AbortSignal) => Promise<ToolResponse>;
 function toolCallRunner(
   toolRegistry: ToolRegistry,
   session: ChatSession,
+  roundAuthHeaders: ChatSession['authHeaders'],
   beforeToolCall?: BeforeToolCall
 ): ToolCallRun {
   return async (tc, signal) => {
@@ -314,7 +324,7 @@ function toolCallRunner(
     if (declined) return declined;
     // A policy can answer after the deadline, when the model has already been told this call returned nothing.
     if (signal.aborted) return skipAbandoned(tc);
-    return toolRegistry.execute(tc.name, tc.input, contextFor(session, signal));
+    return toolRegistry.execute(tc.name, tc.input, contextFor(session, signal, roundAuthHeaders));
   };
 }
 
@@ -324,13 +334,17 @@ function skipAbandoned(tc: ToolCall): ToolResponse {
   return {result: `The ${tc.name} call was abandoned before it started and was not performed.`};
 }
 
-// One per call, so each carries its own signal and its own copy of the caller's headers, which no sibling's edit can reach.
-function contextFor(session: ChatSession, signal: AbortSignal): ToolContext {
+// One per call, so each carries its own signal and its own copy of the round's headers, which no sibling's edit can reach.
+function contextFor(
+  session: ChatSession,
+  signal: AbortSignal,
+  roundAuthHeaders: ChatSession['authHeaders']
+): ToolContext {
   return {
     userId: session.userId,
     sessionId: session.sessionId,
     workspaceId: session.workspaceId,
-    authHeaders: session.authHeaders === undefined ? undefined : {...session.authHeaders},
+    authHeaders: roundAuthHeaders === undefined ? undefined : {...roundAuthHeaders},
     // Copied per call: an executor that assigns to its user must not reach the session or a sibling call's copy.
     user: session.user === undefined ? undefined : {...session.user},
     signal,
