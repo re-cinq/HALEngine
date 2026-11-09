@@ -6,12 +6,8 @@ import type {OrchestratorHooks} from '../../orchestration/chatOrchestrator.js';
 import {ToolRegistry} from '../../orchestration/tools/registry.js';
 import {PromptBuilder} from '../../infrastructure/builders/promptBuilder.js';
 import type {AIProvider, Message, MessageChunk} from '../../types/ai.js';
-class CredentialExpiredError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'CredentialExpiredError';
-  }
-}
+import * as index from '../../index.js';
+const CredentialExpiredError = index.CredentialExpiredError as unknown as new (msg: string) => Error;
 import type {ChatSession} from '../../types/session.js';
 import type {OutgoingMessage} from '../../types/messages.js';
 import {setLogger} from '../../shared/logger.js';
