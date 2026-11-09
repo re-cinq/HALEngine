@@ -350,7 +350,7 @@ Reports an error condition. The connection remains open unless the error is fata
 | `message`      | string | Human-readable detail                                                                                          |
 | `retryAfterMs` | number | Only with `TOO_MANY_REQUESTS`: milliseconds to wait before sending again (specs/hal-engine-rate-limit/spec.md) |
 
-`ErrorCodes` defines ten error codes ([validated by: defines nine ErrorCodes: TOO_MANY_REQUESTS and the three provider conditions added beside the five the protocol first had @83f0b9ed](../../src/transport/errorMapping.test.ts#L54)).
+`ErrorCodes` defines ten error codes ([validated by: defines ten ErrorCodes: CREDENTIAL_EXPIRED besides the nine the protocol and provider conditions already had](../../src/transport/errorMapping.test.ts#L54)).
 
 Defined error codes:
 
