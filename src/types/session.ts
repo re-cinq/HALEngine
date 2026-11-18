@@ -56,7 +56,16 @@ export const ErrorCodes = {
   UPSTREAM_ERROR: 'UPSTREAM_ERROR',
   SERVER_ERROR: 'SERVER_ERROR',
   UNSUPPORTED: 'UNSUPPORTED',
+  CREDENTIAL_EXPIRED: 'CREDENTIAL_EXPIRED',
 } as const;
+
+/** Thrown by `resolveAuthHeaders` when the credential cannot be renewed; the engine sends CREDENTIAL_EXPIRED and ends the turn. */
+export class CredentialExpiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CredentialExpiredError';
+  }
+}
 
 export interface ChatSession {
   sessionId: string;
