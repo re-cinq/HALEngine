@@ -8,9 +8,11 @@
 //   node scripts/check-audit.mjs
 //
 // An acceptance lives in .github/audit-acknowledgements.json and carries
-// advisory, package, why, expires (ISO date) and acknowledged_by. An entry that
-// is expired, malformed, or matches nothing in the current audit fails too - a
-// stale acceptance is a claim nobody has rechecked.
+// advisory, package, why, expires (ISO date) and acknowledged_by. Its package is
+// the one that blocks, or the one the advisory is filed against, which then also
+// covers every dependent while the lockfile marks all its copies dev-only. An
+// entry that is expired, malformed, or whose advisory no longer blocks anything
+// fails too - a stale acceptance is a claim nobody has rechecked.
 import {execFileSync} from 'node:child_process';
 import {readFileSync, existsSync} from 'node:fs';
 
@@ -22,11 +24,10 @@ const audit = runAudit();
 const found = collectFindings(audit);
 
 const {accepted, problems} = readAcceptances();
-const key = finding => `${finding.advisory}::${finding.name}`;
-const unacknowledged = found.filter(finding => !accepted.has(key(finding)));
-const unused = [...accepted.values()].filter(
-  entry => !found.some(finding => finding.name === entry.package && finding.advisory === entry.advisory)
-);
+const devOnly = readDevOnly();
+const unacknowledged = found.filter(finding => !acknowledged(finding));
+// npm assigns an inherited advisory to dependents in whatever order its lookups finish, so the advisory alone decides staleness.
+const unused = [...accepted.values()].filter(entry => !found.some(finding => finding.advisory === entry.advisory));
 
 for (const problem of problems) fail(problem);
 for (const entry of unused)
@@ -100,6 +101,7 @@ function collectFindings(audit) {
         through,
         advisory: advisory.id,
         title: advisory.title,
+        origin: advisory.origin,
       });
     }
   }
@@ -111,7 +113,7 @@ function collectFindings(audit) {
 // fabricate an `unknown:` advisory that no acceptance can name and no maintainer can clear.
 function withFallback(name, advisories) {
   if (advisories.length > 0) return advisories;
-  return [{id: `unknown:${name}`, title: 'advisory id absent from the report'}];
+  return [{id: `unknown:${name}`, title: 'advisory id absent from the report', origin: name}];
 }
 
 // A transitive entry's `via` names packages rather than advisories, so the ids come from following it.
@@ -122,7 +124,7 @@ function advisoriesFor(name, vulnerabilities, seen = new Set()) {
   const via = vulnerabilities[name]?.via ?? [];
   const own = via
     .filter(entry => typeof entry === 'object')
-    .map(entry => ({id: advisoryId(entry), title: entry.title}));
+    .map(entry => ({id: advisoryId(entry), title: entry.title, origin: entry.name ?? name}));
   const inherited = via
     .filter(entry => typeof entry === 'string')
     .flatMap(dep => advisoriesFor(dep, vulnerabilities, seen));
@@ -241,6 +243,28 @@ function readAcceptances() {
   }
 
   return {accepted, problems};
+}
+
+// Naming the package an advisory is filed against covers its dependents too, but only while no production install carries it.
+function acknowledged(finding) {
+  if (accepted.has(`${finding.advisory}::${finding.name}`)) return true;
+  return accepted.has(`${finding.advisory}::${finding.origin}`) && devOnly(finding.origin);
+}
+
+// The lockfile marks a package `dev` when only development dependencies reach it; without one, nothing counts as dev-only.
+function readDevOnly() {
+  let packages;
+  try {
+    packages = JSON.parse(readFileSync('package-lock.json', 'utf8')).packages ?? {};
+  } catch {
+    return () => false;
+  }
+  return name => {
+    const copies = Object.entries(packages).filter(
+      ([path]) => path === `node_modules/${name}` || path.endsWith(`/node_modules/${name}`)
+    );
+    return copies.length > 0 && copies.every(([, meta]) => meta?.dev === true);
+  };
 }
 
 function describe(counts) {
