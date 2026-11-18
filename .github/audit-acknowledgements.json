@@ -1,0 +1,23 @@
+[
+  {
+    "advisory": "GHSA-fc5q-39xc-vjpf",
+    "package": "picomatch",
+    "why": "Test and lint tooling only. picomatch reaches this repository through Jest, ts-jest, typescript-eslint and their dependencies, which match glob patterns from this repository's own configuration, never input from a user, and package-lock.json marks every copy dev-only, so the published package does not depend on it. No fixed picomatch exists: 4.0.7 is the latest release and the advisory names no patched version. Recheck by the expiry, or as soon as a fixed picomatch is released.",
+    "expires": "2026-12-17",
+    "acknowledged_by": "Saad"
+  },
+  {
+    "advisory": "GHSA-g3hv-75wg-m249",
+    "package": "minimatch",
+    "why": "Lint and test tooling only. eslint, typescript-eslint, and the glob releases Jest and test-exclude use, match file patterns from this repository's own configuration, never input from a user, and every copy is dev-only. The fix is minimatch 11.0.1, but those packages require minimatch ^10 or ^9, whose latest releases are affected, so no fix fits their ranges. Recheck by the expiry, or when they accept minimatch 11.",
+    "expires": "2026-12-17",
+    "acknowledged_by": "Saad"
+  },
+  {
+    "advisory": "GHSA-3g3m-2fjr-6pw4",
+    "package": "glob",
+    "why": "Test tooling only. Jest and test-exclude use glob on test file patterns from this repository's own configuration, never input from a user, and every copy is dev-only. The fix is glob 14.0.2, but Jest requires glob ^13 and test-exclude ^10, whose latest releases are affected. Recheck by the expiry, or when Jest accepts glob 14.",
+    "expires": "2026-12-17",
+    "acknowledged_by": "Saad"
+  }
+]
