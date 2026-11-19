@@ -262,6 +262,40 @@ describe('the conversation list frame', () => {
     ]);
   });
 
+  it('carries a title on the wire when the store holds one, both with and without previews switched on', async () => {
+    const titled = storeListing(new InMemorySessionStore(), () => [
+      {
+        sessionId: 's1',
+        createdAt: new Date(AHEAD),
+        updatedAt: new Date(AHEAD),
+        entryCount: 1,
+        title: 'Cancel subscription',
+      },
+      {
+        sessionId: 's2',
+        createdAt: new Date(AHEAD),
+        updatedAt: new Date(AHEAD),
+        entryCount: 0,
+      },
+    ]);
+    const withPreviews = await startEngineWith({sessionStore: titled, history: labelling});
+    const withoutPreviews = await startEngineWith({sessionStore: titled, history: enabled});
+
+    const withPreviewsRows = (await asks(withPreviews.url, {type: 'list_conversations'}, 'conversation_list').reply)
+      .conversations as SessionSummary[];
+    const withoutPreviewsRows = (
+      await asks(withoutPreviews.url, {type: 'list_conversations'}, 'conversation_list').reply
+    ).conversations as SessionSummary[];
+
+    expect({
+      withPreviews: withPreviewsRows.map(row => ('title' in row ? row.title : 'absent')),
+      withoutPreviews: withoutPreviewsRows.map(row => ('title' in row ? row.title : 'absent')),
+    }).toEqual({
+      withPreviews: ['Cancel subscription', 'absent'],
+      withoutPreviews: ['Cancel subscription', 'absent'],
+    });
+  });
+
   it('sends only the four summary fields, so a store answering whole sessions leaks neither entries nor credentials', async () => {
     const whole = [
       {
