@@ -106,6 +106,13 @@ export class InMemorySessionStore implements SessionStore {
     return page.map(labelled);
   }
 
+  /** Stores a title on the session in place; silently does nothing when the session id is not held. */
+  setTitle(sessionId: string, title: string): void {
+    const held = this.sessions.get(sessionId);
+    if (held === undefined || this.hasExpired(held)) return;
+    held.session.title = title;
+  }
+
   /** The user's most recently active session that has not aged out: its newest entry decides, or its creation if it has none. */
   latestFor(userId: string | number): ChatSession | undefined {
     assertScalarUserId(userId);
@@ -168,6 +175,7 @@ function summaryOf(held: HeldSession): SessionSummary {
     createdAt: new Date(held.createdAt),
     updatedAt: new Date(lastActivity(held)),
     entryCount: session.entries.length,
+    ...(session.title !== undefined ? {title: session.title} : {}),
   };
 }
 

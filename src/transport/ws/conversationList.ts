@@ -87,12 +87,14 @@ async function answerOne(
 
 // Through `new Date` rather than off the `Date`: a store answering ISO strings is the shape the wire shows, not a failure.
 function onTheWire(summary: SessionSummary): ConversationSummary {
-  return {
+  const row: ConversationSummary = {
     sessionId: summary.sessionId,
     createdAt: new Date(summary.createdAt).toISOString(),
     updatedAt: new Date(summary.updatedAt).toISOString(),
     entryCount: summary.entryCount,
   };
+  if (summary.title !== undefined) row.title = summary.title;
+  return row;
 }
 
 // The only mapper that copies a preview, so a store volunteering one cannot reach the wire through the other.
