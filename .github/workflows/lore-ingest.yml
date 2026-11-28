@@ -1,4 +1,4 @@
-# lore-ingest-version: 9
+# lore-ingest-version: 11
 name: Lore Context Ingest
 
 on:
@@ -25,9 +25,11 @@ on:
   # instead.
   workflow_dispatch:
 
-# Both jobs POST to Lore with their own token; from the repo they read only.
+# Both jobs POST to Lore with a GitHub identity token for this run (id-token:
+# write lets the run ask GitHub for one); from the repo they read only.
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   ingest:
@@ -96,7 +98,7 @@ jobs:
       - name: Notify Lore to ingest
         if: steps.changes.outputs.files != '[]'
         env:
-          LORE_INGEST_TOKEN: ${{ secrets.LORE_INGEST_TOKEN }}
+          LORE_CI_AUTH: identity
           LORE_INGEST_URL: ${{ secrets.LORE_INGEST_URL || vars.LORE_INGEST_URL || vars.LORE_API_URL }}
           FILES: ${{ steps.changes.outputs.files }}
         run: |
@@ -109,11 +111,21 @@ jobs:
             echo "::error::LORE_INGEST_URL is not set as a repository secret or variable - context was NOT ingested"
             exit 1
           fi
-          # Same class of misconfiguration: an unset token means every POST is
-          # rejected with 401, which must never pass as a green run.
-          if [ -z "${LORE_INGEST_TOKEN}" ]; then
-            echo "::error::LORE_INGEST_TOKEN repository secret is not set - context was NOT ingested"
-            exit 1
+          if [ "${LORE_CI_AUTH}" = "identity" ]; then
+            # GitHub vouches for this run: trade its request token for an
+            # identity token whose audience is this install's address.
+            OIDC_RESPONSE=$(curl -fsS --get \
+              -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              --data-urlencode "audience=${LORE_INGEST_URL}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}") || {
+              echo "::error::GitHub did not issue an identity token (is id-token: write granted?) - context was NOT ingested"
+              exit 1
+            }
+            LORE_IDENTITY_TOKEN=$(printf '%s' "${OIDC_RESPONSE}" | jq -r '.value // empty')
+            if [ -z "${LORE_IDENTITY_TOKEN}" ]; then
+              echo "::error::GitHub's identity token response held no token - context was NOT ingested"
+              exit 1
+            fi
           fi
           # The Authorization header rides in a file so the token never
           # appears on the curl command line (readable in the process table
@@ -122,7 +134,7 @@ jobs:
           AUTH_FILE="$(mktemp)"
           BODY_FILE="$(mktemp)"
           trap 'rm -f "${AUTH_FILE}" "${BODY_FILE}"' EXIT
-          printf 'Authorization: Bearer %s\n' "${LORE_INGEST_TOKEN}" > "${AUTH_FILE}"
+          printf 'Authorization: Bearer %s\n' "${LORE_IDENTITY_TOKEN}" > "${AUTH_FILE}"
           # Capture the HTTP status instead of curl -f: a blanket warning once
           # masked a permanent 401 (unset token) as transient for a repo's
           # entire history. curl exits non-zero here only when no HTTP
@@ -189,7 +201,7 @@ jobs:
 
       - name: Fetch lore-code-trace
         env:
-          LORE_INGEST_TOKEN: ${{ secrets.LORE_INGEST_TOKEN }}
+          LORE_CI_AUTH: identity
           LORE_INGEST_URL: ${{ secrets.LORE_INGEST_URL || vars.LORE_INGEST_URL || vars.LORE_API_URL }}
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
@@ -210,12 +222,6 @@ jobs:
           # variable must never silently fall back and report success.
           if [ -z "${LORE_INGEST_URL}" ]; then
             echo "::error::LORE_INGEST_URL is not set as a repository secret or variable - specs and ADRs were NOT projected"
-            exit 1
-          fi
-          # Same class of misconfiguration: an unset token means every POST is
-          # rejected with 401, which must never pass as a green run.
-          if [ -z "${LORE_INGEST_TOKEN}" ]; then
-            echo "::error::LORE_INGEST_TOKEN repository secret is not set - specs and ADRs were NOT projected"
             exit 1
           fi
           # The binary that posts the delta is served by Lore itself, so it
@@ -245,7 +251,7 @@ jobs:
       - name: Project specs and ADRs into the graph
         if: hashFiles('lore-code-trace') != ''
         env:
-          LORE_INGEST_TOKEN: ${{ secrets.LORE_INGEST_TOKEN }}
+          LORE_CI_AUTH: identity
           LORE_API_URL: ${{ secrets.LORE_INGEST_URL || vars.LORE_INGEST_URL || vars.LORE_API_URL }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
