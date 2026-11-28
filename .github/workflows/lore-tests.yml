@@ -13,8 +13,10 @@ concurrency:
   group: lore-tests-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+# The report is posted with a GitHub identity token for this run (id-token: write lets the run ask GitHub for one); from the repo the job reads only.
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   lore-tests-jest:
@@ -57,7 +59,15 @@ jobs:
         if: hashFiles('lore-code-trace') != ''
         env:
           LORE_API_URL: ${{ secrets.LORE_INGEST_URL || vars.LORE_INGEST_URL || vars.LORE_API_URL }}
-          LORE_INGEST_TOKEN: ${{ secrets.LORE_INGEST_TOKEN }}
+          LORE_CI_AUTH: identity
           FULL: ${{ github.event_name == 'workflow_dispatch' && '--full' || '' }}
+          # Lore takes a report under an identity token from main only: a push to any other branch runs the tests and posts nothing.
+          POST: ${{ github.ref == 'refs/heads/main' && '--post' || '' }}
         # Soft-fail on a push; a manual run fails, so whoever started it can see the graph wasn't cleaned.
-        run: ./lore-code-trace --post ${FULL} || { echo "::warning::Lore test ingest failed"; [ -z "${FULL}" ]; }
+        run: |
+          if [ -z "${POST}" ]; then
+            # Without --post the binary prints the report, which nothing here reads.
+            ./lore-code-trace > /dev/null || echo "::warning::Lore test run failed"
+            exit 0
+          fi
+          ./lore-code-trace --post ${FULL} || { echo "::warning::Lore test ingest failed"; [ -z "${FULL}" ]; }
