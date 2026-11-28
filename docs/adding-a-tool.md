@@ -90,6 +90,7 @@ promptInstructions:
 The `ToolRegistry.getPromptInstructions()` method collects these from all registered tools, and the `PromptBuilder` assembles them into the system prompt automatically. If you don't provide `promptInstructions`, the tool still works -- it just won't have explicit guidance in the system prompt.
 
 Use `promptInstructions` for:
+
 - Short, actionable rules about when to call the tool
 - Critical behavioral constraints (e.g., "MUST call this for every weather question")
 - Example queries that help the model match user intent
@@ -108,6 +109,7 @@ examplePrompts: ['What is the weather in Berlin?', 'Is it raining in Tokyo?'],
 The `ToolRegistry.getExamplePrompts()` method collects and flattens these from all registered tools. They are collected again for every new WebSocket connection and included in that connection's `connected` message, so a tool registered after the server starts offers its prompts to every socket that connects afterwards.
 
 Guidelines:
+
 - Write prompts as natural user questions, not technical descriptions
 - Keep them short and specific -- they appear as pill-shaped buttons in the UI
 - 1-2 prompts per tool is enough; the total across all tools should stay manageable
@@ -147,7 +149,7 @@ const getOrder: ToolExecutor = async (input, context) => {
 
 `context.authHeaders` holds only the caller headers you list in `auth.forwardHeaders`, from `'cookie'`, `'authorization'` and `'host'`, and is `undefined` when that leaves none. Every tool sees the same selection, so list only what your tools need, and leave out anything a tool that calls a third party should not carry: a tool from any source receives what you list. Unset, the list forwards none, so a tool that reads `context.authHeaders.authorization` needs `'authorization'` listed. For one tool that must not see them, wrap its executor and pass it a context without `authHeaders`. Under GDPR the capture is a processing step: the listed headers live on `ChatSession` for the connection's life, are never logged, and are never written by `MongoSessionStore`; unset or `[]`, none is held.
 
-`context.authHeaders` is a copy made for each call, and an executor must not mutate it: a change would reach nothing outside its own call, neither the session nor another tool in the same round.
+`context.authHeaders` is a copy made for each call, and an executor must not mutate it: a change reaches nothing outside its own call, neither `session.authHeaders` nor another tool in the same round. To refresh or exchange a credential between rounds of a long-lived connection, configure `orchestrator.hooks.resolveAuthHeaders(session)`: the orchestrator calls it once per tool round (and zero times on a turn with no tool call) and builds each call's `context.authHeaders` from the value it returns while leaving `session.authHeaders` untouched. When a credential has expired and cannot be renewed, throw `CredentialExpiredError('<message>')` from `resolveAuthHeaders`: `onError` fires with that error, and the WebSocket handler sends `{type: 'error', code: 'CREDENTIAL_EXPIRED', message}` followed by `stream_end`. Under GDPR, per-round resolution is a distinct processing step: a credential presented to a tool at round N may differ from the one captured at connect, is held only for the duration of that round, appears in no log line at any level and in no wire frame, and is never written to the session or any store. Under NIS-2, `CredentialExpiredError` provides the resilience property that an unrenewable mid-session credential terminates the turn cleanly with a distinct, named error code (`CREDENTIAL_EXPIRED`) and a terminal frame (`stream_end`) rather than producing a silent 401 loop inside the tool round or hanging the client's socket.
 
 A tool that ignores the signal is still bounded, since the orchestrator stops waiting at the deadline either way, but its request keeps running, and keeps sending whatever it carries, after the round has moved on.
 
@@ -189,6 +191,7 @@ Once a tool is registered, the following work without any additional code:
 - `chatOrchestrator.ts` calls `toolRegistry.getDefinitions()` once at the start of every turn, passes those definitions to the AI provider, and puts each one's `promptInstructions` in that turn's system prompt via `PromptBuilder`; an empty registry sends the provider no tools at all
 
 Because definitions and prompt instructions are read at the start of every turn and example prompts at every connection, a tool may be registered after `createHalEngine` returns, from a boot-time capability probe or a feature flag, and the model is told about it from the next turn. A tool registered during a turn waits for the next one, so the list never changes between rounds of the same turn. Not advertising a tool is not an access control: refuse a call the model must not make in `beforeToolCall` or in the executor. Every definition goes to the model provider every turn, so keep personal data and internal hostnames out of `description`, `inputSchema` and `promptInstructions`.
+
 - When the provider returns a `tool_use` chunk, the message handler creates a `ToolEntry` and sends it via `entry_upsert`
 - The orchestrator executes all pending tool calls in parallel with `Promise.all()`
 - Each call has `toolTimeoutMs` (default `30000`) to settle. A call still running then is abandoned: its `signal` is aborted, the model receives a `tool_result` saying the tool did not answer within the deadline, and the round's other calls keep their results. `toolTimeoutMs: 0` waits forever
@@ -204,10 +207,10 @@ Because definitions and prompt instructions are read at the start of every turn 
 
 ## File reference
 
-| File | What it contains |
-|------|-----------------|
-| `src/types/ai.ts` | `ToolDefinition` interface (includes `promptInstructions`, `examplePrompts`) |
-| `src/orchestration/tools/registry.ts` | `ToolExecutor` type, `ToolResponse` interface, `ToolRegistry` class (includes `getPromptInstructions()`, `getExamplePrompts()`) |
-| `src/orchestration/tools/index.ts` | Tool registration (add your import and `register()` call here) |
-| `src/infrastructure/builders/promptBuilder.ts` | `PromptBuilder` class that assembles the system prompt from tool instructions |
-| `src/orchestration/chatOrchestrator.ts` | Where tools are passed to the provider and executed |
+| File                                           | What it contains                                                                                                                |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `src/types/ai.ts`                              | `ToolDefinition` interface (includes `promptInstructions`, `examplePrompts`)                                                    |
+| `src/orchestration/tools/registry.ts`          | `ToolExecutor` type, `ToolResponse` interface, `ToolRegistry` class (includes `getPromptInstructions()`, `getExamplePrompts()`) |
+| `src/orchestration/tools/index.ts`             | Tool registration (add your import and `register()` call here)                                                                  |
+| `src/infrastructure/builders/promptBuilder.ts` | `PromptBuilder` class that assembles the system prompt from tool instructions                                                   |
+| `src/orchestration/chatOrchestrator.ts`        | Where tools are passed to the provider and executed                                                                             |
